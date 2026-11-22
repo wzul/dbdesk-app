@@ -12,6 +12,30 @@ use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 struct Server(Mutex<Option<Child>>);
 
+fn user_home() -> PathBuf {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir())
+}
+
+/// Same default as `backend/app.py` so both launch paths share one data dir.
+fn default_home() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        user_home().join("Library/Application Support/DB Desk")
+    } else if cfg!(windows) {
+        std::env::var("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| user_home())
+            .join("DB Desk")
+    } else {
+        std::env::var("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| user_home().join(".local/share"))
+            .join("dbdesk")
+    }
+}
+
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .and_then(|listener| listener.local_addr())
@@ -92,10 +116,9 @@ fn wait_for_port(port: u16, attempts: u32) -> bool {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            let home = app
-                .path()
-                .app_data_dir()
-                .unwrap_or_else(|_| std::env::temp_dir().join("dbdesk"));
+            let home = std::env::var("DBDESK_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| default_home());
             std::fs::create_dir_all(&home).ok();
 
             let port = free_port();
