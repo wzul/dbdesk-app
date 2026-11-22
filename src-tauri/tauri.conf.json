@@ -27,7 +27,9 @@
     ],
     "externalBin": ["binaries/dbdesk-server"],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist"
     }
   }
 }
