@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+ui/node_modules/
+
+# build output
+ui/dist/
+dist-sidecar/
+build-sidecar/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/dbdesk-server-*
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# local data / secrets
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store

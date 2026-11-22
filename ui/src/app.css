@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --primary: #0969da;
+  --destructive: #cf222e;
+
+  --ui-bg-chrome: #ffffff;
+  --ui-bg-sidebar: #f6f8fa;
+  --ui-bg-secondary: #f6f8fa;
+  --ui-bg-quaternary: #eaeef2;
+  --ui-stroke-secondary: #d0d7de;
+  --ui-text-primary: #1f2328;
+  --ui-text-secondary: #59636e;
+  --ui-text-tertiary: #818b98;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --primary: #4493f8;
+  --destructive: #f85149;
+
+  --ui-bg-chrome: #010409;
+  --ui-bg-sidebar: #010409;
+  --ui-bg-secondary: #161b22;
+  --ui-bg-quaternary: #21262d;
+  --ui-stroke-secondary: #30363d;
+  --ui-text-primary: #e6edf3;
+  --ui-text-secondary: #9198a1;
+  --ui-text-tertiary: #6e7681;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-destructive: var(--destructive);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Toast layer for host.notify() */
+.dbd-toasts {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(380px, calc(100vw - 24px));
+}
+.dbd-toast {
+  border: 1px solid var(--ui-stroke-secondary);
+  background: var(--ui-bg-chrome);
+  color: var(--ui-text-primary);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+.dbd-toast[data-kind='error'] {
+  border-color: color-mix(in srgb, var(--destructive) 45%, transparent);
+  color: var(--destructive);
+}
+.dbd-toast[data-kind='success'] {
+  border-color: color-mix(in srgb, #2da44e 45%, transparent);
+}
+
+/* Scrollbars follow the theme a little more closely than the OS default */
+* {
+  scrollbar-color: color-mix(in srgb, var(--ui-text-tertiary) 45%, transparent) transparent;
+}

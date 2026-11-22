@@ -1,0 +1,15 @@
+{
+  "name": "dbdesk-standalone",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm --prefix ui run dev",
+    "build:ui": "npm --prefix ui run build",
+    "tauri": "tauri",
+    "app": "npm run build:ui && tauri dev",
+    "bundle": "npm run build:ui && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}
