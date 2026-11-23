@@ -120,7 +120,11 @@ Set `DBDESK_HOME` to override. The directory contains:
 
 ## What works
 
-Everything the plugin page does:
+- **Connection picker** — the app opens on a TablePlus-style list: search,
+  groups, type icons, read-only/PROD badges; pick a connection, then the full
+  browser opens. **New connection** goes straight to the form, and the chevron
+  in the header returns to the list.
+- Everything the plugin page does:
 
 - connections (Postgres, MySQL/MariaDB, ClickHouse, SQLite) with SSH tunnels,
   custom tunnel commands, MCP query tools and HTTP gateways
@@ -159,7 +163,8 @@ backend/dbdesk_api.py     adapters (standalone copy of the plugin backend)
 backend/dbdesk-server.spec PyInstaller one-file build
 ui/src/plugin.js          DB Desk page (same file as the Hermes plugin)
 ui/src/sdk-shim.jsx       the few Hermes SDK pieces the page imports
-ui/src/main.jsx           mounts the page, toasts, light/dark
+ui/src/main.jsx           shell: connection picker vs the page, toasts, theme
+ui/src/launcher.jsx       TablePlus-style connection list
 src-tauri/                Tauri v2 shell, config, icons, capabilities
 src-tauri/sidecar/        staged onedir sidecar (gitignored, built by script)
 scripts/build-sidecar.sh  PyInstaller onedir -> src-tauri/sidecar/dbdesk-server/

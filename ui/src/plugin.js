@@ -3696,7 +3696,7 @@ function emptyDraft() {
   }
 }
 
-export function DbDesk() {
+export function DbDesk({ onHome, startNew = false } = {}) {
   const [connections, setConnections] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [activeId, setActiveId] = useState(readActive)
@@ -3727,6 +3727,12 @@ export function DbDesk() {
   const [labelsOpen, setLabelsOpen] = useState(false)
   const [treeOpen, setTreeOpen] = useState(false)
   const [pending, setPending] = useState(null)
+
+  useEffect(() => {
+    if (startNew) setDraft(emptyDraft())
+    // The standalone launcher remounts the page with a new key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [selection, setSelection] = useState(null)
   const [queriesOpen, setQueriesOpen] = useState(false)
   const [views, setViews] = useState([])
@@ -4951,6 +4957,16 @@ export function DbDesk() {
             onClick: () => setTreeOpen(true),
             children: jsx(Codicon, { name: 'menu' })
           }),
+          onHome
+            ? jsx(Button, {
+                key: 'home',
+                variant: 'ghost',
+                size: 'sm',
+                title: 'All connections',
+                onClick: onHome,
+                children: jsx(Codicon, { name: 'chevron-left' })
+              })
+            : null,
           jsx(Codicon, { key: 'i', name: 'database', className: 'hidden shrink-0 text-(--ui-text-secondary) sm:block' }),
           jsx('div', {
             key: 't',

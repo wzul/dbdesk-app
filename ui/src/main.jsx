@@ -8,7 +8,10 @@ import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import plugin, { DbDesk } from './plugin.js'
+import Launcher from './launcher.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
+
+const ACTIVE_KEY = 'dbdesk.activeConnection'
 
 /* Follow the OS light/dark preference (the page uses the `dark:` variant). */
 const scheme = window.matchMedia('(prefers-color-scheme: dark)')
@@ -54,13 +57,43 @@ function Toasts() {
   )
 }
 
-function Standalone() {
+function Shell() {
+  const [view, setView] = useState('connections')
+  const [startNew, setStartNew] = useState(false)
+  const [generation, setGeneration] = useState(0)
+
+  const open = (id) => {
+    try {
+      localStorage.setItem(ACTIVE_KEY, id)
+    } catch {
+      /* private mode */
+    }
+    setStartNew(false)
+    setGeneration((value) => value + 1)
+    setView('app')
+  }
+
+  const create = () => {
+    setStartNew(true)
+    setGeneration((value) => value + 1)
+    setView('app')
+  }
+
+  if (view === 'connections') {
+    return <Launcher onOpen={open} onNew={create} />
+  }
   return (
-    <>
-      <DbDesk />
-      <Toasts />
-    </>
+    <DbDesk
+      key={generation}
+      startNew={startNew}
+      onHome={() => setView('connections')}
+    />
   )
 }
 
-createRoot(document.getElementById('root')).render(<Standalone />)
+createRoot(document.getElementById('root')).render(
+  <>
+    <Shell />
+    <Toasts />
+  </>
+)
