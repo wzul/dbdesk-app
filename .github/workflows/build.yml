@@ -9,11 +9,11 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '26'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install UI dependencies
@@ -40,11 +40,11 @@ jobs:
       APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
       HAS_SIGNING: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '26'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
@@ -82,7 +82,15 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
-        run: npm run tauri build -- --target ${{ matrix.target }}
+        run: |
+          # Unset signing variables when they are empty secrets, otherwise Tauri
+          # tries to import an empty certificate and the bundle step fails.
+          if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                  APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
+                  APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_PATH
+          fi
+          npm run tauri build -- --target ${{ matrix.target }}
 
       - name: Verify signature
         if: env.HAS_SIGNING == 'true'
@@ -93,7 +101,7 @@ jobs:
           spctl --assess --type execute --verbose=2 "$APP"
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dbdesk-${{ matrix.target }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
