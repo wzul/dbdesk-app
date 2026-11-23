@@ -42,12 +42,18 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p out
-          mv artifacts/arm64/*.dmg "out/DB.Desk_${VERSION}_aarch64.dmg"
-          mv artifacts/x64/*.dmg "out/DB.Desk_${VERSION}_x64.dmg"
-          mv artifacts/arm64/*.app.tar.gz "out/DB.Desk_${VERSION}_aarch64.app.tar.gz"
-          mv artifacts/arm64/*.app.tar.gz.sig "out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig"
-          mv artifacts/x64/*.app.tar.gz "out/DB.Desk_${VERSION}_x64.app.tar.gz"
-          mv artifacts/x64/*.app.tar.gz.sig "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"
+          ARM_DMG=$(find artifacts/arm64 -name '*.dmg' -print -quit)
+          X64_DMG=$(find artifacts/x64 -name '*.dmg' -print -quit)
+          ARM_APP=$(find artifacts/arm64 -name '*.app.tar.gz' -print -quit)
+          X64_APP=$(find artifacts/x64 -name '*.app.tar.gz' -print -quit)
+          ARM_SIG=$(find artifacts/arm64 -name '*.app.tar.gz.sig' -print -quit)
+          X64_SIG=$(find artifacts/x64 -name '*.app.tar.gz.sig' -print -quit)
+          cp "$ARM_DMG" "out/DB.Desk_${VERSION}_aarch64.dmg"
+          cp "$X64_DMG" "out/DB.Desk_${VERSION}_x64.dmg"
+          cp "$ARM_APP" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz"
+          cp "$ARM_SIG" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig"
+          cp "$X64_APP" "out/DB.Desk_${VERSION}_x64.app.tar.gz"
+          cp "$X64_SIG" "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"
           (cd out && sha256sum *.dmg > SHA256SUMS.txt)
 
       - name: Build latest.json
