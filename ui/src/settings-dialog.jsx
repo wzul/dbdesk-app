@@ -715,10 +715,17 @@ export default function SettingsDialog({ open, onClose, version }) {
 
           <Section title="Data">
             <Row label="Application data" hint="Encrypted connections, audit, tokens.">
-              <code className="max-w-[320px] truncate rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-1.5 py-0.5 font-mono text-[10.5px]">
-                {home || '…'}
-              </code>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void copyText(home, 'Data path')}
+              >
+                Copy
+              </Button>
             </Row>
+            <code className="block max-h-28 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2 font-mono text-[10.5px] leading-5 break-all whitespace-pre-wrap">
+              {home || '…'}
+            </code>
           </Section>
 
           <Section title="About">
