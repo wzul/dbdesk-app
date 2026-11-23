@@ -142,10 +142,10 @@ Set `DBDESK_HOME` to override. The directory contains:
   HTTP. Tools cover connections, databases, tables, columns, indexes, DDL,
   rows, CSV, SQL and the AI agent. Disabled by default; one toggle generates a
   bearer token.
-- **Settings (⌘,)** — one preferences window: updates, native notification
-  toggle + test, MCP server, AI provider (base URL/model/key), application-data
-  path and version. Open it with **⌘,**, the gear on the picker, or the gear in
-  the app header.
+- **Settings (⌘,)** — one preferences window: **Appearance** (System / Light /
+  Dark), updates, native notification toggle + test, MCP server, AI provider
+  (base URL/model/key), backup & restore, application-data path and version.
+  Open it with **⌘,**, the gear on the picker, or the gear in the app header.
 - **AI setup assistant** — **AI setup** on the picker: describe the database
   (“MySQL on my VPS behind a bastion”) and the agent returns a field-by-field
   draft; **Use this setup** opens the form prefilled. Passwords are never sent:
@@ -188,13 +188,31 @@ Set `DBDESK_HOME` to override. The directory contains:
   preview, then merges with new ids. **Show QR** renders a scannable code for a
   single connection (QR capacity is limited, so large bundles fall back to the
   file/copy).
+- **Backup & restore (migration)** — Settings → **Backup all** writes one file
+  with every connection, saved view and saved query. Passwords are optional and
+  encrypted (scrypt + AES-GCM). On the new Mac, **Restore** previews the file,
+  creates the connections, remaps views/queries to the new ids and leaves
+  passwords blank when they were not included.
+- **Schema structure grid** — the Schema tab shows a TablePlus-style structure
+  grid: `#`, column, data type, character set, collation, nullable, default,
+  extra (auto-increment/identity), foreign key and comment, plus an index grid
+  (`index_name`, algorithm, unique, column). DDL is still available from the
+  **DDL** button but no longer the default view.
+- **Multi-row filters** — the Filter panel is a list of filters. Each row has a
+  checkbox, column/operator/value, **Apply**, and remove; **Apply all** enables
+  every row, and **Enter** in a row applies the enabled set. Only checked rows
+  are sent in the WHERE clause. Saved views keep the enabled flags.
+- **Saved query buttons** — the SQL toolbar has **Save** (name + current SQL)
+  and **Saved** (opens the snippet list); the same snippets are available to the
+  MCP agent through `queries_list` / `query_save` / `query_delete`.
 - Everything the plugin page does:
 
 - connections (Postgres, MySQL/MariaDB, ClickHouse, SQLite) with SSH tunnels,
   custom tunnel commands, MCP query tools and HTTP gateways
 - schema tree, typed data grid, inline editing, filters, tabs, saved views
 - SQL runner, autocomplete, formatter, history, saved queries, charts
-- schema DDL, cross-connection diff, add/drop/rename column, index editor
+- structure grid (columns + indexes) with on-demand DDL, cross-connection diff,
+  add/drop/rename column, index editor
 - CSV import and whole-table export
 - serialized-PHP tools and the WordPress Site tab
 - read-only guard, production approvals and the write audit log

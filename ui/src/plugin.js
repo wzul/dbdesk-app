@@ -1690,8 +1690,8 @@ function CopyMenu({ disabled, canInsert, onCopy }) {
   })
 }
 
-function QueriesDrawer({ connectionId, currentSql, onPick, onClose }) {
-  const [tab, setTab] = useState('history')
+function QueriesDrawer({ connectionId, currentSql, onPick, onClose, initialTab = 'history' }) {
+  const [tab, setTab] = useState(initialTab)
   const [history, setHistory] = useState([])
   const [saved, setSaved] = useState([])
   const [name, setName] = useState('')
@@ -4592,6 +4592,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [tab, setTab] = useState('data')
   const [order, setOrder] = useState({ by: '', dir: 'asc' })
   const [filters, setFilters] = useState([])
+  const [filterRevision, setFilterRevision] = useState(0)
   const [filterOpen, setFilterOpen] = useState(false)
   const [filterDraft, setFilterDraft] = useState({ column: '', op: 'contains', value: '', insensitive: true })
   const [limit, setLimit] = useState(DEFAULT_LIMIT)
@@ -4673,6 +4674,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [suggestIndex, setSuggestIndex] = useState(0)
   const [ddl, setDdl] = useState('')
   const [ddlLoading, setDdlLoading] = useState(false)
+  const [structureIndexes, setStructureIndexes] = useState([])
+  const [structureLoading, setStructureLoading] = useState(false)
+  const [columnFilter, setColumnFilter] = useState('')
+  const [ddlOpen, setDdlOpen] = useState(false)
+  const [queriesTab, setQueriesTab] = useState('history')
+  const [saveQueryOpen, setSaveQueryOpen] = useState(false)
+  const [saveQueryName, setSaveQueryName] = useState('')
   const [editor, setEditor] = useState(null)
   const [insertOpen, setInsertOpen] = useState(false)
 
@@ -4837,7 +4845,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
             offset: nextOffset == null ? offset : nextOffset,
             order_by: ord.by,
             order_dir: ord.dir,
-            filters
+            filters: filters.filter((item) => item.enabled !== false)
           }
         })
         setData(result)
@@ -4881,7 +4889,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     if (!selected || tab !== 'data') return
     void loadRows(offset)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, selected, offset, limit, order, tab, filters, schemaVersion])
+  }, [activeId, selected, offset, limit, order, tab, filterRevision, schemaVersion])
 
   const suggestionPool = useMemo(() => {
     const pool = new Set(SQL_KEYWORDS.map((word) => word.toUpperCase()))
@@ -4950,6 +4958,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const applyViewState = (state) => {
     setFilters(Array.isArray(state.filters) ? state.filters : [])
+    setFilterRevision((value) => value + 1)
     setOrder(state.order || { by: '', dir: 'asc' })
     setLimit(state.limit || DEFAULT_LIMIT)
     setOffset(state.offset || 0)
@@ -5293,6 +5302,33 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
   }, [tab, selected, activeId, activeDb, treeVersion, schemaVersion])
 
+  useEffect(() => {
+    if (tab !== 'schema' || !selected || !activeId) {
+      setStructureIndexes([])
+      return
+    }
+    let cancelled = false
+    setStructureLoading(true)
+    setColumnFilter('')
+    call(
+      `/connections/${activeId}/indexes?schema=${encodeURIComponent(
+        selected.schema
+      )}&table=${encodeURIComponent(selected.table)}&database=${encodeURIComponent(activeDb)}`
+    )
+      .then((result) => {
+        if (!cancelled) setStructureIndexes(result.indexes || [])
+      })
+      .catch(() => {
+        if (!cancelled) setStructureIndexes([])
+      })
+      .finally(() => {
+        if (!cancelled) setStructureLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, selected, activeId, activeDb, treeVersion, schemaVersion])
+
   const sortBy = (column) => {
     setOffset(0)
     setOrder((current) =>
@@ -5624,14 +5660,50 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     if (!column) return
     const nullable = ['isnull', 'notnull'].includes(filterDraft.op)
     if (!nullable && filterDraft.value === '') return
-    setFilters((current) => [...current, { ...filterDraft, column }])
+    setFilters((current) => [...current, { ...filterDraft, column, enabled: true }])
     setFilterDraft((current) => ({ ...current, column, value: '' }))
     setOffset(0)
+    setFilterRevision((value) => value + 1)
   }
 
   const removeFilter = (index) => {
     setFilters((current) => current.filter((_, i) => i !== index))
     setOffset(0)
+    setFilterRevision((value) => value + 1)
+  }
+
+  const updateFilter = (index, patch) => {
+    setFilters((current) =>
+      current.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    )
+  }
+
+  const toggleFilter = (index, enabled) => {
+    setFilters((current) =>
+      current.map((row, i) => (i === index ? { ...row, enabled } : row))
+    )
+    setOffset(0)
+    setFilterRevision((value) => value + 1)
+  }
+
+  const applyFilter = (index) => {
+    setFilters((current) =>
+      current.map((row, i) => (i === index ? { ...row, enabled: true } : row))
+    )
+    setOffset(0)
+    setFilterRevision((value) => value + 1)
+  }
+
+  const applyAllFilters = () => {
+    setFilters((current) => current.map((row) => ({ ...row, enabled: true })))
+    setOffset(0)
+    setFilterRevision((value) => value + 1)
+  }
+
+  const clearFilters = () => {
+    setFilters([])
+    setOffset(0)
+    setFilterRevision((value) => value + 1)
   }
 
   const opLabel = (op) =>
@@ -5658,8 +5730,25 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     )
   }, [views, activeId, activeDb, selected])
 
+  const saveCurrentQuery = async () => {
+    const name = saveQueryName.trim()
+    if (!name || !sql.trim()) return
+    try {
+      await call('/queries/saved', {
+        method: 'POST',
+        body: { name, sql, connection_id: activeId, database: activeDb }
+      })
+      setSaveQueryOpen(false)
+      setSaveQueryName('')
+      host.notify({ kind: 'info', message: 'Query saved' })
+    } catch (error) {
+      setErr(errText(error))
+    }
+  }
+
   const applyView = (view) => {
     setFilters(Array.isArray(view.filters) ? view.filters : [])
+    setFilterRevision((value) => value + 1)
     setOrder({ by: view.order_by || '', dir: view.order_dir === 'desc' ? 'desc' : 'asc' })
     setLimit(view.limit || DEFAULT_LIMIT)
     setOffset(0)
@@ -6717,166 +6806,254 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         ? jsxs('div', {
                             key: 'filter-panel',
                             className:
-                              'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-2 py-1.5',
+                              'flex max-h-[230px] shrink-0 flex-col gap-1 overflow-auto border-b border-(--ui-stroke-secondary) px-2 py-1.5',
                             children: [
-                              jsx('select', {
-                                key: 'col',
-                                title: 'Filter column',
-                                className:
-                                  'h-7 max-w-[210px] rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
-                                value: filterDraft.column || (columnsMeta[0] ? columnsMeta[0].name : ''),
-                                onChange: (event) =>
-                                  setFilterDraft((current) => ({
-                                    ...current,
-                                    column: event.target.value
-                                  })),
-                                children: columnsMeta.map((column) =>
-                                  jsx(
-                                    'option',
-                                    {
-                                      value: column.name,
-                                      children: `${column.name} (${shortenType(column.type)})`
-                                    },
-                                    column.name
-                                  )
-                                )
-                              }),
-                              jsx('select', {
-                                key: 'op',
-                                title: 'Operator',
-                                className:
-                                  'h-7 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
-                                value: filterDraft.op,
-                                onChange: (event) =>
-                                  setFilterDraft((current) => ({
-                                    ...current,
-                                    op: event.target.value
-                                  })),
-                                children: [
-                                  ['contains', 'contains'],
-                                  ['eq', '='],
-                                  ['neq', '≠'],
-                                  ['gt', '>'],
-                                  ['lt', '<'],
-                                  ['gte', '≥'],
-                                  ['lte', '≤'],
-                                  ['isnull', 'is null'],
-                                  ['notnull', 'is not null']
-                                ].map(([value, label]) =>
-                                  jsx('option', { value, children: label }, value)
-                                )
-                              }),
-                              jsx(Input, {
-                                key: 'value',
-                                className: 'h-7 w-40',
-                                value: filterDraft.value,
-                                disabled: ['isnull', 'notnull'].includes(filterDraft.op),
-                                placeholder: 'value',
-                                onChange: (event) =>
-                                  setFilterDraft((current) => ({
-                                    ...current,
-                                    value: event.target.value
-                                  })),
-                                onKeyDown: (event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault()
-                                    addFilter()
-                                  }
-                                }
-                              }),
-                              ['contains', 'startswith'].includes(filterDraft.op)
-                                ? jsxs('label', {
-                                    key: 'ci',
-                                    className:
-                                      'flex items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
-                                    children: [
-                                      jsx('input', {
-                                        type: 'checkbox',
-                                        checked: filterDraft.insensitive !== false,
-                                        onChange: (event) =>
-                                          setFilterDraft((current) => ({
-                                            ...current,
-                                            insensitive: event.target.checked
-                                          }))
-                                      }),
-                                      jsx('span', { children: 'ignore case' })
-                                    ]
-                                  })
-                                : null,
-                              jsx(Button, {
-                                key: 'add',
-                                variant: 'secondary',
-                                size: 'sm',
-                                onClick: addFilter,
-                                children: 'Add'
-                              }),
-                              filters.length
-                                ? jsx(Button, {
-                                    key: 'clear',
-                                    variant: 'ghost',
-                                    size: 'sm',
-                                    onClick: () => {
-                                      setFilters([])
-                                      setOffset(0)
-                                    },
-                                    children: 'Clear'
-                                  })
-                                : null
-                            ]
-                          })
-                        : null,
-                      filters.length
-                        ? jsxs('div', {
-                            key: 'filter-chips',
-                            className:
-                              'flex shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-stroke-secondary) px-2 py-1',
-                            children: [
-                              jsx('span', {
-                                key: 'label',
-                                className: 'text-[10px] text-(--ui-text-tertiary)',
-                                children: 'WHERE'
-                              }),
                               ...filters.map((filter, index) =>
                                 jsxs(
-                                  'span',
+                                  'div',
                                   {
-                                    className:
-                                      'inline-flex max-w-[260px] items-center gap-1 rounded-[3px] bg-(--ui-bg-quaternary) px-1.5 py-0.5 font-mono text-[10.5px]',
-                                    title: `${filter.column} ${opLabel(filter.op)}${
-                                      ['contains', 'startswith'].includes(filter.op) &&
-                                      filter.insensitive !== false
-                                        ? ' (ci)'
-                                        : ''
-                                    } ${
-                                      ['isnull', 'notnull'].includes(filter.op) ? '' : filter.value
-                                    }`,
+                                    key: `filter-row-${index}`,
+                                    className: 'flex flex-wrap items-center gap-1.5',
                                     children: [
-                                      jsx('span', {
-                                        key: 't',
-                                        className: 'truncate',
-                                        children: `${filter.column} ${opLabel(filter.op)}${
-                                          ['contains', 'startswith'].includes(filter.op) &&
-                                          filter.insensitive !== false
-                                            ? ' (ci)'
-                                            : ''
-                                        }${
-                                          ['isnull', 'notnull'].includes(filter.op)
-                                            ? ''
-                                            : ` ${filter.value}`
-                                        }`
-                                      }),
-                                      jsx('button', {
-                                        key: 'x',
-                                        type: 'button',
-                                        className: 'shrink-0 opacity-60 hover:opacity-100',
-                                        onClick: () => removeFilter(index),
-                                        children: jsx(Codicon, { name: 'close' })
-                                      })
-                                    ]
-                                  },
-                                  index
-                                )
-                              )
+                                    jsx('input', {
+                                      key: 'on',
+                                      type: 'checkbox',
+                                      title: 'Include this filter in WHERE',
+                                      checked: filter.enabled !== false,
+                                      onChange: (event) =>
+                                        toggleFilter(index, event.target.checked)
+                                    }),
+                                    jsx('select', {
+                                      key: 'col',
+                                      title: 'Filter column',
+                                      className:
+                                        'h-7 max-w-[170px] rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
+                                      value: filter.column,
+                                      onChange: (event) =>
+                                        updateFilter(index, { column: event.target.value }),
+                                      children: columnsMeta.map((column) =>
+                                        jsx(
+                                          'option',
+                                          {
+                                            value: column.name,
+                                            children: `${column.name} (${shortenType(column.type)})`
+                                          },
+                                          column.name
+                                        )
+                                      )
+                                    }),
+                                    jsx('select', {
+                                      key: 'op',
+                                      title: 'Operator',
+                                      className:
+                                        'h-7 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
+                                      value: filter.op,
+                                      onChange: (event) =>
+                                        updateFilter(index, { op: event.target.value }),
+                                      children: [
+                                        ['contains', 'contains'],
+                                        ['eq', '='],
+                                        ['neq', '≠'],
+                                        ['gt', '>'],
+                                        ['lt', '<'],
+                                        ['gte', '≥'],
+                                        ['lte', '≤'],
+                                        ['isnull', 'is null'],
+                                        ['notnull', 'is not null']
+                                      ].map(([value, label]) =>
+                                        jsx('option', { value, children: label }, value)
+                                      )
+                                    }),
+                                    jsx(Input, {
+                                      key: 'value',
+                                      className: 'h-7 w-36',
+                                      value: filter.value || '',
+                                      disabled: ['isnull', 'notnull'].includes(filter.op),
+                                      placeholder: 'value',
+                                      onChange: (event) =>
+                                        updateFilter(index, { value: event.target.value }),
+                                      onKeyDown: (event) => {
+                                        if (event.key === 'Enter') {
+                                          event.preventDefault()
+                                          applyFilter(index)
+                                        }
+                                      }
+                                    }),
+                                    ['contains', 'startswith'].includes(filter.op)
+                                      ? jsxs(
+                                          'label',
+                                          {
+                                            key: 'ci',
+                                            className:
+                                              'flex items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
+                                            children: [
+                                              jsx('input', {
+                                                type: 'checkbox',
+                                                checked: filter.insensitive !== false,
+                                                onChange: (event) =>
+                                                  updateFilter(index, {
+                                                    insensitive: event.target.checked
+                                                  })
+                                              }),
+                                              jsx('span', { children: 'ci' })
+                                            ]
+                                          }
+                                        )
+                                      : null,
+                                    jsx(Button, {
+                                      key: 'apply',
+                                      variant: 'secondary',
+                                      size: 'xs',
+                                      title: 'Apply the enabled filters',
+                                      onClick: () => applyFilter(index),
+                                      children: 'Apply'
+                                    }),
+                                    jsx(Button, {
+                                      key: 'rm',
+                                      variant: 'ghost',
+                                      size: 'icon-xs',
+                                      title: 'Remove filter',
+                                      onClick: () => removeFilter(index),
+                                      children: jsx(Codicon, { name: 'close' })
+                                    })
+                                  ]
+                                })
+                              ),
+                              jsxs(
+                                'div',
+                                {
+                                  key: 'filter-draft',
+                                  className: 'flex flex-wrap items-center gap-1.5',
+                                  children: [
+                                  jsx('span', { key: 'sp', className: 'w-4' }),
+                                  jsx('select', {
+                                    key: 'col',
+                                    title: 'New filter column',
+                                    className:
+                                      'h-7 max-w-[170px] rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
+                                    value:
+                                      filterDraft.column ||
+                                      (columnsMeta[0] ? columnsMeta[0].name : ''),
+                                    onChange: (event) =>
+                                      setFilterDraft((current) => ({
+                                        ...current,
+                                        column: event.target.value
+                                      })),
+                                    children: columnsMeta.map((column) =>
+                                      jsx(
+                                        'option',
+                                        {
+                                          value: column.name,
+                                          children: `${column.name} (${shortenType(column.type)})`
+                                        },
+                                        column.name
+                                      )
+                                    )
+                                  }),
+                                  jsx('select', {
+                                    key: 'op',
+                                    title: 'New filter operator',
+                                    className:
+                                      'h-7 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
+                                    value: filterDraft.op,
+                                    onChange: (event) =>
+                                      setFilterDraft((current) => ({
+                                        ...current,
+                                        op: event.target.value
+                                      })),
+                                    children: [
+                                      ['contains', 'contains'],
+                                      ['eq', '='],
+                                      ['neq', '≠'],
+                                      ['gt', '>'],
+                                      ['lt', '<'],
+                                      ['gte', '≥'],
+                                      ['lte', '≤'],
+                                      ['isnull', 'is null'],
+                                      ['notnull', 'is not null']
+                                    ].map(([value, label]) =>
+                                      jsx('option', { value, children: label }, value)
+                                    )
+                                  }),
+                                  jsx(Input, {
+                                    key: 'value',
+                                    className: 'h-7 w-36',
+                                    value: filterDraft.value,
+                                    disabled: ['isnull', 'notnull'].includes(filterDraft.op),
+                                    placeholder: 'value',
+                                    onChange: (event) =>
+                                      setFilterDraft((current) => ({
+                                        ...current,
+                                        value: event.target.value
+                                      })),
+                                    onKeyDown: (event) => {
+                                      if (event.key === 'Enter') {
+                                        event.preventDefault()
+                                        addFilter()
+                                      }
+                                    }
+                                  }),
+                                  ['contains', 'startswith'].includes(filterDraft.op)
+                                    ? jsxs(
+                                        'label',
+                                        {
+                                          key: 'ci',
+                                          className:
+                                            'flex items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
+                                          children: [
+                                            jsx('input', {
+                                              type: 'checkbox',
+                                              checked: filterDraft.insensitive !== false,
+                                              onChange: (event) =>
+                                                setFilterDraft((current) => ({
+                                                  ...current,
+                                                  insensitive: event.target.checked
+                                                }))
+                                            }),
+                                            jsx('span', { children: 'ci' })
+                                          ]
+                                        }
+                                      )
+                                    : null,
+                                  jsx(Button, {
+                                    key: 'add',
+                                    variant: 'secondary',
+                                    size: 'sm',
+                                    onClick: addFilter,
+                                    children: 'Add'
+                                  })
+                                ]
+                              }),
+                              jsxs(
+                                'div',
+                                {
+                                  key: 'filter-actions',
+                                  className: 'flex flex-wrap items-center gap-2 pt-0.5',
+                                  children: [
+                                  jsx('span', {
+                                    key: 'n',
+                                    className: 'text-[10px] text-(--ui-text-tertiary)',
+                                    children: `${filters.filter((item) => item.enabled !== false).length} active`
+                                  }),
+                                  jsx('span', { key: 'sp', className: 'flex-1' }),
+                                  jsx(Button, {
+                                    key: 'all',
+                                    variant: 'ghost',
+                                    size: 'xs',
+                                    disabled: !filters.length,
+                                    onClick: applyAllFilters,
+                                    children: 'Apply all'
+                                  }),
+                                  jsx(Button, {
+                                    key: 'clear',
+                                    variant: 'ghost',
+                                    size: 'xs',
+                                    disabled: !filters.length,
+                                    onClick: clearFilters,
+                                    children: 'Clear'
+                                  })
+                                ]
+                              })
                             ]
                           })
                         : null,
@@ -7059,7 +7236,10 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             variant: 'ghost',
                             size: 'sm',
                             title: 'Query history',
-                            onClick: () => setQueriesOpen(true),
+                            onClick: () => {
+                              setQueriesTab('history')
+                              setQueriesOpen(true)
+                            },
                             children: jsxs('span', {
                               className: 'flex items-center gap-1',
                               children: [
@@ -7068,6 +7248,49 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                   key: 't',
                                   className: 'dbd-sm-inline',
                                   children: 'History'
+                                })
+                              ]
+                            })
+                          }),
+                          jsx(Button, {
+                            key: 'save-query',
+                            variant: 'ghost',
+                            size: 'sm',
+                            title: 'Save this SQL as a snippet',
+                            disabled: !sql.trim(),
+                            onClick: () => {
+                              setSaveQueryName('')
+                              setSaveQueryOpen(true)
+                            },
+                            children: jsxs('span', {
+                              className: 'flex items-center gap-1',
+                              children: [
+                                jsx(Codicon, { key: 'i', name: 'save' }),
+                                jsx('span', {
+                                  key: 't',
+                                  className: 'dbd-sm-inline',
+                                  children: 'Save'
+                                })
+                              ]
+                            })
+                          }),
+                          jsx(Button, {
+                            key: 'saved-queries',
+                            variant: 'ghost',
+                            size: 'sm',
+                            title: 'Saved queries',
+                            onClick: () => {
+                              setQueriesTab('saved')
+                              setQueriesOpen(true)
+                            },
+                            children: jsxs('span', {
+                              className: 'flex items-center gap-1',
+                              children: [
+                                jsx(Codicon, { key: 'i', name: 'bookmark' }),
+                                jsx('span', {
+                                  key: 't',
+                                  className: 'dbd-sm-inline',
+                                  children: 'Saved'
                                 })
                               ]
                             })
@@ -7307,6 +7530,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             variant: 'ghost',
                             size: 'xs',
                             disabled: !ddl || ddlLoading,
+                            onClick: () => setDdlOpen(true),
+                            children: 'DDL'
+                          }),
+                          jsx(Button, {
+                            variant: 'ghost',
+                            size: 'xs',
+                            disabled: !ddl || ddlLoading,
                             onClick: () => {
                               void writeClipboardText(ddl)
                               host.notify({ kind: 'info', message: 'DDL copied' })
@@ -7429,13 +7659,270 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             ]
                           })
                         : null,
-                      jsx('pre', {
-                        key: 'ddl',
-                        className:
-                          'min-h-0 flex-1 overflow-auto p-3 font-mono text-[11.5px] leading-5 whitespace-pre',
-                        children: selected
-                          ? ddl || (ddlLoading ? 'Loading schema…' : '')
-                          : 'Pick a table to see its DDL.'
+jsxs('div', {
+                        key: 'structure',
+                        className: 'flex min-h-0 flex-1 flex-col overflow-hidden',
+                        children: [
+                          jsxs('div', {
+                            key: 'head',
+                            className:
+                              'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
+                            children: [
+                              jsx('span', {
+                                key: 'nl',
+                                className: 'text-[10px] tracking-wide text-(--ui-text-tertiary) uppercase',
+                                children: 'Name'
+                              }),
+                              jsx('span', {
+                                key: 'nv',
+                                className:
+                                  'rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-2 py-0.5 font-mono text-[11.5px]',
+                                children: selected ? selected.table : '—'
+                              }),
+                              jsx('span', {
+                                key: 'pl',
+                                className:
+                                  'ml-2 text-[10px] tracking-wide text-(--ui-text-tertiary) uppercase',
+                                children: 'Primary'
+                              }),
+                              jsx('span', {
+                                key: 'pv',
+                                className:
+                                  'rounded-[3px] border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[11.5px] text-primary',
+                                children:
+                                  columnsMeta
+                                    .filter((column) => column.pk)
+                                    .map((column) => column.name)
+                                    .join(', ') || '—'
+                              }),
+                              jsx('span', { key: 'sp', className: 'flex-1' }),
+                              jsx('input', {
+                                key: 'search',
+                                value: columnFilter,
+                                placeholder: 'Search for column…',
+                                onChange: (event) => setColumnFilter(event.target.value),
+                                className:
+                                  'h-7 w-[190px] rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                              })
+                            ]
+                          }),
+                          jsx('div', {
+                            key: 'columns-wrap',
+                            className: 'min-h-0 flex-1 overflow-auto',
+                            children: jsxs('table', {
+                              className: 'dbd-grid-table dbd-mono min-w-full text-[11.5px]',
+                              children: [
+                                jsx('thead', {
+                                  key: 'h',
+                                  className: 'sticky top-0 z-10',
+                                  children: jsx('tr', {
+                                    children: [
+                                      '#',
+                                      'column_name',
+                                      'data_type',
+                                      'character_set',
+                                      'collation',
+                                      'is_nullable',
+                                      'column_default',
+                                      'extra',
+                                      'foreign_key',
+                                      'comment'
+                                    ].map((label) =>
+                                      jsx('th', {
+                                        key: label,
+                                        className:
+                                          'border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2.5 py-1.5 text-left text-[10px] font-semibold tracking-wide whitespace-nowrap text-(--ui-text-tertiary) uppercase',
+                                        children: label
+                                      })
+                                    )
+                                  })
+                                }),
+                                jsx('tbody', {
+                                  key: 'b',
+                                  children: columnsMeta
+                                    .filter((column) =>
+                                      column.name
+                                        .toLowerCase()
+                                        .includes(columnFilter.trim().toLowerCase())
+                                    )
+                                    .map((column, index) =>
+                                      jsx(
+                                        'tr',
+                                        {
+                                          className: index % 2 ? 'bg-(--ui-bg-secondary)/40' : '',
+                                          children: [
+                                          jsx('td', {
+                                            className:
+                                              'px-2.5 py-1.5 text-(--ui-text-tertiary)',
+                                            children: index + 1
+                                          }),
+                                          jsx('td', {
+                                            className: 'px-2.5 py-1.5 font-medium whitespace-nowrap',
+                                            children: column.name
+                                          }),
+                                          jsx('td', {
+                                            className: 'px-2.5 py-1.5 whitespace-nowrap',
+                                            children: column.type || '—'
+                                          }),
+                                          jsx('td', {
+                                            className:
+                                              'px-2.5 py-1.5 text-(--ui-text-tertiary)',
+                                            children: column.charset || '—'
+                                          }),
+                                          jsx('td', {
+                                            className:
+                                              'px-2.5 py-1.5 text-(--ui-text-tertiary)',
+                                            children: column.collation || '—'
+                                          }),
+                                          jsx('td', {
+                                            className: 'px-2.5 py-1.5',
+                                            children: column.nullable ? 'YES' : 'NO'
+                                          }),
+                                          jsx('td', {
+                                            className:
+                                              'max-w-[220px] truncate px-2.5 py-1.5',
+                                            title: column.default === null || column.default === undefined ? '' : String(column.default),
+                                            children:
+                                              column.default === null || column.default === undefined
+                                                ? jsx('span', {
+                                                    className:
+                                                      'text-(--ui-text-tertiary) italic',
+                                                    children: 'NULL'
+                                                  })
+                                                : String(column.default)
+                                          }),
+                                          jsx('td', {
+                                            className:
+                                              'px-2.5 py-1.5 text-(--ui-text-tertiary)',
+                                            children: column.extra || '—'
+                                          }),
+                                          jsx('td', {
+                                            className:
+                                              'px-2.5 py-1.5 text-(--ui-text-tertiary) whitespace-nowrap',
+                                            children: column.fk
+                                              ? `${column.fk.table}.${column.fk.column}`
+                                              : '—'
+                                          }),
+                                          jsx('td', {
+                                            className:
+                                              'max-w-[200px] truncate px-2.5 py-1.5 text-(--ui-text-tertiary)',
+                                            title: column.comment || '',
+                                            children: column.comment || '—'
+                                          })
+                                        ]
+                                      },
+                                      column.name
+                                      )
+                                    )
+                                })
+                              ]
+                            })
+                          }),
+                          jsxs('div', {
+                            key: 'indexes',
+                            className:
+                              'flex max-h-[190px] shrink-0 flex-col border-t border-(--ui-stroke-secondary)',
+                            children: [
+                              jsxs('div', {
+                                key: 'ih',
+                                className:
+                                  'flex shrink-0 items-center gap-2 bg-(--ui-bg-secondary) px-3 py-1 text-[10px] font-semibold tracking-wide text-(--ui-text-tertiary) uppercase',
+                                children: [
+                                  jsx('span', { key: 't', children: 'Indexes' }),
+                                  jsx('span', {
+                                    key: 'c',
+                                    className: 'font-normal normal-case',
+                                    children: structureLoading
+                                      ? 'loading…'
+                                      : `${structureIndexes.length}`
+                                  })
+                                ]
+                              }),
+                              jsx('div', {
+                                key: 'ib',
+                                className: 'min-h-0 overflow-auto',
+                                children: structureIndexes.length
+                                  ? jsxs('table', {
+                                      className:
+                                        'dbd-grid-table dbd-mono min-w-full text-[11.5px]',
+                                      children: [
+                                        jsx('thead', {
+                                          key: 'h',
+                                          children: jsx('tr', {
+                                            children: [
+                                              'index_name',
+                                              'index_algorithm',
+                                              'is_unique',
+                                              'column_name'
+                                            ].map((label) =>
+                                              jsx('th', {
+                                                key: label,
+                                                className:
+                                                  'border-b border-(--ui-stroke-secondary) bg-background px-2.5 py-1 text-left text-[10px] font-semibold tracking-wide whitespace-nowrap text-(--ui-text-tertiary) uppercase',
+                                                children: label
+                                              })
+                                            )
+                                          })
+                                        }),
+                                        jsx('tbody', {
+                                          key: 'b',
+                                          children: structureIndexes.flatMap((entry) => {
+                                            const names =
+                                              Array.isArray(entry.column_names) &&
+                                              entry.column_names.length
+                                                ? entry.column_names
+                                                : ['']
+                                            return names.map((name, index) =>
+                                              jsx(
+                                                'tr',
+                                                {
+                                                  children: [
+                                                    jsx('td', {
+                                                      className:
+                                                        'px-2.5 py-1 font-medium whitespace-nowrap',
+                                                      children: index === 0 ? entry.name : ''
+                                                    }),
+                                                    jsx('td', {
+                                                      className: 'px-2.5 py-1',
+                                                      children:
+                                                        index === 0
+                                                          ? (entry.algorithm || '—').toUpperCase()
+                                                          : ''
+                                                    }),
+                                                    jsx('td', {
+                                                      className: 'px-2.5 py-1',
+                                                      children:
+                                                        index === 0
+                                                          ? entry.unique
+                                                            ? 'TRUE'
+                                                            : 'FALSE'
+                                                          : ''
+                                                    }),
+                                                    jsx('td', {
+                                                      className:
+                                                        'px-2.5 py-1 text-(--ui-text-secondary)',
+                                                      children: name
+                                                    })
+                                                  ]
+                                                },
+                                                `${entry.name}-${name}-${index}`
+                                              )
+                                            )
+                                          })
+                                        })
+                                      ]
+                                    })
+                                  : jsx('div', {
+                                      className:
+                                        'px-3 py-3 text-[11px] text-(--ui-text-tertiary)',
+                                      children: structureLoading
+                                        ? 'Loading indexes…'
+                                        : 'No indexes on this table.'
+                                    })
+                              })
+                            ]
+                          })
+                        ]
                       })
                     ]
                   })
@@ -7465,6 +7952,131 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
         : null,
       pending
         ? jsx(SqlConfirm, { key: 'confirm', pending, onCancel: () => setPending(null) })
+        : null,
+      saveQueryOpen
+        ? jsxs('div', {
+            key: 'save-query-modal',
+            className: 'fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4',
+            children: [
+              jsxs('div', {
+                key: 'panel',
+                className:
+                  'flex w-full max-w-[420px] flex-col gap-3 rounded-[8px] border border-(--ui-stroke-secondary) bg-background p-4 shadow-2xl',
+                children: [
+                  jsxs('div', {
+                    key: 'head',
+                    className: 'flex items-center gap-2',
+                    children: [
+                      jsx(Codicon, { key: 'i', name: 'save', className: 'text-primary' }),
+                      jsx('span', {
+                        key: 't',
+                        className: 'text-[13px] font-semibold',
+                        children: 'Save query'
+                      }),
+                      jsx('span', { key: 'sp', className: 'flex-1' }),
+                      jsx(Button, {
+                        key: 'close',
+                        variant: 'ghost',
+                        size: 'sm',
+                        title: 'Close',
+                        onClick: () => setSaveQueryOpen(false),
+                        children: jsx(Codicon, { name: 'close' })
+                      })
+                    ]
+                  }),
+                  jsx(Input, {
+                    key: 'name',
+                    autoFocus: true,
+                    value: saveQueryName,
+                    placeholder: 'Name, e.g. daily revenue',
+                    onChange: (event) => setSaveQueryName(event.target.value),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter') void saveCurrentQuery()
+                    }
+                  }),
+                  jsx('div', {
+                    key: 'preview',
+                    className:
+                      'max-h-28 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2 font-mono text-[10.5px] whitespace-pre-wrap text-(--ui-text-secondary)',
+                    children: sql
+                  }),
+                  jsxs('div', {
+                    key: 'actions',
+                    className: 'flex items-center gap-2',
+                    children: [
+                      jsx(Button, {
+                        key: 'save',
+                        size: 'sm',
+                        disabled: !saveQueryName.trim() || !sql.trim(),
+                        onClick: () => void saveCurrentQuery(),
+                        children: 'Save query'
+                      }),
+                      jsx(Button, {
+                        key: 'cancel',
+                        variant: 'ghost',
+                        size: 'sm',
+                        onClick: () => setSaveQueryOpen(false),
+                        children: 'Cancel'
+                      })
+                    ]
+                  })
+                ]
+              })
+            ]
+          })
+        : null,
+      ddlOpen && selected
+        ? jsxs('div', {
+            key: 'ddl-modal',
+            className: 'fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4',
+            children: [
+              jsxs('div', {
+                key: 'panel',
+                className:
+                  'flex max-h-[82vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[8px] border border-(--ui-stroke-secondary) bg-background shadow-2xl',
+                children: [
+                  jsxs('div', {
+                    key: 'head',
+                    className:
+                      'flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2.5',
+                    children: [
+                      jsx('span', {
+                        key: 't',
+                        className: 'font-mono text-[12px] font-semibold',
+                        children: `${selected.schema}.${selected.table}`
+                      }),
+                      jsx('span', { key: 'sp', className: 'flex-1' }),
+                      jsx(Button, {
+                        key: 'copy',
+                        variant: 'secondary',
+                        size: 'sm',
+                        disabled: !ddl,
+                        onClick: () => {
+                          void writeClipboardText(ddl)
+                          host.notify({ kind: 'info', message: 'DDL copied' })
+                        },
+                        children: 'Copy'
+                      }),
+                      jsx(Button, {
+                        key: 'close',
+                        variant: 'ghost',
+                        size: 'sm',
+                        title: 'Close',
+                        onClick: () => setDdlOpen(false),
+                        children: jsx(Codicon, { name: 'close' })
+                      })
+                    ]
+                  }),
+                  jsx('pre', {
+                    key: 'ddl',
+                    className:
+                      'min-h-0 flex-1 overflow-auto p-3 font-mono text-[11.5px] leading-5 whitespace-pre',
+                    children: ddl || (ddlLoading ? 'Loading schema…' : '')
+                  })
+                ]
+              })
+            ]
+          })
         : null,
       indexesOpen && selected
         ? jsx(IndexesDrawer, {

@@ -247,12 +247,21 @@ def _prefs_path() -> Path:
     return _data_dir() / "prefs.json"
 
 
+APPEARANCES = {"system", "light", "dark"}
+
+
 def _load_prefs() -> dict[str, Any]:
     try:
         value = json.loads(_prefs_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         value = {}
-    return {"notifications": bool(value.get("notifications", True))}
+    appearance = str(value.get("appearance") or "system").lower()
+    if appearance not in APPEARANCES:
+        appearance = "system"
+    return {
+        "notifications": bool(value.get("notifications", True)),
+        "appearance": appearance,
+    }
 
 
 def _save_prefs(prefs: dict[str, Any]) -> None:
@@ -586,6 +595,7 @@ async def _app_status(args: dict[str, Any]) -> dict[str, Any]:
             "tools": len(TOOL_SPECS),
         },
         "notifications": _load_prefs()["notifications"],
+        "appearance": _load_prefs()["appearance"],
     }
 
 
@@ -596,6 +606,14 @@ async def _settings_update(args: dict[str, Any]) -> dict[str, Any]:
         prefs["notifications"] = bool(args.get("notifications"))
         _save_prefs(prefs)
         changed.append("notifications")
+    if "appearance" in args:
+        appearance = str(args.get("appearance") or "").lower()
+        if appearance not in APPEARANCES:
+            raise ToolError("appearance must be system, light or dark")
+        prefs = _load_prefs()
+        prefs["appearance"] = appearance
+        _save_prefs(prefs)
+        changed.append("appearance")
     if "ai_model" in args:
         model = str(args.get("ai_model") or "").strip()[:100]
         if not model:
@@ -936,12 +954,14 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "name": "settings_update",
         "title": "Update safe settings",
         "description": (
-            "Toggle notifications, set the AI model, or turn MCP writes off. It cannot "
-            "change the AI base URL, API key, MCP token or enable writes."
+            "Toggle notifications, choose the appearance (system/light/dark), set the AI "
+            "model, or turn MCP writes off. It cannot change the AI base URL, API key, "
+            "MCP token or enable writes."
         ),
         "inputSchema": _schema(
             {
                 "notifications": {"type": "boolean"},
+                "appearance": {"type": "string", "enum": ["system", "light", "dark"]},
                 "ai_model": _STR,
                 "allow_writes": {"type": "boolean"},
             }
@@ -1161,5 +1181,9 @@ async def set_prefs(body: dict[str, Any]) -> dict[str, Any]:
         prefs = _load_prefs()
         if "notifications" in body:
             prefs["notifications"] = bool(body.get("notifications"))
+        if "appearance" in body:
+            appearance = str(body.get("appearance") or "").lower()
+            if appearance in APPEARANCES:
+                prefs["appearance"] = appearance
         _save_prefs(prefs)
     return prefs

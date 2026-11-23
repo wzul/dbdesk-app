@@ -368,6 +368,11 @@ class McpServer(unittest.TestCase):
         self.assertEqual(self.client.get("/api/prefs").json()["notifications"], False)
         self.assertEqual(self.client.get("/api/ai/config").json()["model"], "test-model")
 
+        themed = self.call_tool(token, "settings_update", {"appearance": "dark"})
+        self.assertFalse(themed["isError"])
+        self.assertEqual(self.client.get("/api/prefs").json()["appearance"], "dark")
+        self.assertEqual(json.loads(themed["content"][0]["text"])["appearance"], "dark")
+
         refused = self.call_tool(token, "settings_update", {"allow_writes": True})
         self.assertTrue(refused["isError"])
 
@@ -413,6 +418,97 @@ class McpServer(unittest.TestCase):
         self.assertFalse(removed["isError"])
         listed = self.call_tool(token, "queries_list")
         self.assertNotIn("all people", listed["content"][0]["text"])
+
+    def test_backup_roundtrip(self) -> None:
+        cid = self.add_connection(readonly=True)
+        self.client.post(
+            "/api/views",
+            json={
+                "name": "all people",
+                "connection_id": cid,
+                "schema": "main",
+                "table": "people",
+            },
+        )
+        self.client.post(
+            "/api/queries/saved",
+            json={"name": "count", "sql": "select count(*) from people", "connection_id": cid},
+        )
+        exported = self.client.post("/api/backup/export", json={"include_secrets": False})
+        self.assertEqual(exported.status_code, 200, exported.text)
+        payload = exported.json()
+        self.assertFalse(payload["encrypted"])
+        self.assertEqual(payload["connections_count"], 1)
+        self.assertEqual(payload["views_count"], 1)
+        self.assertEqual(payload["queries_count"], 1)
+
+        document = json.loads(payload["bundle"])
+        self.assertEqual(len(document["connections"]), 1)
+        self.assertTrue(document["connections"][0]["source_id"])
+        self.assertNotIn("password", document["connections"][0])
+
+        preview = self.client.post(
+            "/api/backup/import", json={"bundle": payload["bundle"], "preview": True}
+        ).json()
+        self.assertEqual(preview["count"], 1)
+        self.assertEqual(preview["views"], 1)
+        self.assertEqual(preview["queries"], 1)
+        self.assertFalse(preview["connections"][0]["has_password"])
+
+        imported = self.client.post(
+            "/api/backup/import", json={"bundle": payload["bundle"]}
+        ).json()
+        self.assertEqual(imported["connections"], 1)
+        self.assertEqual(imported["views"], 1)
+        self.assertEqual(imported["queries"], 1)
+        conns = self.client.get("/api/connections").json()["connections"]
+        self.assertEqual(len(conns), 2)
+        new_ids = {conn["id"] for conn in conns} - {cid}
+        self.assertEqual(len(new_ids), 1)
+        new_id = new_ids.pop()
+        views = self.client.get("/api/views").json()["views"]
+        self.assertEqual(len(views), 2)
+        self.assertTrue(any(view["connection_id"] == new_id for view in views))
+
+    def test_backup_secrets_are_encrypted(self) -> None:
+        self.add_connection(readonly=True)
+        plain = self.client.post("/api/backup/export", json={"include_secrets": False})
+        self.assertEqual(plain.status_code, 200)
+        secured = self.client.post(
+            "/api/backup/export",
+            json={"include_secrets": True, "passphrase": "correct horse battery"},
+        ).json()
+        self.assertTrue(secured["encrypted"])
+        self.assertNotIn("correct horse battery", secured["bundle"])
+        denied = self.client.post(
+            "/api/backup/import",
+            json={"bundle": secured["bundle"], "passphrase": "wrong passphrase"},
+        )
+        self.assertEqual(denied.status_code, 400)
+        preview = self.client.post(
+            "/api/backup/import",
+            json={
+                "bundle": secured["bundle"],
+                "passphrase": "correct horse battery",
+                "preview": True,
+            },
+        ).json()
+        self.assertTrue(preview["preview"])
+
+    def test_disabled_filters_are_ignored(self) -> None:
+        cid = self.add_connection(readonly=True)
+        result = self.client.post(
+            "/api/table/rows",
+            json={
+                "connection_id": cid,
+                "schema": "main",
+                "table": "people",
+                "filters": [
+                    {"column": "name", "op": "eq", "value": "Ali", "enabled": False},
+                ],
+            },
+        ).json()
+        self.assertEqual(len(result["rows"]), 2)
 
     def test_connection_test(self) -> None:
         token = self.enable()

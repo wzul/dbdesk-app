@@ -54,9 +54,26 @@ function StatusBar({ connection }) {
 
 /* Follow the OS light/dark preference (the page uses the `dark:` variant). */
 const scheme = window.matchMedia('(prefers-color-scheme: dark)')
-const applyScheme = () => document.documentElement.classList.toggle('dark', scheme.matches)
+let appearance = 'system'
+const applyScheme = () => {
+  const dark = appearance === 'dark' || (appearance === 'system' && scheme.matches)
+  document.documentElement.classList.toggle('dark', dark)
+}
 applyScheme()
-scheme.addEventListener('change', applyScheme)
+scheme.addEventListener('change', () => {
+  if (appearance === 'system') applyScheme()
+})
+window.addEventListener('dbdesk:appearance', (event) => {
+  const value = event.detail
+  appearance = ['system', 'light', 'dark'].includes(value) ? value : 'system'
+  applyScheme()
+})
+rest('/prefs')
+  .then((prefs) => {
+    appearance = prefs.appearance || 'system'
+    applyScheme()
+  })
+  .catch(() => {})
 
 /* Register the page exactly like the Hermes plugin host does: this injects the
  * page's stylesheet and hands it the REST helper. */

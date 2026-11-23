@@ -175,6 +175,12 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, o
     }
   }, [reloadKey])
 
+  useEffect(() => {
+    const reload = () => setReloadKey((value) => value + 1)
+    window.addEventListener('dbdesk:reload', reload)
+    return () => window.removeEventListener('dbdesk:reload', reload)
+  }, [])
+
   const dismissDraft = async (draftId) => {
     try {
       await rest(`/connection-drafts/${draftId}/dismissed`, { method: 'POST' })

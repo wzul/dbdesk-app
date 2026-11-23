@@ -534,7 +534,7 @@ def _where_clause(kind: str, filters: Any) -> str:
     }[kind]
     clauses: list[str] = []
     for item in filters[:8]:
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or item.get("enabled") is False:
             continue
         column = str(item.get("column") or "").strip()
         op = str(item.get("op") or "eq").strip().lower()
@@ -1228,6 +1228,14 @@ def _pg_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
                  format_type(a.atttypid, a.atttypmod) AS type,
                  NOT a.attnotnull AS nullable,
                  pg_get_expr(d.adbin, d.adrelid) AS "default",
+                 col_description(c.oid, a.attnum) AS comment,
+                 CASE WHEN a.attidentity <> '' THEN 'identity'
+                      WHEN a.attgenerated <> '' THEN 'generated'
+                      ELSE '' END AS extra,
+                 CASE WHEN a.attcollation <> 0
+                      THEN (SELECT collname FROM pg_collation WHERE oid = a.attcollation)
+                      ELSE NULL END AS collation,
+                 NULL AS charset,
                  EXISTS (
                    SELECT 1 FROM pg_index i
                    WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY(i.indkey)
@@ -1466,6 +1474,7 @@ def _my_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
 def _my_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
     sql = (
         "SELECT c.column_name, c.column_type, c.is_nullable, c.column_default, c.column_key, "
+        "c.character_set_name, c.collation_name, c.extra, c.column_comment, "
         "k.referenced_table_schema, k.referenced_table_name, k.referenced_column_name "
         "FROM information_schema.columns c "
         "LEFT JOIN information_schema.key_column_usage k "
@@ -1482,8 +1491,8 @@ def _my_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
     result = []
     for r in rows:
         fk = None
-        if len(r) > 6 and r[6]:
-            fk = {"schema": r[5], "table": r[6], "column": r[7]}
+        if len(r) > 11 and r[10]:
+            fk = {"schema": r[9], "table": r[10], "column": r[11]}
         result.append(
             {
                 "name": r[0],
@@ -1492,6 +1501,10 @@ def _my_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
                 "default": r[3],
                 "pk": str(r[4]).upper() == "PRI",
                 "fk": fk,
+                "charset": r[5] or None,
+                "collation": r[6] or None,
+                "extra": r[7] or "",
+                "comment": r[8] or None,
             }
         )
     return result
@@ -1663,7 +1676,8 @@ def _ch_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
 def _ch_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
     payload = _ch_json(
         conn,
-        "SELECT name, type, is_in_primary_key, is_in_sorting_key, default_expression "
+        "SELECT name, type, is_in_primary_key, is_in_sorting_key, default_expression, "
+        "default_kind, comment "
         "FROM system.columns "
         f"WHERE database = {_ch_lit(schema)} AND table = {_ch_lit(table)} "
         "ORDER BY position",
@@ -1678,6 +1692,10 @@ def _ch_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
             "nullable": str(r[1]).startswith("Nullable("),
             "default": r[4] or None,
             "pk": bool(int(r[2] or 0)) or bool(int(r[3] or 0)),
+            "charset": None,
+            "collation": None,
+            "extra": r[5] or "",
+            "comment": r[6] or None,
         })
     return out
 
@@ -1862,6 +1880,10 @@ def _sqlite_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[
             "default": row["dflt_value"],
             "pk": bool(row["pk"]),
             "fk": fks.get(str(row["name"])),
+            "charset": None,
+            "collation": None,
+            "extra": "",
+            "comment": None,
         }
         for row in info
     ]
@@ -1976,7 +1998,9 @@ def _sqlite_indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[
                 {
                     "name": name,
                     "unique": bool(row["unique"]),
+                    "algorithm": "BTREE",
                     "columns": ", ".join(columns),
+                    "column_names": columns,
                     "primary": str(row["origin"]) == "pk",
                 }
             )
@@ -1985,6 +2009,20 @@ def _sqlite_indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[
     finally:
         db.close()
     return result
+
+
+def _index_meta(row: dict[str, Any], definition: str) -> None:
+    """Parse a PostgreSQL index definition into algorithm + columns."""
+    method = re.search(r"USING\s+(\w+)", definition, re.I)
+    row["algorithm"] = method.group(1).lower() if method else ""
+    match = re.search(r"\(([^()]*)\)", definition)
+    names: list[str] = []
+    if match:
+        for part in match.group(1).split(","):
+            name = part.strip().split(" ")[0].strip('"')
+            if name:
+                names.append(name)
+    row["column_names"] = names
 
 
 def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
@@ -1996,7 +2034,7 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
     if kind == "mysql":
         rows = _my_rows_sql(
             conn,
-            "SELECT index_name, non_unique, "
+            "SELECT index_name, non_unique, index_type, "
             "GROUP_CONCAT(column_name ORDER BY seq_in_index) "
             "FROM information_schema.statistics "
             f"WHERE table_schema = {_my_lit(schema)} AND table_name = {_my_lit(table)} "
@@ -2006,7 +2044,9 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
             {
                 "name": r[0],
                 "unique": str(r[1]) == "0",
-                "columns": str(r[2] or ""),
+                "algorithm": str(r[2] or ""),
+                "columns": str(r[3] or ""),
+                "column_names": [part.strip() for part in str(r[3] or "").split(",") if part.strip()],
                 "primary": str(r[0]).upper() == "PRIMARY",
             }
             for r in rows
@@ -2025,6 +2065,7 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
             row["unique"] = "UNIQUE INDEX" in definition
             row["columns"] = definition
             row["primary"] = row["name"].endswith("_pkey") or "PRIMARY KEY" in definition
+            _index_meta(row, definition)
         return rows
     rows = _pg_json(
         conn,
@@ -2041,6 +2082,7 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
         row["unique"] = "UNIQUE INDEX" in definition
         row["columns"] = definition
         row["primary"] = row["name"].endswith("_pkey") or "PRIMARY KEY" in definition
+        _index_meta(row, definition)
     return rows
 
 
@@ -4042,10 +4084,19 @@ def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
-def _bundle_export(connections: list[dict[str, Any]], include_secrets: bool, passphrase: str) -> dict[str, Any]:
+def _bundle_document(
+    connections: list[dict[str, Any]],
+    include_secrets: bool,
+    passphrase: str,
+    *,
+    extras: dict[str, Any] | None = None,
+    source_ids: bool = False,
+) -> dict[str, Any]:
     items = []
     for conn in connections:
         item = _bundle_item(conn)
+        if source_ids:
+            item["source_id"] = conn.get("id", "")
         if include_secrets:
             item["password"] = _decrypt(conn.get("password_enc", ""))
         items.append(item)
@@ -4055,6 +4106,8 @@ def _bundle_export(connections: list[dict[str, Any]], include_secrets: bool, pas
         "created_at": time.time(),
         "connections": items,
     }
+    if extras:
+        payload.update(extras)
     if not include_secrets:
         return {"bundle": json.dumps(payload, separators=(",", ":")), "encrypted": False}
     if len(passphrase) < 8:
@@ -4080,7 +4133,13 @@ def _bundle_export(connections: list[dict[str, Any]], include_secrets: bool, pas
     return {"bundle": json.dumps(envelope, separators=(",", ":")), "encrypted": True}
 
 
-def _bundle_parse(bundle: str, passphrase: str) -> list[dict[str, Any]]:
+def _bundle_export(
+    connections: list[dict[str, Any]], include_secrets: bool, passphrase: str
+) -> dict[str, Any]:
+    return _bundle_document(connections, include_secrets, passphrase)
+
+
+def _bundle_open(bundle: str, passphrase: str) -> dict[str, Any]:
     text = (bundle or "").strip()
     if not text:
         raise HTTPException(400, "bundle is required")
@@ -4115,6 +4174,11 @@ def _bundle_parse(bundle: str, passphrase: str) -> list[dict[str, Any]]:
             data = json.loads(plaintext.decode("utf-8"))
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(400, "could not decrypt the bundle (wrong passphrase?)") from exc
+    return data
+
+
+def _bundle_parse(bundle: str, passphrase: str) -> list[dict[str, Any]]:
+    data = _bundle_open(bundle, passphrase)
     items = data.get("connections")
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "bundle has no connections")
@@ -4439,6 +4503,105 @@ async def import_connections(body: dict[str, Any]) -> dict[str, Any]:
     _close_pools()
     _save(connections)
     return {"ok": True, "added": added, "count": len(items)}
+
+
+@router.post("/backup/export")
+async def backup_export(body: dict[str, Any]) -> dict[str, Any]:
+    connections = _load()
+    views = _load_views()
+    saved = _load_queries()["saved"]
+    result = _bundle_document(
+        connections,
+        bool(body.get("include_secrets")),
+        str(body.get("passphrase") or ""),
+        extras={"views": views, "saved_queries": saved},
+        source_ids=True,
+    )
+    result.update(
+        {
+            "connections_count": len(connections),
+            "views_count": len(views),
+            "queries_count": len(saved),
+        }
+    )
+    return result
+
+
+@router.post("/backup/import")
+async def backup_import(body: dict[str, Any]) -> dict[str, Any]:
+    data = _bundle_open(
+        str(body.get("bundle") or ""), str(body.get("passphrase") or "")
+    )
+    items = [item for item in data.get("connections") or [] if isinstance(item, dict)]
+    if not items:
+        raise HTTPException(400, "bundle has no connections")
+    pending_views = [view for view in data.get("views") or [] if isinstance(view, dict)]
+    pending_queries = [
+        query for query in data.get("saved_queries") or [] if isinstance(query, dict)
+    ]
+    if body.get("preview"):
+        return {
+            "preview": True,
+            "encrypted": bool(data.get("encrypted")),
+            "count": len(items),
+            "connections": [
+                {
+                    "name": str(item.get("name") or item.get("dbname") or ""),
+                    "kind": str(item.get("kind") or "postgres"),
+                    "database": str(item.get("dbname") or ""),
+                    "has_password": item.get("password") not in (None, ""),
+                }
+                for item in items
+            ],
+            "views": len(pending_views),
+            "queries": len(pending_queries),
+        }
+
+    mapping: dict[str, str] = {}
+    records = _load()
+    for item in items:
+        record_id = uuid.uuid4().hex[:12]
+        record = _record_from_bundle(item, record_id)
+        source = str(item.get("source_id") or "")
+        if source:
+            mapping[source] = record_id
+        records.append(record)
+    _save(records)
+    _invalidate_columns()
+    _close_pools()
+
+    views = _load_views()
+    added_views = 0
+    for view in pending_views:
+        entry = dict(view)
+        entry["id"] = uuid.uuid4().hex[:10]
+        entry["connection_id"] = mapping.get(
+            str(entry.get("connection_id") or ""), str(entry.get("connection_id") or "")
+        )
+        views.append(entry)
+        added_views += 1
+    if added_views:
+        _save_views(views)
+
+    queries = _load_queries()
+    added_queries = 0
+    for query in pending_queries:
+        entry = dict(query)
+        entry["id"] = uuid.uuid4().hex[:10]
+        entry["connection_id"] = mapping.get(
+            str(entry.get("connection_id") or ""), str(entry.get("connection_id") or "")
+        )
+        queries["saved"].append(entry)
+        added_queries += 1
+    if added_queries:
+        _save_queries(queries)
+
+    return {
+        "ok": True,
+        "connections": len(items),
+        "views": added_views,
+        "queries": added_queries,
+    }
 
 
 @router.delete("/connections/{conn_id}")

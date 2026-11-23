@@ -40,6 +40,19 @@ export default function SettingsDialog({ open, onClose, version }) {
   const [updateState, setUpdateState] = useState('')
   const [checking, setChecking] = useState(false)
   const [notifyEnabled, setNotifyEnabled] = useState(true)
+  const [appearance, setAppearance] = useState('system')
+  const [backupOpen, setBackupOpen] = useState(false)
+  const [backupSecrets, setBackupSecrets] = useState(false)
+  const [backupPass, setBackupPass] = useState('')
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [backupMessage, setBackupMessage] = useState('')
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const [restoreBundle, setRestoreBundle] = useState('')
+  const [restoreName, setRestoreName] = useState('')
+  const [restorePass, setRestorePass] = useState('')
+  const [restorePreview, setRestorePreview] = useState(null)
+  const [restoreBusy, setRestoreBusy] = useState(false)
+  const [restoreMessage, setRestoreMessage] = useState('')
   const [notifyState, setNotifyState] = useState('')
   const [home, setHome] = useState('')
   const [mcp, setMcp] = useState(null)
@@ -58,7 +71,10 @@ export default function SettingsDialog({ open, onClose, version }) {
     setMcpReveal(false)
     setNotifyDiag(null)
     rest('/prefs')
-      .then((value) => setNotifyEnabled(Boolean(value.notifications)))
+      .then((value) => {
+        setNotifyEnabled(Boolean(value.notifications))
+        setAppearance(value.appearance || 'system')
+      })
       .catch(() => setNotifyEnabled(true))
     rest('/ai/config')
       .then((value) => {
@@ -254,12 +270,97 @@ export default function SettingsDialog({ open, onClose, version }) {
     else setNotifyState('Not available')
   }
 
+
+  const exportBackup = async () => {
+    if (backupSecrets && backupPass.length < 8) {
+      setBackupMessage('Passphrase must be at least 8 characters.')
+      return
+    }
+    setBackupBusy(true)
+    setBackupMessage('')
+    try {
+      const result = await rest('/backup/export', {
+        method: 'POST',
+        body: { include_secrets: backupSecrets, passphrase: backupPass }
+      })
+      const blob = new Blob([result.bundle], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `dbdesk-backup-${new Date().toISOString().slice(0, 10)}.dbdesk`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setBackupMessage(
+        `${result.connections_count} connections, ${result.views_count} views, ${result.queries_count} queries.`
+      )
+    } catch (error) {
+      setBackupMessage(String(error.message || error))
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const pickRestoreFile = async (event) => {
+    const file = event.target.files && event.target.files[0]
+    if (!file) return
+    setRestoreName(file.name)
+    setRestoreBundle(await file.text())
+    setRestorePreview(null)
+    setRestoreMessage('')
+  }
+
+  const previewRestore = async () => {
+    setRestoreBusy(true)
+    setRestoreMessage('')
+    try {
+      const result = await rest('/backup/import', {
+        method: 'POST',
+        body: { bundle: restoreBundle, passphrase: restorePass, preview: true }
+      })
+      setRestorePreview(result)
+    } catch (error) {
+      setRestorePreview(null)
+      setRestoreMessage(String(error.message || error))
+    } finally {
+      setRestoreBusy(false)
+    }
+  }
+
+  const runRestore = async () => {
+    setRestoreBusy(true)
+    setRestoreMessage('')
+    try {
+      const result = await rest('/backup/import', {
+        method: 'POST',
+        body: { bundle: restoreBundle, passphrase: restorePass }
+      })
+      setRestoreMessage(
+        `Restored ${result.connections} connections, ${result.views} views, ${result.queries} queries.`
+      )
+      setRestorePreview(null)
+      window.dispatchEvent(new CustomEvent('dbdesk:reload'))
+    } catch (error) {
+      setRestoreMessage(String(error.message || error))
+    } finally {
+      setRestoreBusy(false)
+    }
+  }
+
+  const changeAppearance = (value) => {
+    setAppearance(value)
+    rest('/prefs', { method: 'POST', body: { appearance: value } }).catch(() => {})
+    window.dispatchEvent(new CustomEvent('dbdesk:appearance', { detail: value }))
+  }
+
   const toggleNotifications = (checked) => {
     setNotifyEnabled(checked)
     rest('/prefs', { method: 'POST', body: { notifications: checked } }).catch(() => {})
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[8px] border border-(--ui-stroke-secondary) bg-background shadow-2xl">
         <div className="flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2.5">
@@ -299,6 +400,32 @@ export default function SettingsDialog({ open, onClose, version }) {
                   {checking ? 'Checking…' : 'Check for updates'}
                 </Button>
               )}
+            </Row>
+          </Section>
+
+          <Section title="Appearance">
+            <Row label="Theme" hint="System follows the macOS Light/Dark setting.">
+              <div className="flex overflow-hidden rounded-[4px] border border-(--ui-stroke-secondary)">
+                {[
+                  ['system', 'System'],
+                  ['light', 'Light'],
+                  ['dark', 'Dark']
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => changeAppearance(value)}
+                    className={cn(
+                      'h-7 px-3 text-[11px] font-medium',
+                      appearance === value
+                        ? 'bg-primary text-white'
+                        : 'bg-background text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </Row>
           </Section>
 
@@ -545,6 +672,40 @@ export default function SettingsDialog({ open, onClose, version }) {
             </div>
           </Section>
 
+          <Section title="Backup & restore">
+            <Row
+              label="Backup all"
+              hint="Connections, saved views and queries. Passwords are optional and encrypted."
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setBackupMessage('')
+                  setBackupOpen(true)
+                }}
+              >
+                Backup…
+              </Button>
+            </Row>
+            <Row
+              label="Restore"
+              hint="Merge a backup from another Mac. Passwords are asked again unless included."
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setRestoreMessage('')
+                  setRestorePreview(null)
+                  setRestoreOpen(true)
+                }}
+              >
+                Restore…
+              </Button>
+            </Row>
+          </Section>
+
           <Section title="Data">
             <Row label="Application data" hint="Encrypted connections, audit, tokens.">
               <code className="max-w-[320px] truncate rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-1.5 py-0.5 font-mono text-[10.5px]">
@@ -565,5 +726,122 @@ export default function SettingsDialog({ open, onClose, version }) {
         </div>
       </div>
     </div>
+
+      {backupOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+          <div className="flex w-full max-w-[460px] flex-col gap-3 rounded-[8px] border border-(--ui-stroke-secondary) bg-background p-4 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <Codicon name="cloud-upload" className="text-primary" />
+              <span className="text-[13px] font-semibold">Backup all</span>
+              <span className="flex-1" />
+              <Button variant="ghost" size="sm" title="Close" onClick={() => setBackupOpen(false)}>
+                <Codicon name="close" />
+              </Button>
+            </div>
+            <label className="flex items-center gap-2 text-[11.5px]">
+              <input
+                type="checkbox"
+                checked={backupSecrets}
+                onChange={(event) => setBackupSecrets(event.target.checked)}
+              />
+              Include database passwords (encrypted)
+            </label>
+            {backupSecrets ? (
+              <Input
+                type="password"
+                value={backupPass}
+                placeholder="Passphrase (min 8 characters)"
+                onChange={(event) => setBackupPass(event.target.value)}
+              />
+            ) : (
+              <div className="text-[10.5px] leading-4 text-(--ui-text-tertiary)">
+                Without passwords, restore opens each connection without a password and
+                asks you to fill it in.
+              </div>
+            )}
+            {backupMessage ? (
+              <div className="text-[10.5px] text-(--ui-text-secondary)">{backupMessage}</div>
+            ) : null}
+            <div className="flex items-center gap-2">
+              <Button size="sm" disabled={backupBusy} onClick={() => void exportBackup()}>
+                {backupBusy ? 'Preparing…' : 'Download backup'}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setBackupOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {restoreOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-[500px] flex-col gap-3 overflow-auto rounded-[8px] border border-(--ui-stroke-secondary) bg-background p-4 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <Codicon name="cloud-download" className="text-primary" />
+              <span className="text-[13px] font-semibold">Restore backup</span>
+              <span className="flex-1" />
+              <Button variant="ghost" size="sm" title="Close" onClick={() => setRestoreOpen(false)}>
+                <Codicon name="close" />
+              </Button>
+            </div>
+            <input
+              type="file"
+              accept=".dbdesk,.json,application/json"
+              onChange={(event) => void pickRestoreFile(event)}
+              className="text-[11px]"
+            />
+            {restoreName ? (
+              <div className="truncate font-mono text-[10.5px] text-(--ui-text-tertiary)">
+                {restoreName}
+              </div>
+            ) : null}
+            <Input
+              type="password"
+              value={restorePass}
+              placeholder="Passphrase (if the backup is encrypted)"
+              onChange={(event) => setRestorePass(event.target.value)}
+            />
+            {restorePreview ? (
+              <div className="flex flex-col gap-1 rounded-[5px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2.5 py-2 text-[10.5px] text-(--ui-text-secondary)">
+                <span>
+                  {restorePreview.count} connections · {restorePreview.views} views ·{' '}
+                  {restorePreview.queries} queries
+                </span>
+                {restorePreview.connections.slice(0, 8).map((item) => (
+                  <span key={`${item.name}-${item.database}`} className="truncate font-mono">
+                    {item.kind} · {item.name} · {item.database}
+                    {item.has_password ? ' · password included' : ''}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {restoreMessage ? (
+              <div className="text-[10.5px] text-(--ui-text-secondary)">{restoreMessage}</div>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={restoreBusy || !restoreBundle}
+                onClick={() => void previewRestore()}
+              >
+                {restoreBusy ? 'Reading…' : 'Preview'}
+              </Button>
+              <Button
+                size="sm"
+                disabled={restoreBusy || !restoreBundle}
+                onClick={() => void runRestore()}
+              >
+                Restore
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setRestoreOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   )
 }
