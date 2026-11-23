@@ -3906,57 +3906,60 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
     }
   }
 
-  const assistantCard = (message, index) =>
+  const assistantTurn = (message, index) =>
     jsxs('div', {
       key: `a-${index}`,
-      className:
-        'flex flex-col gap-1.5 rounded-[5px] border border-(--ui-stroke-secondary) bg-background p-2',
+      className: 'flex flex-col gap-2 pb-1',
       children: [
         jsxs('div', {
-          key: 'meta',
-          className: 'flex flex-wrap items-center gap-2 text-[11px] text-(--ui-text-secondary)',
+          key: 'thought',
+          className: 'flex items-center gap-1.5 text-[11px] text-(--ui-text-tertiary)',
           children: [
-            jsx('span', { key: 'e', children: message.explanation || 'Result' }),
+            jsx(Codicon, { key: 'i', name: 'sparkle' }),
             jsx('span', {
-              key: 'n',
-              className: 'text-(--ui-text-tertiary)',
-              children: `${message.rows ? message.rows.length : 0} row(s) · ${message.duration_ms || 0} ms`
-            }),
-            message.retried
-              ? jsx('span', {
-                  key: 'r',
-                  className: 'text-amber-600 dark:text-amber-300',
-                  children: 'corrected after an error'
-                })
-              : null
+              key: 't',
+              children: `Thought · ${message.duration_ms || 0} ms${message.retried ? ' · corrected' : ''}`
+            })
           ]
         }),
+        jsx('div', {
+          key: 'text',
+          className: 'text-[12.5px] leading-relaxed whitespace-pre-wrap',
+          children: message.explanation || 'Result'
+        }),
+        jsx('pre', {
+          key: 'sql',
+          className:
+            'overflow-auto rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2.5 font-mono text-[10.5px] leading-5 whitespace-pre-wrap',
+          children: message.sql
+        }),
         jsxs('div', {
-          key: 'sqlrow',
-          className: 'flex items-start gap-2',
+          key: 'acts',
+          className: 'flex items-center gap-1',
           children: [
-            jsx('pre', {
-              key: 'sql',
-              className:
-                'max-h-24 min-w-0 flex-1 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2 font-mono text-[10.5px] whitespace-pre-wrap',
-              children: message.sql
+            jsx(Button, {
+              variant: 'ghost',
+              size: 'xs',
+              onClick: () => void writeClipboardText(message.sql),
+              children: jsxs('span', {
+                className: 'flex items-center gap-1',
+                children: [jsx(Codicon, { name: 'copy' }), 'Copy SQL']
+              })
             }),
-            jsxs('div', {
-              key: 'acts',
-              className: 'flex shrink-0 flex-col gap-1',
+            jsx(Button, {
+              variant: 'ghost',
+              size: 'xs',
+              onClick: () => onUseSql(message.sql),
+              children: jsxs('span', {
+                className: 'flex items-center gap-1',
+                children: [jsx(Codicon, { name: 'go-to-file' }), 'Open in SQL']
+              })
+            }),
+            jsxs('span', {
+              className: 'ml-auto flex items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
               children: [
-                jsx(Button, {
-                  variant: 'ghost',
-                  size: 'xs',
-                  onClick: () => void writeClipboardText(message.sql),
-                  children: 'Copy SQL'
-                }),
-                jsx(Button, {
-                  variant: 'ghost',
-                  size: 'xs',
-                  onClick: () => onUseSql(message.sql),
-                  children: 'Open in SQL'
-                })
+                jsx(Codicon, { name: 'history' }),
+                `${message.rows ? message.rows.length : 0} row(s)`
               ]
             })
           ]
@@ -3965,7 +3968,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
           ? jsx('div', {
               key: 'grid',
               className:
-                'max-h-52 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary)',
+                'max-h-56 overflow-auto rounded-[6px] border border-(--ui-stroke-secondary)',
               children: jsx('table', {
                 className: 'dbd-grid-table dbd-mono min-w-full',
                 children: [
@@ -4016,35 +4019,20 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
   return jsxs('div', {
     key: 'ai-panel',
     className:
-      'absolute inset-y-0 right-0 z-30 flex w-[360px] max-w-[85vw] flex-col gap-2 border-l border-(--ui-stroke-secondary) bg-background px-3 py-2 shadow-2xl',
+      'absolute inset-y-0 right-0 z-30 flex w-[400px] max-w-[88vw] flex-col border-l border-(--ui-stroke-secondary) bg-background shadow-2xl',
     children: [
       jsxs('div', {
-        key: 'row',
-        className: 'flex items-center gap-2',
+        key: 'head',
+        className: 'flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
         children: [
           jsx(Codicon, { key: 'i', name: 'sparkle', className: 'text-primary' }),
-          jsx('input', {
-            key: 'q',
-            value: prompt,
-            autoFocus: true,
-            placeholder: 'Ask or follow up — e.g. "pecahkan ikut bulan"',
-            onChange: (event) => setPrompt(event.target.value),
-            onKeyDown: (event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                void ask()
-              }
-            },
-            className:
-              'h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-xs outline-none focus:border-primary/60'
+          jsx('span', { key: 't', className: 'text-[13px] font-semibold', children: 'AI chat' }),
+          jsx('span', {
+            key: 'm',
+            className: 'truncate text-[10.5px] text-(--ui-text-tertiary)',
+            children: config && config.model ? config.model : ''
           }),
-          jsx(Button, {
-            key: 'run',
-            size: 'sm',
-            disabled: busy || !prompt.trim() || (config && !config.configured),
-            onClick: () => void ask(),
-            children: busy ? 'Thinking…' : messages.length ? 'Send' : 'Ask'
-          }),
+          jsx('span', { key: 'sp', className: 'flex-1' }),
           jsx(Button, {
             key: 'new',
             variant: 'ghost',
@@ -4052,7 +4040,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
             title: 'New chat',
             disabled: !messages.length,
             onClick: () => setMessages([]),
-            children: jsx(Codicon, { name: 'clear-all' })
+            children: jsx(Codicon, { name: 'add' })
           }),
           jsx(Button, {
             key: 'settings',
@@ -4076,11 +4064,11 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
         ? jsxs('div', {
             key: 'settings',
             className:
-              'flex flex-col gap-2 rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-2',
+              'flex shrink-0 flex-col gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3',
             children: [
               jsxs('div', {
                 key: 'fields',
-                className: 'grid grid-cols-1 gap-2 sm:grid-cols-3',
+                className: 'grid grid-cols-1 gap-2',
                 children: [
                   jsx('input', {
                     key: 'base',
@@ -4088,7 +4076,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                     placeholder: 'Base URL (https://api.openai.com/v1)',
                     onChange: (event) => setBaseUrl(event.target.value),
                     className:
-                      'h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                      'h-8 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
                   }),
                   jsx('input', {
                     key: 'model',
@@ -4096,7 +4084,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                     placeholder: 'Model (gpt-4o-mini)',
                     onChange: (event) => setModel(event.target.value),
                     className:
-                      'h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                      'h-8 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
                   }),
                   jsx('input', {
                     key: 'key',
@@ -4105,7 +4093,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                     placeholder: config && config.configured ? 'API key saved' : 'API key',
                     onChange: (event) => setApiKey(event.target.value),
                     className:
-                      'h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                      'h-8 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
                   })
                 ]
               }),
@@ -4121,9 +4109,8 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                     children: saving ? 'Saving…' : 'Save'
                   }),
                   jsx('span', {
-                    className: 'text-[10.5px] text-(--ui-text-tertiary)',
-                    children:
-                      'OpenAI-compatible endpoint. Only table/column names, your questions and the previous SQL are sent — no rows.'
+                    className: 'text-[10px] leading-4 text-(--ui-text-tertiary)',
+                    children: 'Schema + questions only. No row data is sent.'
                   })
                 ]
               })
@@ -4134,57 +4121,117 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
         ? jsx('div', {
             key: 'err',
             className:
-              'rounded-[4px] bg-destructive/10 px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap text-destructive',
+              'mx-3 mt-3 rounded-[6px] bg-destructive/10 px-2.5 py-2 font-mono text-[11px] whitespace-pre-wrap text-destructive',
             children: error
           })
         : null,
-      messages.length || busy
-        ? jsxs('div', {
-            key: 'thread',
-            className: 'flex max-h-[44vh] min-h-0 flex-col gap-2 overflow-auto pr-1',
-            children: [
-              ...messages.map((message, index) =>
-                message.role === 'user'
-                  ? jsx(
-                      'div',
-                      {
-                        key: `u-${index}`,
-                        className:
-                          'ml-auto max-w-[85%] rounded-[6px] border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-[12px] whitespace-pre-wrap',
-                        children: message.text
-                      },
-                      `u-${index}`
-                    )
-                  : message.role === 'error'
-                    ? jsx(
-                        'div',
-                        {
-                          key: `e-${index}`,
-                          className:
-                            'rounded-[5px] bg-destructive/10 px-2.5 py-1.5 font-mono text-[11px] whitespace-pre-wrap text-destructive',
-                          children: message.text
-                        },
-                        `e-${index}`
-                      )
-                    : assistantCard(message, index)
-              ),
-              busy
-                ? jsx('div', {
-                    key: 'thinking',
-                    className: 'text-[11px] text-(--ui-text-tertiary)',
-                    children: 'Thinking…'
+      jsxs('div', {
+        key: 'thread',
+        className: 'flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-4 py-4',
+        children: [
+          ...messages.map((message, index) =>
+            message.role === 'user'
+              ? jsx(
+                  'div',
+                  {
+                    key: `u-${index}`,
+                    className:
+                      'rounded-[8px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-[12.5px] whitespace-pre-wrap',
+                    children: message.text
+                  },
+                  `u-${index}`
+                )
+              : message.role === 'error'
+                ? jsx(
+                    'div',
+                    {
+                      key: `e-${index}`,
+                      className:
+                        'rounded-[6px] bg-destructive/10 px-2.5 py-2 font-mono text-[11px] whitespace-pre-wrap text-destructive',
+                      children: message.text
+                    },
+                    `e-${index}`
+                  )
+                : assistantTurn(message, index)
+          ),
+          busy
+            ? jsxs('div', {
+                key: 'thinking',
+                className: 'flex items-center gap-2 text-[11px] text-(--ui-text-tertiary)',
+                children: [
+                  jsx(Codicon, { name: 'loading', className: 'animate-spin' }),
+                  'Thinking…'
+                ]
+              })
+            : null,
+          !messages.length && !busy
+            ? jsxs('div', {
+                key: 'hint',
+                className: 'flex flex-1 flex-col items-center justify-center gap-2 text-center',
+                children: [
+                  jsx(Codicon, {
+                    name: 'sparkle',
+                    className: 'text-2xl text-(--ui-text-tertiary) opacity-60'
+                  }),
+                  jsx('div', {
+                    className: 'text-[12px] font-medium text-(--ui-text-secondary)',
+                    children: table ? `Ask about ${schema}.${table}` : 'Ask about your data'
+                  }),
+                  jsx('div', {
+                    className: 'max-w-[260px] text-[11px] leading-5 text-(--ui-text-tertiary)',
+                    children: 'Type a question, press Enter, then follow up without losing context.'
                   })
-                : null,
-              jsx('div', { key: 'end', ref: endRef })
-            ]
-          })
-        : jsx('div', {
-            key: 'hint',
-            className: 'text-[11px] text-(--ui-text-tertiary)',
-            children: table
-              ? `Ask about ${schema}.${table}, or follow up after the first answer.`
-              : 'Pick a table for the best context, then ask a question.'
-          })
+                ]
+              })
+            : null,
+          jsx('div', { key: 'end', ref: endRef })
+        ]
+      }),
+      jsx('div', {
+        key: 'composer',
+        className: 'shrink-0 border-t border-(--ui-stroke-secondary) p-3',
+        children: jsxs('div', {
+          className:
+            'flex flex-col gap-1 rounded-[10px] border border-(--ui-stroke-secondary) bg-background p-2 shadow-sm focus-within:border-primary/50',
+          children: [
+            jsx('textarea', {
+              value: prompt,
+              rows: 3,
+              placeholder: 'Ask about this data…',
+              onChange: (event) => setPrompt(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void ask()
+                }
+              },
+              className:
+                'w-full resize-none bg-transparent px-1 py-1 text-[12.5px] leading-5 outline-none placeholder:text-(--ui-text-tertiary)'
+            }),
+            jsxs('div', {
+              className: 'flex items-center gap-2',
+              children: [
+                jsx('span', {
+                  className:
+                    'rounded-[4px] border border-(--ui-stroke-secondary) px-1.5 py-0.5 text-[10px] text-(--ui-text-tertiary)',
+                  children: config && config.model ? config.model : 'model'
+                }),
+                jsx('span', {
+                  className: 'text-[10px] text-(--ui-text-tertiary)',
+                  children: 'Enter to send · Shift+Enter for a new line'
+                }),
+                jsx('span', { className: 'flex-1' }),
+                jsx(Button, {
+                  size: 'sm',
+                  disabled: busy || !prompt.trim() || (config && !config.configured),
+                  onClick: () => void ask(),
+                  children: busy ? 'Thinking…' : 'Send'
+                })
+              ]
+            })
+          ]
+        })
+      })
     ]
   })
 }
@@ -6027,7 +6074,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {})
                     key: 'data',
                     className: cn(
                       'flex min-h-0 flex-1 flex-col',
-                      aiOpen && 'relative pr-[360px]'
+                      aiOpen && 'relative pr-[400px]'
                     ),
                     children: [
                       jsxs('div', {
