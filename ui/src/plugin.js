@@ -3716,6 +3716,38 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                     children: 'Production connection (extra confirmation on every write)'
                   })
                 ]
+              }),
+              jsxs('label', {
+                className: 'flex items-center gap-2 text-xs',
+                children: [
+                  jsx('input', {
+                    key: 'cb',
+                    type: 'checkbox',
+                    checked: draft.ai_schema !== false,
+                    onChange: (event) =>
+                      onDraft({ ...draft, ai_schema: event.target.checked })
+                  }),
+                  jsx('span', {
+                    key: 't',
+                    children: 'AI can see this schema and let the agent inspect it'
+                  })
+                ]
+              }),
+              jsxs('label', {
+                className: 'flex items-center gap-2 text-xs',
+                children: [
+                  jsx('input', {
+                    key: 'cb',
+                    type: 'checkbox',
+                    checked: draft.ai_query !== false,
+                    onChange: (event) =>
+                      onDraft({ ...draft, ai_query: event.target.checked })
+                  }),
+                  jsx('span', {
+                    key: 't',
+                    children: 'AI can run read-only queries (turn off for inspect-only)'
+                  })
+                ]
               })
             ]
           }),
@@ -3791,6 +3823,8 @@ function emptyDraft() {
     sslmode: 'prefer',
     readonly: true,
     production: false,
+    ai_schema: true,
+    ai_query: true,
     ssh_host: '',
     ssh_user: 'root',
     ssh_port: 22,
@@ -3823,6 +3857,9 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [catalog, setCatalog] = useState([])
+  const [scope, setScope] = useState([])
+  const [scopeOpen, setScopeOpen] = useState(false)
   const endRef = useRef(null)
 
   useEffect(() => {
@@ -3837,6 +3874,16 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
   }, [])
 
   useEffect(() => {
+    call('/ai/catalog')
+      .then((value) => {
+        const entries = (value && value.connections) || []
+        setCatalog(entries)
+        setScope((current) => (current.length ? current : entries.map((entry) => entry.id)))
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     setMessages([])
     setPrompt('')
     setError('')
@@ -3846,11 +3893,21 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [messages, busy])
 
+  const toggleScope = (id) => {
+    setScope((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+    )
+  }
+
   const ask = async () => {
     const question = prompt.trim()
     if (!question || busy) return
     if (config && !config.configured) {
       setSettingsOpen(true)
+      return
+    }
+    if (!scope.length) {
+      setError('Pick at least one AI-enabled database in the scope bar.')
       return
     }
     const history = messages
@@ -3861,17 +3918,24 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
         content:
           message.role === 'user'
             ? message.text
-            : JSON.stringify({ sql: message.sql, explanation: message.explanation })
+            : JSON.stringify({
+                sql:
+                  message.sql ||
+                  (message.sources && message.sources[0] && message.sources[0].sql) ||
+                  '',
+                explanation: message.explanation
+              })
       }))
     setMessages((current) => [...current, { role: 'user', text: question }])
     setPrompt('')
     setBusy(true)
     setError('')
     try {
-      const value = await call('/ai/ask', {
+      const value = await call('/ai/agent', {
         method: 'POST',
         body: {
           connection_id: connectionId,
+          connection_ids: scope,
           database,
           schema: schema || '',
           table: table || '',
@@ -3906,8 +3970,119 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
     }
   }
 
+  const sourceBlock = (source, index) =>
+    jsxs('div', {
+      key: `src-${index}`,
+      className: 'flex flex-col gap-1.5 rounded-[6px] border border-(--ui-stroke-secondary) p-2',
+      children: [
+        jsxs('div', {
+          key: 'head',
+          className: 'flex items-center gap-1.5 text-[10.5px] text-(--ui-text-tertiary)',
+          children: [
+            jsx(Codicon, { key: 'i', name: 'database' }),
+            jsx('span', {
+              key: 'n',
+              className: 'truncate font-medium text-(--ui-text-secondary)',
+              children: source.name
+            }),
+            jsx('span', { key: 'k', children: source.kind }),
+            jsx('span', { key: 'r', className: 'ml-auto', children: `${source.rows || 0} row(s)` })
+          ]
+        }),
+        jsx('pre', {
+          key: 'sql',
+          className:
+            'overflow-auto rounded-[5px] bg-(--ui-bg-secondary) p-2 font-mono text-[10.5px] leading-5 whitespace-pre-wrap',
+          children: source.sql
+        }),
+        jsxs('div', {
+          key: 'acts',
+          className: 'flex items-center gap-1',
+          children: [
+            jsx(Button, {
+              key: 'copy',
+              variant: 'ghost',
+              size: 'xs',
+              onClick: () => void writeClipboardText(source.sql),
+              children: jsxs('span', {
+                className: 'flex items-center gap-1',
+                children: [jsx(Codicon, { name: 'copy' }), 'Copy SQL']
+              })
+            }),
+            source.connection === connectionId
+              ? jsx(Button, {
+                  key: 'open',
+                  variant: 'ghost',
+                  size: 'xs',
+                  onClick: () => onUseSql(source.sql),
+                  children: jsxs('span', {
+                    className: 'flex items-center gap-1',
+                    children: [jsx(Codicon, { name: 'go-to-file' }), 'Open in SQL']
+                  })
+                })
+              : null
+          ]
+        })
+      ]
+    })
+
+  const resultTable = (message) => {
+    if (!message.columns || !message.rows || !message.rows.length) return null
+    return jsxs('div', {
+      key: 'grid',
+      className: 'max-h-56 overflow-auto rounded-[6px] border border-(--ui-stroke-secondary)',
+      children: [
+        jsx('table', {
+          key: 't',
+          className: 'dbd-grid-table dbd-mono min-w-full',
+          children: [
+            jsx('thead', {
+              key: 'h',
+              children: jsx('tr', {
+                children: message.columns.map((column) =>
+                  jsx('th', { children: column.name }, column.name)
+                )
+              })
+            }),
+            jsx('tbody', {
+              key: 'b',
+              children: message.rows.slice(0, 100).map((row, rowIndex) =>
+                jsx(
+                  'tr',
+                  {
+                    children: row.map((value, column) =>
+                      jsx(
+                        'td',
+                        {
+                          className: 'px-2 py-1',
+                          children:
+                            value === null || value === undefined
+                              ? jsx('span', {
+                                  className: 'text-(--ui-text-tertiary) italic',
+                                  children: 'NULL'
+                                })
+                              : typeof value === 'object'
+                                ? JSON.stringify(value)
+                                : String(value)
+                        },
+                        column
+                      )
+                    )
+                  },
+                  rowIndex
+                )
+              )
+            })
+          ]
+        })
+      ]
+    })
+  }
+
   const assistantTurn = (message, index) => {
-    if (!message.sql) {
+    const sources = message.sources || []
+    const primary = message.sql || (sources[0] ? sources[0].sql : '')
+    if (!primary && !sources.length) {
       return jsx(
         'div',
         {
@@ -3918,6 +4093,10 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
         `a-${index}`
       )
     }
+    const ms = message.elapsed_ms || message.duration_ms || 0
+    const thought = [`Thought · ${ms} ms`]
+    if (sources.length > 1) thought.push(`${sources.length} databases`)
+    if (message.join_ms) thought.push(`joined in ${message.join_ms} ms`)
     return jsxs('div', {
       key: `a-${index}`,
       className: 'flex flex-col gap-2 pb-1',
@@ -3929,7 +4108,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
             jsx(Codicon, { key: 'i', name: 'sparkle' }),
             jsx('span', {
               key: 't',
-              children: `Thought · ${message.duration_ms || 0} ms${message.retried ? ' · corrected' : ''}`
+              children: thought.join(' · ') + (message.retried ? ' · corrected' : '')
             })
           ]
         }),
@@ -3938,95 +4117,118 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
           className: 'text-[12.5px] leading-relaxed whitespace-pre-wrap',
           children: message.explanation || 'Result'
         }),
-        jsx('pre', {
-          key: 'sql',
-          className:
-            'overflow-auto rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2.5 font-mono text-[10.5px] leading-5 whitespace-pre-wrap',
-          children: message.sql
-        }),
-        jsxs('div', {
-          key: 'acts',
-          className: 'flex items-center gap-1',
-          children: [
-            jsx(Button, {
-              variant: 'ghost',
-              size: 'xs',
-              onClick: () => void writeClipboardText(message.sql),
-              children: jsxs('span', {
+        ...(sources.length
+          ? sources.map(sourceBlock)
+          : [
+              jsx('pre', {
+                key: 'sql',
+                className:
+                  'overflow-auto rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2.5 font-mono text-[10.5px] leading-5 whitespace-pre-wrap',
+                children: primary
+              }),
+              jsxs('div', {
+                key: 'acts',
                 className: 'flex items-center gap-1',
-                children: [jsx(Codicon, { name: 'copy' }), 'Copy SQL']
-              })
-            }),
-            jsx(Button, {
-              variant: 'ghost',
-              size: 'xs',
-              onClick: () => onUseSql(message.sql),
-              children: jsxs('span', {
-                className: 'flex items-center gap-1',
-                children: [jsx(Codicon, { name: 'go-to-file' }), 'Open in SQL']
-              })
-            }),
-            jsxs('span', {
-              className: 'ml-auto flex items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
-              children: [
-                jsx(Codicon, { name: 'history' }),
-                `${message.rows ? message.rows.length : 0} row(s)`
-              ]
-            })
-          ]
-        }),
-        message.columns && message.rows && message.rows.length
-          ? jsx('div', {
-              key: 'grid',
-              className:
-                'max-h-56 overflow-auto rounded-[6px] border border-(--ui-stroke-secondary)',
-              children: jsx('table', {
-                className: 'dbd-grid-table dbd-mono min-w-full',
                 children: [
-                  jsx('thead', {
-                    key: 'h',
-                    children: jsx('tr', {
-                      children: message.columns.map((column) =>
-                        jsx('th', { children: column.name }, column.name)
-                      )
+                  jsx(Button, {
+                    variant: 'ghost',
+                    size: 'xs',
+                    onClick: () => void writeClipboardText(primary),
+                    children: jsxs('span', {
+                      className: 'flex items-center gap-1',
+                      children: [jsx(Codicon, { name: 'copy' }), 'Copy SQL']
                     })
                   }),
-                  jsx('tbody', {
-                    key: 'b',
-                    children: message.rows.slice(0, 100).map((row, rowIndex) =>
-                      jsx(
-                        'tr',
-                        {
-                          children: row.map((value, column) =>
-                            jsx(
-                              'td',
-                              {
-                                className: 'px-2 py-1',
-                                children:
-                                  value === null || value === undefined
-                                    ? jsx('span', {
-                                        className: 'text-(--ui-text-tertiary) italic',
-                                        children: 'NULL'
-                                      })
-                                    : typeof value === 'object'
-                                      ? JSON.stringify(value)
-                                      : String(value)
-                              },
-                              column
-                            )
-                          )
-                        },
-                        rowIndex
-                      )
-                    )
+                  jsx(Button, {
+                    variant: 'ghost',
+                    size: 'xs',
+                    onClick: () => onUseSql(primary),
+                    children: jsxs('span', {
+                      className: 'flex items-center gap-1',
+                      children: [jsx(Codicon, { name: 'go-to-file' }), 'Open in SQL']
+                    })
                   })
                 ]
               })
+            ]),
+        message.join_sql
+          ? jsxs('div', {
+              key: 'join',
+              className:
+                'flex flex-col gap-1 rounded-[6px] border border-(--ui-stroke-secondary) p-2',
+              children: [
+                jsxs('div', {
+                  key: 'h',
+                  className: 'flex items-center gap-1.5 text-[10.5px] text-(--ui-text-tertiary)',
+                  children: [
+                    jsx(Codicon, { key: 'i', name: 'link' }),
+                    jsx('span', { key: 't', children: 'Local join' }),
+                    jsx('span', {
+                      key: 'n',
+                      className: 'ml-auto',
+                      children: 'rows never leave this Mac'
+                    })
+                  ]
+                }),
+                jsx('pre', {
+                  key: 'sql',
+                  className:
+                    'overflow-auto rounded-[5px] bg-(--ui-bg-secondary) p-2 font-mono text-[10.5px] leading-5 whitespace-pre-wrap',
+                  children: message.join_sql
+                }),
+                jsx(Button, {
+                  key: 'copy',
+                  variant: 'ghost',
+                  size: 'xs',
+                  onClick: () => void writeClipboardText(message.join_sql),
+                  children: jsxs('span', {
+                    className: 'flex items-center gap-1',
+                    children: [jsx(Codicon, { name: 'copy' }), 'Copy join SQL']
+                  })
+                })
+              ]
             })
-          : null
-      ]
+          : null,
+        resultTable(message),
+        jsxs('div', {
+          key: 'meta',
+          className: 'flex flex-col gap-0.5 text-[10px] text-(--ui-text-tertiary)',
+          children: [
+            jsxs('div', {
+              key: 'rows-line',
+              className: 'flex items-center gap-1.5',
+              children: [
+                jsx(Codicon, { key: 'i', name: 'history' }),
+                jsx('span', {
+                  key: 'rows',
+                  children: `${message.rows ? message.rows.length : 0} row(s)${
+                    message.truncated ? ' · truncated' : ''
+                  }`
+                }),
+                sources.length > 1
+                  ? jsx('span', { key: 'srcs', children: ` · ${sources.length} sources` })
+                  : null
+              ]
+            }),
+            message.steps && message.steps.length
+              ? jsx('div', {
+                  key: 'steps',
+                  className: 'truncate',
+                  title: message.steps.join(' · '),
+                  children: message.steps.join(' · ')
+                })
+              : null
+          ]
+        })
+      ].filter(Boolean)
     })
   }
+
+  const enabledCount = catalog.filter((entry) => scope.includes(entry.id)).length
+  const scopeLabel =
+    catalog.length && enabledCount === catalog.length
+      ? `All databases (${catalog.length})`
+      : `${enabledCount} of ${catalog.length} databases`
 
   return jsxs('div', {
     key: 'ai-panel',
@@ -4072,6 +4274,113 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
           })
         ]
       }),
+      catalog.length > 1
+        ? jsxs('div', {
+            key: 'scope',
+            className:
+              'relative shrink-0 border-b border-(--ui-stroke-secondary) px-3 py-1 text-[10.5px] text-(--ui-text-tertiary)',
+            children: [
+              jsxs('div', {
+                key: 'bar',
+                className: 'flex items-center gap-1.5',
+                children: [
+                  jsx(Codicon, { key: 'i', name: 'server' }),
+                  jsx('span', { key: 'l', children: 'Scope' }),
+                  jsx('button', {
+                    key: 'b',
+                    type: 'button',
+                    onClick: () => setScopeOpen((open) => !open),
+                    className:
+                      'flex items-center gap-1 rounded-[3px] border border-(--ui-stroke-secondary) px-1.5 py-0.5 text-[10.5px] text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)',
+                    children: jsxs('span', {
+                      className: 'flex items-center gap-1',
+                      children: [
+                        scopeLabel,
+                        jsx(Codicon, { name: scopeOpen ? 'chevron-up' : 'chevron-down' })
+                      ]
+                    })
+                  }),
+                  jsx('span', { key: 'sp', className: 'flex-1' }),
+                  jsx('span', {
+                    key: 'q',
+                    title: 'Read-only: executed statements are recorded in the audit log',
+                    children: 'read-only'
+                  })
+                ]
+              }),
+              scopeOpen
+                ? jsxs('div', {
+                    key: 'pop',
+                    className:
+                      'absolute top-full right-3 left-3 z-40 mt-1 max-h-64 overflow-auto rounded-[6px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-lg',
+                    children: [
+                      ...catalog.map((entry) =>
+                        jsxs('label', {
+                          key: entry.id,
+                          className:
+                            'flex cursor-pointer items-center gap-2 rounded-[4px] px-2 py-1 text-[11px] hover:bg-(--ui-bg-secondary)',
+                          children: [
+                            jsx('input', {
+                              key: 'cb',
+                              type: 'checkbox',
+                              checked: scope.includes(entry.id),
+                              onChange: () => toggleScope(entry.id)
+                            }),
+                            jsx('span', {
+                              key: 'n',
+                              className: 'min-w-0 flex-1 truncate text-(--ui-text-secondary)',
+                              children: entry.name
+                            }),
+                            jsx('span', {
+                              key: 'k',
+                              className: 'text-[9.5px] uppercase',
+                              children: entry.kind
+                            }),
+                            entry.query
+                              ? null
+                              : jsx('span', {
+                                  key: 'q',
+                                  className: 'text-[9.5px] text-amber-600 dark:text-amber-300',
+                                  children: 'inspect'
+                                })
+                          ]
+                        })
+                      ),
+                      jsxs('div', {
+                        key: 'acts',
+                        className:
+                          'mt-1 flex items-center gap-1 border-t border-(--ui-stroke-secondary) pt-1',
+                        children: [
+                          jsx(Button, {
+                            key: 'all',
+                            variant: 'ghost',
+                            size: 'xs',
+                            onClick: () => setScope(catalog.map((entry) => entry.id)),
+                            children: 'All'
+                          }),
+                          jsx(Button, {
+                            key: 'only',
+                            variant: 'ghost',
+                            size: 'xs',
+                            disabled: !connectionId,
+                            onClick: () => setScope(connectionId ? [connectionId] : []),
+                            children: 'Current only'
+                          }),
+                          jsx(Button, {
+                            key: 'none',
+                            variant: 'ghost',
+                            size: 'xs',
+                            onClick: () => setScope([]),
+                            children: 'None'
+                          })
+                        ]
+                      })
+                    ]
+                  })
+                : null
+            ]
+          })
+        : null,
       settingsOpen
         ? jsxs('div', {
             key: 'settings',
@@ -4122,7 +4431,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                   }),
                   jsx('span', {
                     className: 'text-[10px] leading-4 text-(--ui-text-tertiary)',
-                    children: 'Schema + questions only. No row data is sent.'
+                    children: 'Schema + questions only. Rows are joined locally, never sent.'
                   })
                 ]
               })
@@ -4190,8 +4499,11 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                     children: table ? `Ask about ${schema}.${table}` : 'Ask about your data'
                   }),
                   jsx('div', {
-                    className: 'max-w-[260px] text-[11px] leading-5 text-(--ui-text-tertiary)',
-                    children: 'Type a question, press Enter, then follow up without losing context.'
+                    className: 'max-w-[280px] text-[11px] leading-5 text-(--ui-text-tertiary)',
+                    children:
+                      catalog.length > 1
+                        ? 'Ask across databases: the agent inspects schemas, runs read-only SQL, then joins the rows locally.'
+                        : 'Type a question, press Enter, then follow up without losing context.'
                   })
                 ]
               })
@@ -4209,7 +4521,8 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
             jsx('textarea', {
               value: prompt,
               rows: 3,
-              placeholder: 'Ask about this data…',
+              placeholder:
+                catalog.length > 1 ? 'Ask across your databases…' : 'Ask about this data…',
               onChange: (event) => setPrompt(event.target.value),
               onKeyDown: (event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
@@ -4229,13 +4542,14 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                   children: config && config.model ? config.model : 'model'
                 }),
                 jsx('span', {
-                  className: 'text-[10px] text-(--ui-text-tertiary)',
+                  className: 'truncate text-[10px] text-(--ui-text-tertiary)',
                   children: 'Enter to send · Shift+Enter for a new line'
                 }),
                 jsx('span', { className: 'flex-1' }),
                 jsx(Button, {
                   size: 'sm',
-                  disabled: busy || !prompt.trim() || (config && !config.configured),
+                  disabled:
+                    busy || !prompt.trim() || (config && !config.configured) || !scope.length,
                   onClick: () => void ask(),
                   children: busy ? 'Thinking…' : 'Send'
                 })

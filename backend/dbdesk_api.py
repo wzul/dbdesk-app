@@ -3317,6 +3317,467 @@ def _ai_setup(question: str, history: Any) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# Multi-database agent (discovery -> plan -> local join)
+# --------------------------------------------------------------------------- #
+
+AI_AGENT_STEPS = 4
+AI_AGENT_MAX_SOURCES = 3
+AI_AGENT_MAX_ROWS = 500
+AI_AGENT_SOURCE_ROWS = 5000
+AI_AGENT_JOIN_MS = 5000
+AI_KINDS = ("postgres", "mysql", "clickhouse", "sqlite")
+AI_NUMERIC_HINTS = (
+    "int", "serial", "float", "double", "decimal", "numeric", "real",
+    "number", "money", "year",
+)
+
+
+def _ai_kind_ok(conn: dict[str, Any]) -> bool:
+    return _kind(conn) in AI_KINDS
+
+
+def _ai_scope(ids: Any) -> list[dict[str, Any]]:
+    """AI-enabled connections, optionally restricted to a set of ids.
+
+    A connection is AI-enabled unless ``ai_schema`` was switched off. Only
+    schema-capable kinds are eligible; MCP/HTTP connections stay manual.
+    """
+    explicit = ids is not None
+    wanted = {str(value) for value in (ids or []) if str(value).strip()}
+    out: list[dict[str, Any]] = []
+    for conn in _load():
+        if not _ai_kind_ok(conn):
+            continue
+        if explicit and conn["id"] not in wanted:
+            continue
+        if not bool(conn.get("ai_schema", True)):
+            continue
+        out.append(dict(conn, kind=_kind(conn)))
+    return out
+
+
+def _ai_catalog_entry(conn: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(conn.get("id") or ""),
+        "name": str(conn.get("name") or ""),
+        "group": str(conn.get("group") or ""),
+        "kind": _kind(conn),
+        "dbname": str(conn.get("dbname") or ""),
+        "query": bool(conn.get("ai_query", True)),
+    }
+
+
+def _ai_describe(conn: dict[str, Any], tables: Any) -> str:
+    label = str(conn.get("name") or conn.get("id") or "")
+    head = f"DATABASE {label} (kind={_kind(conn)}, db={conn.get('dbname') or ''})"
+    wanted = [str(value) for value in (tables or []) if str(value).strip()][:6]
+    try:
+        tree = _tree(conn)
+    except HTTPException as exc:
+        return head + f"\nCould not read schema: {exc.detail}"
+    if not wanted:
+        names = [f"{row.get('schema')}.{row.get('name')}" for row in tree][:80]
+        return head + "\nTables: " + (", ".join(names) if names else "(none)")
+    lines = [head]
+    for value in wanted:
+        schema, _, table = value.rpartition(".")
+        matches = [
+            row for row in tree
+            if str(row.get("name")) == (table or value)
+            and (not schema or str(row.get("schema")) == schema)
+        ][:1]
+        if not matches:
+            lines.append(f"{value}: not found")
+            continue
+        row = matches[0]
+        try:
+            columns = _columns(conn, str(row.get("schema")), str(row.get("name")))
+        except HTTPException as exc:
+            lines.append(f"{value}: columns unavailable ({exc.detail})")
+            continue
+        body = ", ".join(
+            f"{column.get('name')} {column.get('type') or ''}".strip()
+            for column in columns[:80]
+        )
+        lines.append(f"COLUMNS {row.get('schema')}.{row.get('name')}: {body}")
+    return "\n".join(lines)[:16000]
+
+
+def _ai_agent_system(
+    catalog: list[dict[str, Any]],
+    current: dict[str, Any] | None,
+    schema: str,
+    table: str,
+    question: str,
+) -> str:
+    today = datetime.date.today().isoformat()
+    focus = ""
+    if current is not None:
+        focus = _ai_schema_context(current, schema, table, question)
+    lines = []
+    for entry in catalog:
+        current_tag = " (current)" if current is not None and entry["id"] == current.get("id") else ""
+        group = f' group="{entry["group"]}"' if entry["group"] else ""
+        lines.append(
+            f'- id={entry["id"]} name="{entry["name"]}" kind={entry["kind"]} '
+            f'db="{entry["dbname"]}"{group} '
+            f'query={"yes" if entry["query"] else "no"}{current_tag}'
+        )
+    return (
+        "You are DB Desk's database agent. You can inspect and query several databases, "
+        "then join their results locally. Never ask for, output or infer credentials. "
+        "Reply with exactly one JSON object and no prose.\n\n"
+        "CURRENT DATABASE\n" + (focus or "(none)") + "\n\n"
+        "AI-ENABLED DATABASES\n" + ("\n".join(lines) or "(none)") + "\n\n"
+        "Actions:\n"
+        '1. {"action":"describe","requests":[{"connection":"<id>","tables":["schema.table"]}]} '
+        "when you need tables or columns that are not described yet. Omit tables to list them; "
+        "at most 3 requests.\n"
+        '2. {"action":"run","sources":[{"connection":"<id>","sql":"<statement>"}],'
+        '"join_sql":"<optional>","explanation":"<one sentence>"} '
+        "to answer with data. Each source SQL uses that database's own dialect and must be "
+        "read-only. For 2-3 sources also return join_sql: a SQLite query (read-only) over the "
+        "local temporary tables src_0, src_1, ... built from the returned columns. Rows are "
+        "joined on this Mac and are never sent to you.\n"
+        '3. {"action":"answer","answer":"<short reply>"} for greetings or non-data questions.\n'
+        "Rules: no INSERT/UPDATE/DELETE/DDL, one statement per source, quote identifiers when "
+        "needed, add LIMIT 500 to detail rows, use today's date " + today + " for relative dates, "
+        "and only use tables/columns you have seen. If the answer spans another listed database, "
+        "include it in the same plan instead of asking the user to pick."
+    )
+
+
+def _ai_unique_names(columns: list[dict[str, Any]]) -> list[str]:
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for index, column in enumerate(columns):
+        name = str(column.get("name") or f"col_{index + 1}")
+        count = seen.get(name, 0) + 1
+        seen[name] = count
+        out.append(name if count == 1 else f"{name}_{count}")
+    return out
+
+
+def _ai_sqlite_type(value: Any) -> str:
+    kind = str(value or "").lower()
+    return "NUMERIC" if any(hint in kind for hint in AI_NUMERIC_HINTS) else "TEXT"
+
+
+def _ai_join_cell(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, default=str)
+    if isinstance(value, (bytes, bytearray)):
+        return base64.b64encode(bytes(value)).decode("ascii")
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, (str, int, float)) or value is None:
+        return value
+    return str(value)
+
+
+def _ai_local_join(results: list[dict[str, Any]], join_sql: str) -> dict[str, Any]:
+    """Join per-database result sets inside an in-memory SQLite database.
+
+    Only SQL and row counts travel to the provider; the rows themselves are
+    loaded into temp tables ``src_0``, ``src_1`` ... and never leave the Mac.
+    """
+    sql = _check_sql(join_sql)
+    if not READ_SQL.match(sql):
+        raise HTTPException(400, "the local join must be a read-only SQLite query")
+    db = sqlite3.connect(":memory:")
+    started = time.monotonic()
+    deadline = started + AI_AGENT_JOIN_MS / 1000
+    columns: list[dict[str, Any]] = []
+    rows: list[list[Any]] = []
+    try:
+        for index, result in enumerate(results):
+            source_columns = result.get("columns") or []
+            if not source_columns:
+                raise HTTPException(400, f"source {index + 1} returned no columns")
+            names = _ai_unique_names(source_columns)
+            types = [_ai_sqlite_type(column.get("type")) for column in source_columns]
+            body = ", ".join(f'"{name}" {kind}' for name, kind in zip(names, types))
+            db.execute(f'CREATE TABLE "src_{index}" ({body})')
+            placeholders = ", ".join("?" for _ in names)
+            db.executemany(
+                f'INSERT INTO "src_{index}" VALUES ({placeholders})',
+                [[_ai_join_cell(value) for value in row] for row in result.get("rows") or []],
+            )
+        db.set_progress_handler(lambda: 1 if time.monotonic() > deadline else 0, 2000)
+        try:
+            cursor = db.execute(f"SELECT * FROM (\n{sql}\n) LIMIT {AI_AGENT_MAX_ROWS + 1}")
+            rows = [list(row) for row in cursor.fetchall()]
+            columns = [{"name": desc[0], "type": ""} for desc in cursor.description or []]
+        except sqlite3.OperationalError as exc:
+            if "interrupted" in str(exc).lower():
+                raise HTTPException(
+                    400, f"local join timed out after {AI_AGENT_JOIN_MS} ms"
+                ) from exc
+            raise
+    except sqlite3.Error as exc:
+        raise HTTPException(400, f"local join failed: {exc}") from exc
+    finally:
+        db.close()
+    return {
+        "columns": columns,
+        "rows": rows[:AI_AGENT_MAX_ROWS],
+        "truncated": len(rows) > AI_AGENT_MAX_ROWS,
+        "join_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _ai_agent_source(conn: dict[str, Any], sql: str) -> dict[str, Any]:
+    wrapped = f"SELECT * FROM (\n{sql}\n) AS dbdesk_ai LIMIT {AI_AGENT_SOURCE_ROWS + 1}"
+    readonly_conn = dict(conn, readonly=True)
+    started = time.monotonic()
+    try:
+        result = _query(readonly_conn, wrapped, AI_AGENT_SOURCE_ROWS, True)
+    except HTTPException as exc:
+        _audit(conn, "ai_read", sql, ok=False, error=str(exc.detail), notify=False)
+        raise
+    rows = result.get("rows") or []
+    _audit(conn, "ai_read", sql, rows=len(rows), ok=True, notify=False)
+    return {
+        "connection": str(conn.get("id") or ""),
+        "name": str(conn.get("name") or conn.get("id") or ""),
+        "kind": _kind(conn),
+        "sql": sql,
+        "columns": result.get("columns") or [],
+        "rows": rows[:AI_AGENT_SOURCE_ROWS],
+        "truncated": bool(result.get("truncated")) or len(rows) > AI_AGENT_SOURCE_ROWS,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _ai_agent(body: dict[str, Any]) -> dict[str, Any]:
+    question = str(body.get("question") or "").strip()[:2000]
+    if not question:
+        raise HTTPException(400, "question is required")
+    scope = _ai_scope(body.get("connection_ids"))
+    if not scope:
+        raise HTTPException(
+            400, "no AI-enabled database connections; enable AI in a connection's settings"
+        )
+    scope_map = {conn["id"]: conn for conn in scope}
+    current: dict[str, Any] | None = None
+    current_id = str(body.get("connection_id") or "")
+    if current_id and current_id in scope_map:
+        try:
+            current = _get(current_id)
+        except HTTPException:
+            current = scope_map[current_id]
+        if not _ai_kind_ok(current):
+            current = None
+    schema = str(body.get("schema") or "")
+    table = str(body.get("table") or "")
+    catalog = [_ai_catalog_entry(conn) for conn in scope]
+    system = _ai_agent_system(catalog, current, schema, table, question)
+    config = _load_ai_config()
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
+    messages.extend(_ai_history(body.get("history")))
+    messages.append({"role": "user", "content": question})
+    steps: list[str] = []
+    started = time.monotonic()
+    last_error = ""
+
+    for _attempt in range(AI_AGENT_STEPS):
+        payload = {
+            "model": config.get("model") or AI_DEFAULT_MODEL,
+            "temperature": 0,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        data = _ai_post(config, payload)
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise HTTPException(502, "unexpected response from the AI provider") from exc
+        parsed = _ai_extract_json(str(content))
+        action = str(parsed.get("action") or "").strip().lower()
+        if not action:
+            action = "run" if parsed.get("sql") else "answer"
+
+        if action == "answer":
+            answer = str(parsed.get("answer") or parsed.get("explanation") or "").strip()
+            if not answer:
+                raise HTTPException(502, "the AI returned an empty answer")
+            return {
+                "sql": "",
+                "explanation": answer[:2000],
+                "columns": [],
+                "rows": [],
+                "sources": [],
+                "steps": steps,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+            }
+
+        if action == "describe":
+            requests = parsed.get("requests")
+            if not isinstance(requests, list) or not requests:
+                raise HTTPException(502, "the AI asked for schema without listing requests")
+            chunks: list[str] = []
+            for item in requests[:3]:
+                if not isinstance(item, dict):
+                    continue
+                cid = str(item.get("connection") or current_id or "")
+                conn = scope_map.get(cid)
+                if conn is None:
+                    chunks.append(f"connection {cid}: not in the AI scope")
+                    continue
+                chunks.append(_ai_describe(conn, item.get("tables")))
+                steps.append(f"inspected {conn.get('name') or cid}")
+            messages.append({"role": "assistant", "content": json.dumps(parsed)})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "SCHEMA RESULTS\n\n" + "\n\n".join(chunks)
+                    + "\n\nReply with the next JSON action.",
+                }
+            )
+            continue
+
+        if action == "run":
+            sources = parsed.get("sources")
+            if not isinstance(sources, list) or not sources:
+                # tolerate a single legacy-style {"sql": ...}
+                if parsed.get("sql"):
+                    sources = [{"connection": current_id, "sql": parsed.get("sql")}]
+                else:
+                    raise HTTPException(502, "the AI returned no SQL sources")
+            plan: list[tuple[dict[str, Any], str]] = []
+            problem = ""
+            for item in sources[:AI_AGENT_MAX_SOURCES]:
+                if not isinstance(item, dict):
+                    problem = "a source was not an object"
+                    break
+                cid = str(item.get("connection") or current_id or "")
+                conn = scope_map.get(cid)
+                if conn is None:
+                    problem = f"connection {cid!r} is not in the AI scope"
+                    break
+                if not bool(conn.get("ai_query", True)):
+                    problem = (
+                        f"{conn.get('name') or cid} is inspect-only; AI queries are disabled"
+                    )
+                    break
+                try:
+                    sql_text = _check_sql(str(item.get("sql") or ""))
+                except HTTPException as exc:
+                    problem = str(exc.detail)
+                    break
+                if not READ_SQL.match(sql_text):
+                    problem = "the AI produced a non-read statement; refused"
+                    break
+                plan.append((conn, sql_text))
+            if problem:
+                last_error = problem
+                messages.append({"role": "assistant", "content": json.dumps(parsed)})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"That plan was rejected: {problem}. Reply with a corrected JSON action.",
+                    }
+                )
+                continue
+
+            explanation = str(parsed.get("explanation") or "")[:500]
+            join_sql = str(parsed.get("join_sql") or "").strip()
+            if len(plan) > 1 and not join_sql:
+                last_error = "join_sql is required when a plan uses more than one database"
+                messages.append({"role": "assistant", "content": json.dumps(parsed)})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "That plan was rejected: add join_sql (read-only SQLite over "
+                            "src_0, src_1, ...). Reply with a corrected JSON action."
+                        ),
+                    }
+                )
+                continue
+            if body.get("execute") is False:
+                return {
+                    "sql": plan[0][1] if len(plan) == 1 else "",
+                    "join_sql": join_sql if len(plan) > 1 else "",
+                    "explanation": explanation,
+                    "columns": [],
+                    "rows": [],
+                    "sources": [
+                        {
+                            "connection": conn["id"],
+                            "name": conn.get("name") or conn["id"],
+                            "kind": _kind(conn),
+                            "sql": sql_text,
+                            "rows": 0,
+                            "duration_ms": 0,
+                        }
+                        for conn, sql_text in plan
+                    ],
+                    "steps": steps,
+                    "planned": True,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                }
+            try:
+                results = [_ai_agent_source(conn, sql_text) for conn, sql_text in plan]
+            except HTTPException as exc:
+                last_error = str(exc.detail)
+                messages.append({"role": "assistant", "content": json.dumps(parsed)})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "One source failed with:\n" + last_error[:1200]
+                            + "\nReply with a corrected JSON action using the listed columns."
+                        ),
+                    }
+                )
+                continue
+            if len(results) > 1:
+                merged = _ai_local_join(results, join_sql)
+            else:
+                merged = {
+                    "columns": results[0]["columns"],
+                    "rows": results[0]["rows"][:AI_AGENT_MAX_ROWS],
+                    "truncated": results[0]["truncated"],
+                    "join_ms": 0,
+                }
+            for result in results:
+                steps.append(
+                    f"ran {result['name']} ({len(result['rows'])} rows, {result['duration_ms']} ms)"
+                )
+            if len(results) > 1:
+                steps.append(f"joined {len(results)} databases locally")
+            return {
+                "sql": plan[0][1] if len(plan) == 1 else "",
+                "join_sql": join_sql if len(plan) > 1 else "",
+                "explanation": explanation,
+                "columns": merged["columns"],
+                "rows": merged["rows"],
+                "truncated": merged["truncated"],
+                "join_ms": merged.get("join_ms", 0),
+                "sources": [
+                    {
+                        "connection": result["connection"],
+                        "name": result["name"],
+                        "kind": result["kind"],
+                        "sql": result["sql"],
+                        "rows": len(result["rows"]),
+                        "duration_ms": result["duration_ms"],
+                    }
+                    for result in results
+                ],
+                "steps": steps,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+            }
+
+        raise HTTPException(502, f"the AI returned an unknown action {action!r}")
+
+    raise HTTPException(502, last_error or "the AI did not produce a usable plan")
+
+
+# --------------------------------------------------------------------------- #
 # AI harness (natural language -> read-only SQL)
 # --------------------------------------------------------------------------- #
 
@@ -3806,6 +4267,8 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "sslmode": str(pick("sslmode", "prefer")).strip() or "prefer",
         "readonly": True if kind in ("mcp", "http") else bool(pick("readonly", True)),
         "production": bool(pick("production", False)),
+        "ai_schema": bool(pick("ai_schema", True)),
+        "ai_query": bool(pick("ai_query", True)),
         "ssh_host": "" if kind in ("mcp", "http", "sqlite") else str(pick("ssh_host", "")).strip(),
         "ssh_user": "" if kind == "sqlite" else str(pick("ssh_user", "root")).strip(),
         "ssh_port": int(pick("ssh_port", 22)),
@@ -3868,6 +4331,16 @@ async def ai_setup(body: dict[str, Any]) -> dict[str, Any]:
     if not question:
         raise HTTPException(400, "question is required")
     return _ai_setup(question, body.get("history"))
+
+
+@router.get("/ai/catalog")
+async def ai_catalog() -> dict[str, Any]:
+    return {"connections": [_ai_catalog_entry(conn) for conn in _ai_scope(None)]}
+
+
+@router.post("/ai/agent")
+async def ai_agent(body: dict[str, Any]) -> dict[str, Any]:
+    return _ai_agent(body)
 
 
 @router.post("/ai/ask")
@@ -4477,6 +4950,7 @@ def _audit(
     rows: int = 0,
     ok: bool = True,
     error: str = "",
+    notify: bool = True,
 ) -> None:
     entry = {
         "ts": time.time(),
@@ -4499,7 +4973,7 @@ def _audit(
         os.chmod(path, 0o600)
     except OSError:
         return
-    if entry["production"] and ok:
+    if notify and entry["production"] and ok:
         _notify_production(entry)
 
 

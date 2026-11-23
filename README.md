@@ -155,6 +155,19 @@ Set `DBDESK_HOME` to override. The directory contains:
   back once so the model can correct the query. Server-side rules refuse any non-read
   statement. Configure base URL, model and API key under the AI
   settings; the key is encrypted at rest and row data is never sent.
+- **Multi-database agent** — the AI scope bar defaults to every AI-enabled
+  connection. When a question spans databases (“who is in app-db but not the
+  warehouse?”) the agent first requests the missing schemas, then returns one
+  read-only statement per database plus a join. DB Desk runs each statement
+  against its own database, loads the result sets into an in-memory SQLite
+  database and executes the join **locally**. Only schema names, SQL, row
+  counts and error text go to the provider — never the rows. Each answer shows
+  the per-source SQL (copy, or open in SQL when it is the current connection),
+  the local join, the merged table and a short step log.
+- **Per-connection AI switches** — in the connection form, turn off **AI can
+  see this schema** to hide a database from the agent entirely, or turn off
+  **AI can run read-only queries** to keep it inspect-only. Statements run by
+  the agent are written to the audit log.
 - **Docked AI and record panels** — the AI chat opens on the right without
   covering the grid; clicking a row number opens a TablePlus-style **Record**
   panel on the right with each column name, type and value.
@@ -370,7 +383,12 @@ from developer.apple.com if it leaks.
 
 - **Prompts are built from allowlists, not connection records.** Data questions
   send table/column names, the question and previous SQL only — never rows,
-  passwords, tokens, SSH keys, headers or tunnel env.
+  passwords, tokens, SSH keys, headers or tunnel env. The agent catalog carries
+  only id, display name, group, kind and database name; hosts and users are
+  omitted.
+- **Cross-database rows stay local.** Result sets are loaded into in-memory
+  SQLite and joined on this Mac. The join query and row counts are visible to
+  the model; the cell values are not.
 - **AI setup** sends only your message and generic instructions. The returned
   draft is sanitized: keys containing `password`, `token`, `secret`, `key`,
   `header`, `env`, `auth` or `cookie` are dropped.

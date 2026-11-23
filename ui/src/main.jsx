@@ -13,7 +13,7 @@ import SettingsDialog from './settings-dialog.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.8.0'
+const APP_VERSION = '0.9.0'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
