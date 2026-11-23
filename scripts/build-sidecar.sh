@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Python sidecar with PyInstaller and name it for the Rust target.
+# Build the Python sidecar (onedir) and stage it for the Tauri bundle.
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
@@ -12,12 +12,9 @@ PYTHON=${PYTHON:-python3}
   --workpath build-sidecar \
   backend/dbdesk-server.spec
 
-TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-EXT=""
-case "$(uname -s)" in
-  MINGW* | MSYS* | CYGWIN*) EXT=".exe" ;;
-esac
+# Tauri copies bundle.resources into the app; stage a clean copy.
+rm -rf src-tauri/sidecar
+mkdir -p src-tauri/sidecar
+cp -R dist-sidecar/dbdesk-server src-tauri/sidecar/dbdesk-server
 
-mkdir -p src-tauri/binaries
-cp "dist-sidecar/dbdesk-server$EXT" "src-tauri/binaries/dbdesk-server-$TRIPLE$EXT"
-echo "sidecar ready: src-tauri/binaries/dbdesk-server-$TRIPLE$EXT"
+echo "sidecar ready: src-tauri/sidecar/dbdesk-server/dbdesk-server"

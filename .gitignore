@@ -9,6 +9,7 @@ build-sidecar/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/binaries/dbdesk-server-*
+src-tauri/sidecar/
 
 # python
 .venv/

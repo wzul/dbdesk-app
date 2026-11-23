@@ -1,8 +1,4 @@
-"""DB Desk backend — PostgreSQL / MySQL / ClickHouse / SQLite browsing.
-
-This is the standalone (non-Hermes) copy of the adapter module: the routes are
-identical to the plugin's dashboard half, but storage lives under
-``$DBDESK_HOME`` and desktop notifications are off unless DBDESK_NOTIFY=1.
+"""DB Desk backend — PostgreSQL / MySQL / ClickHouse browsing for Hermes.
 
 Routes are mounted at ``/api/plugins/dbdesk/``. Dialects:
 
@@ -27,6 +23,8 @@ from __future__ import annotations
 import atexit
 import base64
 import csv
+import datetime
+import decimal
 import hashlib
 import io
 import json
@@ -611,7 +609,14 @@ def _csv_from(columns: list[dict[str, Any]], rows: list[list[Any]]) -> str:
 
 
 def _pg_run_csv(conn: dict[str, Any], sql: str) -> str:
-    """psql CSV with NULLs as empty fields (no sentinel marker)."""
+    """CSV with NULLs as empty fields (no sentinel marker)."""
+    if psycopg is not None:
+        columns, rows = _pg_native_exec(conn, sql, readonly=True)
+        rows = [
+            [json.dumps(value) if isinstance(value, (dict, list)) else value for value in row]
+            for row in rows
+        ]
+        return _csv_from(columns, rows)
     cmd = [
         PSQL, "-X", "-q", "--csv",
         "-h", str(conn.get("host") or "127.0.0.1"),
@@ -629,6 +634,259 @@ def _pg_run_csv(conn: dict[str, Any], sql: str) -> str:
     if proc.returncode != 0:
         raise HTTPException(400, _clean_error(proc.stderr or proc.stdout))
     return proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+# optional native drivers — persistent connections when the drivers exist
+# --------------------------------------------------------------------------- #
+
+try:  # standalone bundle ships psycopg; the Hermes runtime may not
+    import psycopg
+    import psycopg.postgres
+except Exception:  # pragma: no cover - the psql CLI path still works
+    psycopg = None
+
+try:  # pure Python, works everywhere
+    import pymysql
+except Exception:  # pragma: no cover - the mysql CLI path still works
+    pymysql = None
+
+_POOLS: dict[str, dict[str, Any]] = {}
+_POOLS_GUARD = threading.Lock()
+
+
+def _close_pools() -> None:
+    with _POOLS_GUARD:
+        entries = list(_POOLS.values())
+        _POOLS.clear()
+    for entry in entries:
+        try:
+            entry["conn"].close()
+        except Exception:
+            pass
+
+
+def _pool_key(conn: dict[str, Any], driver: str) -> str:
+    return "|".join(
+        [
+            driver,
+            str(conn.get("id") or ""),
+            str(conn.get("host") or ""),
+            str(conn.get("port") or ""),
+            str(conn.get("dbname") or ""),
+            str(conn.get("user") or ""),
+            "ro" if conn.get("readonly", True) else "rw",
+        ]
+    )
+
+
+def _pool_get(key: str, factory) -> dict[str, Any]:
+    with _POOLS_GUARD:
+        entry = _POOLS.get(key)
+    if entry is not None:
+        return entry
+    connection = factory()
+    entry = {"conn": connection, "lock": threading.Lock()}
+    with _POOLS_GUARD:
+        existing = _POOLS.get(key)
+        if existing is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+            return existing
+        _POOLS[key] = entry
+    return entry
+
+
+atexit.register(_close_pools)
+
+
+def _pool_drop(key: str) -> None:
+    with _POOLS_GUARD:
+        entry = _POOLS.pop(key, None)
+    if entry is not None:
+        try:
+            entry["conn"].close()
+        except Exception:
+            pass
+
+
+def _native_cell(value: Any) -> Any:
+    """JSON-friendly value for psycopg/PyMySQL results."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _native_cell(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_native_cell(item) for item in value]
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return "0x" + raw.hex()
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, datetime.timedelta):
+        return str(value)
+    if isinstance(value, decimal.Decimal):
+        return str(value)
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    return str(value)
+
+
+# --- PostgreSQL ------------------------------------------------------------ #
+
+_PG_OID_TYPES = {
+    16: "boolean", 17: "bytea", 19: "name", 20: "bigint", 21: "smallint",
+    23: "integer", 25: "text", 26: "oid", 114: "json", 700: "real",
+    701: "double precision", 1042: "char", 1043: "varchar", 1082: "date",
+    1083: "time", 1114: "timestamp", 1184: "timestamptz", 1186: "interval",
+    1700: "numeric", 2950: "uuid", 3802: "jsonb",
+}
+
+
+def _pg_type_name(code: Any) -> str:
+    try:
+        info = psycopg.postgres.types.get(int(code))
+    except Exception:
+        info = None
+    return getattr(info, "name", "") or _PG_OID_TYPES.get(int(code), "text")
+
+
+def _pg_open_native(conn: dict[str, Any]):
+    readonly = bool(conn.get("readonly", True))
+    db = psycopg.connect(
+        host=conn.get("host") or "127.0.0.1",
+        port=int(conn.get("port") or 5432),
+        dbname=conn.get("dbname") or "postgres",
+        user=conn.get("user") or "postgres",
+        password=conn.get("password") or "",
+        connect_timeout=10,
+        sslmode=conn.get("sslmode") or "prefer",
+        autocommit=True,
+        application_name="dbdesk",
+    )
+    with db.cursor() as cur:
+        cur.execute(f"SET statement_timeout = {int(QUERY_TIMEOUT * 1000)}")
+        if readonly:
+            cur.execute("SET default_transaction_read_only = on")
+    return db
+
+
+def _pg_native_exec(
+    conn: dict[str, Any],
+    sql: str,
+    params: Any = None,
+    *,
+    readonly: bool = True,
+    limit: int = 0,
+) -> tuple[list[dict[str, Any]], list[list[Any]]]:
+    key = _pool_key(conn, "pg")
+    entry = _pool_get(key, lambda: _pg_open_native(conn))
+    columns: list[dict[str, Any]] = []
+    rows: list[list[Any]] = []
+    with entry["lock"]:
+        try:
+            with entry["conn"].cursor() as cur:
+                cur.execute(sql, params)
+                if cur.description:
+                    columns = [
+                        {"name": desc.name, "type": _pg_type_name(desc.type_code)}
+                        for desc in cur.description
+                    ]
+                    fetched = cur.fetchmany(limit + 1) if limit else cur.fetchall()
+                    rows = [[_native_cell(value) for value in row] for row in fetched]
+        except Exception as exc:
+            _pool_drop(key)
+            raise HTTPException(400, _clean_error(str(exc))) from exc
+    return columns, rows
+
+
+def _pg_native_dicts(conn: dict[str, Any], sql: str, params: Any = None) -> list[dict[str, Any]]:
+    columns, rows = _pg_native_exec(conn, sql, params, readonly=True)
+    names = [column["name"] for column in columns]
+    return [dict(zip(names, row)) for row in rows]
+
+
+# --- MySQL / MariaDB ------------------------------------------------------- #
+
+_MY_TYPE_NAMES = {
+    0: "decimal", 1: "tinyint", 2: "smallint", 3: "int", 4: "float",
+    5: "double", 6: "null", 7: "timestamp", 8: "bigint", 9: "mediumint",
+    10: "date", 11: "time", 12: "datetime", 13: "year", 15: "varchar",
+    16: "bit", 245: "json", 246: "decimal", 247: "enum", 248: "set",
+    249: "tinyblob", 250: "mediumblob", 251: "longblob", 252: "blob",
+    253: "varchar", 254: "char", 255: "geometry",
+}
+
+
+def _my_open_native(conn: dict[str, Any]):
+    readonly = bool(conn.get("readonly", True))
+    db = pymysql.connect(
+        host=conn.get("host") or "127.0.0.1",
+        port=int(conn.get("port") or 3306),
+        user=conn.get("user") or "root",
+        password=conn.get("password") or "",
+        database=conn.get("dbname") or None,
+        connect_timeout=10,
+        autocommit=True,
+        charset="utf8mb4",
+    )
+    flavor = "mariadb" if "mariadb" in str(db.get_server_info() or "").lower() else "mysql"
+    with db.cursor() as cur:
+        if readonly:
+            try:
+                cur.execute(
+                    "SET SESSION tx_read_only = 1"
+                    if flavor == "mariadb"
+                    else "SET SESSION transaction_read_only = 1"
+                )
+            except pymysql.Error:
+                pass
+        try:
+            cur.execute(
+                "SET SESSION max_statement_time = 30"
+                if flavor == "mariadb"
+                else "SET SESSION MAX_EXECUTION_TIME = 30000"
+            )
+        except pymysql.Error:
+            pass
+    return db
+
+
+def _my_native_exec(
+    conn: dict[str, Any],
+    sql: str,
+    params: Any = None,
+    *,
+    readonly: bool = True,
+    limit: int = 0,
+) -> tuple[list[dict[str, Any]], list[list[Any]]]:
+    key = _pool_key(conn, "my")
+    entry = _pool_get(key, lambda: _my_open_native(conn))
+    columns: list[dict[str, Any]] = []
+    rows: list[list[Any]] = []
+    with entry["lock"]:
+        try:
+            with entry["conn"].cursor() as cur:
+                cur.execute(sql, params)
+                if cur.description:
+                    columns = [
+                        {
+                            "name": desc[0],
+                            "type": _MY_TYPE_NAMES.get(int(desc[1]), "text"),
+                        }
+                        for desc in cur.description
+                    ]
+                    fetched = cur.fetchmany(limit + 1) if limit else cur.fetchall()
+                    rows = [[_native_cell(value) for value in row] for row in fetched]
+        except Exception as exc:
+            _pool_drop(key)
+            raise HTTPException(400, _clean_error(str(exc))) from exc
+    return columns, rows
 
 
 # --------------------------------------------------------------------------- #
@@ -697,11 +955,36 @@ def _pg_raw(conn: dict[str, Any], script: str) -> str:
 
 
 def _pg_ddl(conn: dict[str, Any], schema: str, table: str) -> str:
+    if psycopg is not None:
+        columns = _columns(conn, schema, table)
+        if not columns:
+            return ""
+        lines = []
+        for column in columns:
+            line = f'  {_ident(column["name"])} {column.get("type") or "text"}'
+            if not column.get("nullable", True):
+                line += " NOT NULL"
+            if column.get("default") not in (None, ""):
+                line += f' DEFAULT {column["default"]}'
+            lines.append(line)
+        keys = [column["name"] for column in columns if column.get("pk")]
+        if keys:
+            lines.append("  PRIMARY KEY (" + ", ".join(_ident(key) for key in keys) + ")")
+        ddl = f'CREATE TABLE {_ident(schema)}.{_ident(table)} (\n' + ",\n".join(lines) + "\n);"
+        for item in _indexes(conn, schema, table):
+            definition = str(item.get("definition") or "")
+            if definition and not item.get("primary"):
+                ddl += "\n" + definition.rstrip().rstrip(";") + ";"
+        return ddl
     return _pg_raw(conn, "\\d+ " + f"{_ident(schema)}.{_ident(table)}\n").strip()
 
 
 def _my_ddl(conn: dict[str, Any], schema: str, table: str) -> str:
-    out = _my_run(conn, f"SHOW CREATE TABLE {_my_ident(schema)}.{_my_ident(table)}", readonly=True)
+    sql = f"SHOW CREATE TABLE {_my_ident(schema)}.{_my_ident(table)}"
+    if pymysql is not None:
+        _, rows = _my_native_exec(conn, sql, readonly=True)
+        return str(rows[0][1]) if rows and len(rows[0]) > 1 else ""
+    out = _my_run(conn, sql, readonly=True)
     _, rows = _parse_my(out)
     return str(rows[0][1]) if rows and len(rows[0]) > 1 else ""
 
@@ -785,6 +1068,15 @@ def _pg_json(conn: dict[str, Any], sql: str) -> Any:
 
 
 def _pg_test(conn: dict[str, Any]) -> dict[str, Any]:
+    if psycopg is not None:
+        _, rows = _pg_native_exec(
+            conn,
+            "SELECT version(), current_database(), current_user,"
+            " current_setting('transaction_read_only')",
+            readonly=False,
+        )
+        row = rows[0] if rows else ["", "", "", ""]
+        return {"version": row[0], "database": row[1], "user": row[2]}
     return _pg_json(
         conn,
         "SELECT json_build_object('version', version(), 'database', current_database(),"
@@ -793,6 +1085,27 @@ def _pg_test(conn: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pg_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
+    if psycopg is not None:
+        return _pg_native_dicts(
+            conn,
+            """
+            SELECT n.nspname AS schema,
+                   c.relname AS name,
+                   CASE c.relkind
+                     WHEN 'r' THEN 'table' WHEN 'p' THEN 'table'
+                     WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized view'
+                     WHEN 'f' THEN 'foreign table' ELSE 'table'
+                   END AS kind,
+                   GREATEST(c.reltuples, 0)::bigint AS est_rows
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind IN ('r','p','v','m','f')
+              AND n.nspname NOT IN ('pg_catalog','information_schema')
+              AND n.nspname NOT LIKE 'pg_toast%'
+              AND n.nspname NOT LIKE 'pg_temp%'
+            ORDER BY n.nspname, c.relname
+            """,
+        )
     return _pg_json(
         conn,
         """
@@ -817,9 +1130,7 @@ def _pg_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _pg_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
-    rows = _pg_json(
-        conn,
-        f"""
+    sql = f"""
         SELECT coalesce(json_agg(x ORDER BY x.ord), '[]'::json) FROM (
           SELECT a.attnum AS ord, a.attname AS name,
                  format_type(a.atttypid, a.atttypmod) AS type,
@@ -849,8 +1160,15 @@ def _pg_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
           WHERE n.nspname = {_lit(schema)} AND c.relname = {_lit(table)}
             AND a.attnum > 0 AND NOT a.attisdropped
         ) x
-        """,
-    ) or []
+        """
+    if psycopg is not None:
+        _, rows = _pg_native_exec(conn, sql, readonly=True)
+        value = rows[0][0] if rows and rows[0] else None
+        data = json.loads(value) if isinstance(value, str) else (value or [])
+        for row in data:
+            row.pop("ord", None)
+        return data
+    rows = _pg_json(conn, sql) or []
     for row in rows:
         row.pop("ord", None)
     return rows
@@ -865,6 +1183,16 @@ def _pg_rows(conn, schema, table, limit, offset, order_by, direction, filters=No
         sql += f" ORDER BY {_ident(order_by)} {direction}"
     sql += f" LIMIT {limit + 1} OFFSET {offset}"
     started = time.monotonic()
+    if psycopg is not None:
+        columns, rows = _pg_native_exec(conn, sql, readonly=True, limit=limit)
+        meta = {column["name"]: column.get("type", "") for column in _columns(conn, schema, table)}
+        for column in columns:
+            column["type"] = meta.get(column["name"], column["type"])
+        return {
+            "columns": columns, "rows": rows[:limit], "truncated": len(rows) > limit,
+            "offset": offset, "limit": limit,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+        }
     out = _pg_run(conn, sql + ";\n\\gdesc\n")
     columns, rows = _parse_pg_result(out)
     return {
@@ -877,6 +1205,16 @@ def _pg_rows(conn, schema, table, limit, offset, order_by, direction, filters=No
 def _pg_query(conn, sql, limit, readonly) -> dict[str, Any]:
     is_read = bool(READ_SQL.match(sql))
     started = time.monotonic()
+    if psycopg is not None:
+        columns, rows = _pg_native_exec(
+            conn, sql, readonly=readonly, limit=limit if is_read else 0
+        )
+        return {
+            "columns": columns, "rows": rows[:limit], "truncated": len(rows) > limit,
+            "command": "SELECT" if is_read else sql.split(None, 1)[0].upper(),
+            "readonly": readonly,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+        }
     if is_read:
         wrapped = f"SELECT * FROM (\n{sql}\n) AS dbdesk_q LIMIT {limit + 1};\n\\gdesc\n"
         try:
@@ -901,6 +1239,9 @@ def _pg_query(conn, sql, limit, readonly) -> dict[str, Any]:
 
 
 def _pg_mutation(conn, sql: str) -> None:
+    if psycopg is not None:
+        _pg_native_exec(conn, sql, readonly=False)
+        return
     _pg_run(conn, sql + ";\n", readonly=False)
 
 
@@ -948,8 +1289,12 @@ def _my_exec(conn: dict[str, Any], sql: str, *, init: str | None = None, timeout
 def _my_flavor(conn: dict[str, Any]) -> str:
     key = str(conn.get("id") or f"{conn.get('host')}:{conn.get('port')}")
     if key not in _FLAVOR:
-        out = _my_exec(conn, "SELECT VERSION()", timeout=8)
-        _FLAVOR[key] = "mariadb" if "mariadb" in out.lower() else "mysql"
+        if pymysql is not None:
+            _, rows = _my_native_exec(conn, "SELECT VERSION()", readonly=True)
+            version = str(rows[0][0]) if rows and rows[0] else ""
+        else:
+            version = _my_exec(conn, "SELECT VERSION()", timeout=8)
+        _FLAVOR[key] = "mariadb" if "mariadb" in version.lower() else "mysql"
     return _FLAVOR[key]
 
 
@@ -993,6 +1338,12 @@ def _my_run(conn: dict[str, Any], sql: str, *, readonly: bool, timeout: int = QU
 
 
 def _my_test(conn: dict[str, Any]) -> dict[str, Any]:
+    if pymysql is not None:
+        _, rows = _my_native_exec(
+            conn, "SELECT VERSION(), DATABASE(), CURRENT_USER()", readonly=True
+        )
+        row = rows[0] if rows else ["", "", ""]
+        return {"version": row[0], "database": row[1], "user": row[2]}
     out = _my_exec(conn, "SELECT VERSION(), DATABASE(), CURRENT_USER()", timeout=8)
     columns, rows = _parse_my(out)
     row = rows[0] if rows else ["", "", ""]
@@ -1000,18 +1351,20 @@ def _my_test(conn: dict[str, Any]) -> dict[str, Any]:
 
 
 def _my_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
-    out = _my_run(
-        conn,
+    sql = (
         "SELECT table_schema, table_name, "
         "CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, "
         "COALESCE(table_rows, 0) "
         "FROM information_schema.tables "
         "WHERE table_schema NOT IN ('mysql','information_schema','performance_schema','sys') "
         f"  AND table_schema = {_my_lit(conn.get('dbname') or '')} "
-        "ORDER BY table_schema, table_name",
-        readonly=True,
+        "ORDER BY table_schema, table_name"
     )
-    _, rows = _parse_my(out)
+    if pymysql is not None:
+        _, rows = _my_native_exec(conn, sql, readonly=True)
+    else:
+        out = _my_run(conn, sql, readonly=True)
+        _, rows = _parse_my(out)
     return [
         {"schema": r[0], "name": r[1], "kind": r[2], "est_rows": int(r[3] or 0)}
         for r in rows
@@ -1019,8 +1372,7 @@ def _my_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _my_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
-    out = _my_run(
-        conn,
+    sql = (
         "SELECT c.column_name, c.column_type, c.is_nullable, c.column_default, c.column_key, "
         "k.referenced_table_schema, k.referenced_table_name, k.referenced_column_name "
         "FROM information_schema.columns c "
@@ -1028,10 +1380,13 @@ def _my_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
         "  ON k.table_schema = c.table_schema AND k.table_name = c.table_name "
         " AND k.column_name = c.column_name AND k.referenced_table_name IS NOT NULL "
         f"WHERE c.table_schema = {_my_lit(schema)} AND c.table_name = {_my_lit(table)} "
-        "ORDER BY c.ordinal_position",
-        readonly=True,
+        "ORDER BY c.ordinal_position"
     )
-    _, rows = _parse_my(out)
+    if pymysql is not None:
+        _, rows = _my_native_exec(conn, sql, readonly=True)
+    else:
+        out = _my_run(conn, sql, readonly=True)
+        _, rows = _parse_my(out)
     result = []
     for r in rows:
         fk = None
@@ -1051,10 +1406,13 @@ def _my_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
 
 
 def _my_rows(conn, schema, table, limit, offset, order_by, direction, columns_meta, filters=None) -> dict[str, Any]:
-    exprs = ", ".join(
-        f"IF({_my_ident(c['name'])} IS NULL, '{NULL_SENTINEL}', {_my_ident(c['name'])}) AS {_my_ident(c['name'])}"
-        for c in columns_meta
-    ) or "*"
+    if pymysql is not None:
+        exprs = "*"
+    else:
+        exprs = ", ".join(
+            f"IF({_my_ident(c['name'])} IS NULL, '{NULL_SENTINEL}', {_my_ident(c['name'])}) AS {_my_ident(c['name'])}"
+            for c in columns_meta
+        ) or "*"
     sql = f"SELECT {exprs} FROM {_my_ident(schema)}.{_my_ident(table)}"
     where = _where_clause("mysql", filters)
     if where:
@@ -1063,11 +1421,16 @@ def _my_rows(conn, schema, table, limit, offset, order_by, direction, columns_me
         sql += f" ORDER BY {_my_ident(order_by)} {direction}"
     sql += f" LIMIT {limit + 1} OFFSET {offset}"
     started = time.monotonic()
-    out = _my_run(conn, sql, readonly=True)
-    _, rows = _parse_my(out)
     types = {c["name"]: c.get("type", "") for c in columns_meta}
-    columns = [{"name": c["name"], "type": types.get(c["name"], "")} for c in columns_meta]
-    rows = [[None if v == NULL_SENTINEL else v for v in row] for row in rows]
+    if pymysql is not None:
+        columns, rows = _my_native_exec(conn, sql, readonly=True, limit=limit)
+        for column in columns:
+            column["type"] = types.get(column["name"], column["type"])
+    else:
+        out = _my_run(conn, sql, readonly=True)
+        _, rows = _parse_my(out)
+        columns = [{"name": c["name"], "type": types.get(c["name"], "")} for c in columns_meta]
+        rows = [[None if v == NULL_SENTINEL else v for v in row] for row in rows]
     return {
         "columns": columns, "rows": rows[:limit], "truncated": len(rows) > limit,
         "offset": offset, "limit": limit,
@@ -1079,6 +1442,16 @@ def _my_query(conn, sql, limit, readonly) -> dict[str, Any]:
     _guard_readonly(conn, sql)
     is_read = bool(READ_SQL.match(sql))
     started = time.monotonic()
+    if pymysql is not None:
+        columns, rows = _my_native_exec(
+            conn, sql, readonly=readonly, limit=limit if is_read else 0
+        )
+        return {
+            "columns": columns, "rows": rows[:limit], "truncated": len(rows) > limit,
+            "command": "SELECT" if is_read else sql.split(None, 1)[0].upper(),
+            "readonly": readonly,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+        }
     if is_read:
         wrapped = f"SELECT * FROM (\n{sql}\n) AS dbdesk_q LIMIT {limit + 1}"
         try:
@@ -1102,6 +1475,9 @@ def _my_query(conn, sql, limit, readonly) -> dict[str, Any]:
 
 
 def _my_mutation(conn, sql: str) -> None:
+    if pymysql is not None:
+        _my_native_exec(conn, sql, readonly=False)
+        return
     _my_run(conn, sql, readonly=False)
 
 
@@ -1547,6 +1923,19 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
         ]
     if kind == "clickhouse":
         return []
+    if kind == "postgres" and psycopg is not None:
+        rows = _pg_native_dicts(
+            conn,
+            "SELECT indexname AS name, indexdef AS definition FROM pg_indexes "
+            f"WHERE schemaname = {_lit(schema)} AND tablename = {_lit(table)} "
+            "ORDER BY indexname",
+        )
+        for row in rows:
+            definition = str(row.get("definition") or "")
+            row["unique"] = "UNIQUE INDEX" in definition
+            row["columns"] = definition
+            row["primary"] = row["name"].endswith("_pkey") or "PRIMARY KEY" in definition
+        return rows
     rows = _pg_json(
         conn,
         f"""
@@ -1589,6 +1978,25 @@ def _activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
             }
             for r in rows
         ]
+    if kind == "mysql" and pymysql is not None:
+        _, rows = _my_native_exec(
+            conn,
+            "SELECT id, user, db, command, time, state, LEFT(info, 500) "
+            "FROM information_schema.processlist "
+            "WHERE id <> CONNECTION_ID() ORDER BY time DESC",
+            readonly=True,
+        )
+        return [
+            {
+                "id": row[0],
+                "user": row[1],
+                "database": row[2],
+                "state": row[5] or row[3],
+                "seconds": float(row[4] or 0),
+                "query": row[6],
+            }
+            for row in rows
+        ]
     if kind == "clickhouse":
         payload = _ch_json(
             conn,
@@ -1608,6 +2016,18 @@ def _activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
             }
             for r in rows
         ]
+    if psycopg is not None:
+        return _pg_native_dicts(
+            conn,
+            """
+            SELECT pid AS id, usename AS "user", datname AS database, state,
+                   extract(epoch FROM (now() - query_start)) AS seconds,
+                   left(query, 500) AS query
+            FROM pg_stat_activity
+            WHERE pid <> pg_backend_pid()
+            ORDER BY seconds DESC NULLS LAST
+            """,
+        )
     rows = _pg_json(
         conn,
         """
@@ -2401,6 +2821,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     }
     conns = [c for c in conns if c["id"] != conn_id] + [record]
     _invalidate_columns()
+    _close_pools()
     _save(conns)
     return {"connection": _public(record)}
 
@@ -2412,6 +2833,7 @@ async def delete_connection(conn_id: str) -> dict[str, Any]:
     if len(kept) == len(conns):
         raise HTTPException(404, f"connection {conn_id!r} not found")
     _invalidate_columns()
+    _close_pools()
     _save(kept)
     return {"ok": True}
 

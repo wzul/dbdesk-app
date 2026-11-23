@@ -1,8 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the DB Desk sidecar (one file, no external runtime)."""
+"""PyInstaller spec for the DB Desk sidecar (onedir — fast cold start)."""
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
+datas = []
+binaries = []
 hiddenimports = collect_submodules("uvicorn") + [
     "fastapi",
     "starlette",
@@ -15,11 +17,21 @@ hiddenimports = collect_submodules("uvicorn") + [
     "uvicorn.lifespan.on",
 ]
 
+# Native drivers: psycopg needs its bundled libpq, PyMySQL is pure Python.
+for package in ("psycopg", "psycopg_binary", "pymysql"):
+    try:
+        package_datas, package_binaries, package_hidden = collect_all(package)
+    except Exception:
+        continue
+    datas += package_datas
+    binaries += package_binaries
+    hiddenimports += package_hidden
+
 a = Analysis(
     ["app.py"],
     pathex=["."],
-    binaries=[],
-    datas=[("../ui/dist", "ui/dist")],
+    binaries=binaries,
+    datas=datas + [("../ui/dist", "ui/dist")],
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
@@ -32,13 +44,21 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="dbdesk-server",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=True,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="dbdesk-server",
 )

@@ -66,11 +66,11 @@ jobs:
       - name: Sign the sidecar
         if: env.HAS_SIGNING == 'true'
         run: |
-          TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-          codesign --force --timestamp --options runtime \
+          # onedir sidecar: --deep signs the binary and its nested dylibs
+          codesign --force --deep --timestamp --options runtime \
             --entitlements src-tauri/entitlements.plist \
             --sign "$APPLE_SIGNING_IDENTITY" \
-            "src-tauri/binaries/dbdesk-server-$TRIPLE"
+            "src-tauri/sidecar/dbdesk-server/dbdesk-server"
 
       - name: Build the app
         env:

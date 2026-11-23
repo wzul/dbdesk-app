@@ -70,10 +70,12 @@ npm --prefix ui run build
 npm run tauri build # -> src-tauri/target/release/bundle/dmg/*.dmg
 ```
 
-`externalBin` in `src-tauri/tauri.conf.json` tells Tauri to place the sidecar
-next to the main executable inside `DB Desk.app/Contents/MacOS/dbdesk-server`.
-The Rust shell starts it on a free localhost port, waits until it accepts
-connections, then opens a window pointed at it. The child is killed on exit.
+The sidecar is a PyInstaller **onedir** tree (no unpack on launch). Tauri ships
+it as a bundle resource, so it lands in
+`DB Desk.app/Contents/Resources/sidecar/dbdesk-server/`. The Rust shell shows a
+splash window immediately, starts the sidecar on a free localhost port, waits
+until it accepts connections, then navigates the same window to it. The child is
+killed on exit. The splash is `ui/public/splash.html`.
 
 The GitHub Actions workflow builds both architectures on every push:
 
@@ -84,6 +86,23 @@ Unsigned DMGs run after a right-click → **Open**. For distribution, add the
 usual signing/notarization secrets (`APPLE_CERTIFICATE`,
 `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
 `APPLE_PASSWORD`, `APPLE_TEAM_ID`); Tauri picks them up automatically.
+
+## Performance
+
+- **Persistent connections.** PostgreSQL uses `psycopg` and MySQL/MariaDB uses
+  `PyMySQL` when installed, keeping one pooled connection per configured
+  connection (serialized with a per-connection lock). Measured against local
+  containers, a table page dropped from ~95 ms to ~1.6 ms per call. The
+  `psql`/`mysql` CLIs remain as a fallback when the drivers are missing (the
+  Hermes runtime does not ship them).
+- **Column metadata cache.** `/columns` and `/table/rows` share a 60-second
+  cache with in-flight coalescing, so a table open runs one metadata query
+  instead of two and repeat views never touch the database.
+- **Fast launch.** The sidecar is a onedir build (no extraction) and the splash
+  window appears immediately while the backend starts.
+- **Statement timeouts** are set on the session (`statement_timeout` /
+  `MAX_EXECUTION_TIME` / `max_statement_time`), so a runaway query cannot block
+  the UI forever.
 
 ## Data
 
@@ -142,7 +161,8 @@ ui/src/plugin.js          DB Desk page (same file as the Hermes plugin)
 ui/src/sdk-shim.jsx       the few Hermes SDK pieces the page imports
 ui/src/main.jsx           mounts the page, toasts, light/dark
 src-tauri/                Tauri v2 shell, config, icons, capabilities
-scripts/build-sidecar.sh  PyInstaller -> src-tauri/binaries/dbdesk-server-<triple>
+src-tauri/sidecar/        staged onedir sidecar (gitignored, built by script)
+scripts/build-sidecar.sh  PyInstaller onedir -> src-tauri/sidecar/dbdesk-server/
 tests/test_standalone.py  server smoke tests
 ```
 
