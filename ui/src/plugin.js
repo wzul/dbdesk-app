@@ -3634,6 +3634,62 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                 })
               })
                 : null,
+              (draft.kind || 'postgres') === 'clickhouse'
+                ? jsxs('div', {
+                    key: 'ch-http',
+                    className:
+                      'flex flex-col gap-2 rounded-[3px] border border-(--ui-stroke-secondary)/60 p-2',
+                    children: [
+                      jsx('div', {
+                        key: 't',
+                        className: 'text-[11px] font-medium text-(--ui-text-tertiary)',
+                        children: 'ClickHouse HTTP interface'
+                      }),
+                      jsx(Field, {
+                        key: 'path',
+                        label: 'HTTP path',
+                        hint: 'Use / unless the endpoint is mounted on a subpath.',
+                        children: jsx(Input, {
+                          value: draft.ch_path || '/',
+                          placeholder: '/',
+                          onChange: set('ch_path')
+                        })
+                      }),
+                      jsx(Field, {
+                        key: 'headers',
+                        label: 'Custom HTTP headers',
+                        hint: draft.ch_headers_set
+                          ? 'Headers are saved and encrypted. Leave blank to keep them.'
+                          : 'One Name: value per line. Stored encrypted, e.g. Cloudflare Access.',
+                        children: jsx('textarea', {
+                          value: draft.ch_headers || '',
+                          rows: 3,
+                          placeholder:
+                            'CF-Access-Client-Id: ...\nCF-Access-Client-Secret: ...',
+                          className:
+                            'w-full rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-2 font-mono text-[11px] outline-none focus:border-primary/60',
+                          onChange: set('ch_headers')
+                        })
+                      }),
+                      draft.ch_headers_set
+                        ? jsxs('label', {
+                            key: 'clear',
+                            className:
+                              'flex items-center gap-2 text-[10.5px] text-(--ui-text-tertiary)',
+                            children: [
+                              jsx('input', {
+                                type: 'checkbox',
+                                checked: Boolean(draft.ch_headers_clear),
+                                onChange: (event) =>
+                                  onDraft({ ...draft, ch_headers_clear: event.target.checked })
+                              }),
+                              jsx('span', { children: 'Remove saved headers' })
+                            ]
+                          })
+                        : null
+                    ]
+                  })
+                : null,
               ['mcp', 'http', 'sqlite'].includes(draft.kind || 'postgres')
                 ? null
                 : jsxs('div', {
@@ -3858,7 +3914,11 @@ function emptyDraft() {
     http_timeout: 30,
     tunnel_command: '',
     tunnel_env: '',
-    tunnel_timeout: 25
+    tunnel_timeout: 25,
+    ch_path: '/',
+    ch_headers: '',
+    ch_headers_set: false,
+    ch_headers_clear: false
   }
 }
 

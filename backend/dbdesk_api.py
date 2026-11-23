@@ -171,7 +171,12 @@ def _save(conns: list[dict[str, Any]]) -> None:
 
 
 def _public(conn: dict[str, Any]) -> dict[str, Any]:
-    out = {k: v for k, v in conn.items() if k not in ("password", "password_enc")}
+    out = {
+        k: v
+        for k, v in conn.items()
+        if k not in ("password", "password_enc", "ch_headers", "ch_headers_enc")
+    }
+    out["ch_headers_set"] = bool(conn.get("ch_headers_enc"))
     out.setdefault("kind", "postgres")
     return out
 
@@ -182,6 +187,7 @@ def _get(conn_id: str) -> dict[str, Any]:
             conn = dict(conn)
             conn.setdefault("kind", "postgres")
             conn["password"] = _decrypt(conn.get("password_enc", ""))
+            conn["ch_headers"] = _decrypt(conn.get("ch_headers_enc", ""))
             return conn
     raise HTTPException(404, f"connection {conn_id!r} not found")
 
@@ -1591,16 +1597,43 @@ def _my_mutation(conn, sql: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
+CH_HEADER_DENY = {"host", "content-length", "connection", "transfer-encoding"}
+CH_HEADER_LINE = re.compile(r"^([A-Za-z0-9-]+):\s*(.*)$")
+
+
+def _parse_ch_headers(raw: Any, *, strict: bool = False) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for line in str(raw or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = CH_HEADER_LINE.match(line)
+        if not match:
+            if strict:
+                raise HTTPException(400, "ClickHouse headers must be 'Name: value' per line")
+            continue
+        name, value = match.group(1), match.group(2).strip()
+        if name.lower() in CH_HEADER_DENY:
+            if strict:
+                raise HTTPException(400, f"header {name} is managed by DB Desk")
+            continue
+        headers[name] = value[:4000]
+    return headers
+
+
 def _ch_url(conn: dict[str, Any], readonly: bool) -> str:
     secure = str(conn.get("sslmode") or "") in ("require", "verify-ca", "verify-full")
     scheme = "https" if secure else "http"
     host = str(conn.get("host") or "127.0.0.1")
     port = str(conn.get("port") or 8123)
+    path = str(conn.get("ch_path") or "/").strip() or "/"
+    if not path.startswith("/"):
+        path = "/" + path
     query = {"database": str(conn.get("dbname") or "default"), "default_format": "JSONCompact"}
     if readonly:
         query["readonly"] = "1"
     query["max_execution_time"] = str(QUERY_TIMEOUT)
-    return f"{scheme}://{host}:{port}/?{urllib.parse.urlencode(query)}"
+    return f"{scheme}://{host}:{port}{path}?{urllib.parse.urlencode(query)}"
 
 
 def _ch_request(conn: dict[str, Any], sql: str, *, readonly: bool = True, timeout: int = QUERY_TIMEOUT) -> str:
@@ -1608,6 +1641,7 @@ def _ch_request(conn: dict[str, Any], sql: str, *, readonly: bool = True, timeou
         "X-ClickHouse-User": str(conn.get("user") or "default"),
         "X-ClickHouse-Key": str(conn.get("password") or ""),
         "Content-Type": "text/plain; charset=utf-8",
+        **_parse_ch_headers(conn.get("ch_headers")),
     }
     request = urllib.request.Request(
         _ch_url(conn, readonly), data=sql.encode("utf-8"), headers=headers, method="POST"
@@ -4043,6 +4077,8 @@ def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
         fields += ["host", "port", "user"]
         if kind == "postgres":
             fields += ["sslmode"]
+        if kind == "clickhouse":
+            fields += ["ch_path"]
         fields += [
             "ssh_host", "ssh_user", "ssh_port", "ssh_key",
             "tunnel_command", "tunnel_env", "tunnel_timeout",
@@ -4099,6 +4135,8 @@ def _bundle_document(
             item["source_id"] = conn.get("id", "")
         if include_secrets:
             item["password"] = _decrypt(conn.get("password_enc", ""))
+            if conn.get("ch_headers_enc"):
+                item["ch_headers"] = _decrypt(str(conn.get("ch_headers_enc")))
         items.append(item)
     payload = {
         "format": BUNDLE_FORMAT,
@@ -4200,6 +4238,10 @@ def _record_from_bundle(item: dict[str, Any], record_id: str) -> dict[str, Any]:
         "dbname": str(item.get("dbname") or ""),
         "user": str(item.get("user") or ""),
         "password_enc": _encrypt(str(password)) if password not in (None, "") else "",
+        "ch_headers_enc": _encrypt(str(item.get("ch_headers")))
+        if item.get("ch_headers")
+        else "",
+        "ch_path": str(item.get("ch_path") or "/"),
         "sslmode": str(item.get("sslmode") or "prefer"),
         "readonly": bool(item.get("readonly", True)),
         "production": bool(item.get("production", False)),
@@ -4315,6 +4357,20 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     else:
         password_enc = _encrypt(str(password))
 
+    ch_headers = body.get("ch_headers")
+    if body.get("ch_headers_clear"):
+        ch_headers_enc = ""
+    elif ch_headers in (None, ""):
+        ch_headers_enc = (existing or {}).get("ch_headers_enc", "")
+    else:
+        _parse_ch_headers(str(ch_headers), strict=True)
+        ch_headers_enc = _encrypt(str(ch_headers).strip())
+    ch_path = str(pick("ch_path", "/")).strip() or "/"
+    if not ch_path.startswith("/"):
+        ch_path = "/" + ch_path
+    if "?" in ch_path or "\n" in ch_path or "\r" in ch_path:
+        raise HTTPException(400, "ClickHouse HTTP path must be a plain path such as /")
+
     labels = body.get("db_labels")
     if labels is None:
         labels = (existing or {}).get("db_labels", {})
@@ -4328,6 +4384,8 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "dbname": dbname,
         "user": user,
         "password_enc": password_enc,
+        "ch_headers_enc": ch_headers_enc,
+        "ch_path": ch_path,
         "sslmode": str(pick("sslmode", "prefer")).strip() or "prefer",
         "readonly": True if kind in ("mcp", "http") else bool(pick("readonly", True)),
         "production": bool(pick("production", False)),
@@ -4624,6 +4682,7 @@ async def test_connection(body: dict[str, Any]) -> dict[str, Any]:
         saved = _get(conn_id)
         for key in (
             "kind", "host", "port", "dbname", "user", "sslmode", "password",
+            "ch_headers", "ch_path",
             "ssh_host", "ssh_user", "ssh_port", "ssh_key",
             "mcp_url", "mcp_server", "mcp_tool", "mcp_sql_arg", "mcp_dialect", "mcp_extra_args",
             "http_url", "http_method", "http_sql_field", "http_headers",

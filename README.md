@@ -407,6 +407,30 @@ make bundle
 Keep the `.p12` and passwords out of the repo; the certificate can be revoked
 from developer.apple.com if it leaks.
 
+## ClickHouse behind Cloudflare Access
+
+ClickHouse uses its HTTP interface, so a Zero Trust application works without a
+tunnel:
+
+1. In Cloudflare Zero Trust create a **service token** (Access → Service Auth).
+2. Add a ClickHouse connection: **host** = the public hostname, **port** `443`,
+   **SSL mode** `require`.
+3. Set **HTTP path** if the endpoint is mounted on a subpath (default `/`).
+4. Paste the headers into **Custom HTTP headers**, one per line:
+
+   ```
+   CF-Access-Client-Id: <client id>.access
+   CF-Access-Client-Secret: <client secret>
+   ```
+
+5. **Test**, then save.
+
+Headers are AES-GCM encrypted in the connection store, never returned to the UI
+or AI prompts, and only included in exports/backups when you tick **Include
+passwords**. `Host`, `Content-Length`, `Connection` and `Transfer-Encoding` are
+rejected so the HTTP client keeps control of the transport. The same fields can
+carry other proxy headers (e.g. an API gateway token).
+
 ## MCP server
 
 DB Desk can act as a Model Context Protocol server so a **local** agent can

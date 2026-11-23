@@ -171,10 +171,11 @@ def _status() -> dict[str, Any]:
 DRAFT_KINDS = {"postgres", "mysql", "clickhouse", "sqlite"}
 DRAFT_TEXT_FIELDS = (
     "group", "host", "user", "sslmode", "ssh_host", "ssh_user", "tunnel_command",
+    "ch_path",
 )
 UPDATE_FIELDS = (
     "name", "group", "host", "port", "dbname", "user", "sslmode",
-    "ssh_host", "ssh_user", "ssh_port", "tunnel_command",
+    "ssh_host", "ssh_user", "ssh_port", "tunnel_command", "ch_path",
 )
 
 
@@ -823,6 +824,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "ssh_user": _STR,
                 "ssh_port": {"type": "integer"},
                 "tunnel_command": _STR,
+                "ch_path": _STR,
                 "readonly": {"type": "boolean"},
                 "production": {"type": "boolean"},
                 "note": _STR,
@@ -853,6 +855,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "ssh_user": _STR,
                 "ssh_port": {"type": "integer"},
                 "tunnel_command": _STR,
+                "ch_path": _STR,
                 "production": {"type": "boolean"},
             },
             ["connection_id"],
