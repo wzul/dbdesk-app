@@ -37,6 +37,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -1401,7 +1402,7 @@ def _sqlite_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[
 def _sqlite_rows(
     conn, schema, table, limit, offset, order_by, direction, filters=None
 ) -> dict[str, Any]:
-    meta = {column["name"]: column.get("type", "") for column in _sqlite_columns(conn, schema, table)}
+    meta = {column["name"]: column.get("type", "") for column in _columns(conn, schema, table)}
     sql = f"SELECT * FROM {_sqlite_ident(table)}"
     where = _where_clause("sqlite", filters)
     if where:
@@ -2182,7 +2183,7 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
     return _pg_tree(conn)
 
 
-def _columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
+def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
     kind = _kind(conn)
     if kind == "mcp":
         return _mcp_columns(conn, schema, table)
@@ -2197,6 +2198,54 @@ def _columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
     return _pg_columns(conn, schema, table)
 
 
+# Column metadata is fetched for every table view and, for MySQL, again inside
+# the rows query. A short-lived cache turns those repeats into memory reads.
+_COLUMN_CACHE: dict[tuple, tuple[float, list[dict[str, Any]]]] = {}
+COLUMN_CACHE_TTL = 60.0
+COLUMN_CACHE_MAX = 600
+
+
+def _invalidate_columns() -> None:
+    _COLUMN_CACHE.clear()
+
+
+_COLUMN_LOCKS: dict[tuple, "threading.Lock"] = {}
+_COLUMN_LOCKS_GUARD = threading.Lock()
+
+
+def _columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
+    key = (
+        str(conn.get("id") or ""),
+        _kind(conn),
+        str(conn.get("dbname") or ""),
+        str(schema),
+        str(table),
+    )
+    now = time.monotonic()
+    hit = _COLUMN_CACHE.get(key)
+    if hit and now - hit[0] < COLUMN_CACHE_TTL:
+        return [dict(column) for column in hit[1]]
+
+    # The page fires /columns and /table/rows together on every table open.
+    # Coalesce those two lookups so only one metadata query runs.
+    with _COLUMN_LOCKS_GUARD:
+        lock = _COLUMN_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _COLUMN_LOCKS[key] = lock
+    with lock:
+        now = time.monotonic()
+        hit = _COLUMN_CACHE.get(key)
+        if hit and now - hit[0] < COLUMN_CACHE_TTL:
+            return [dict(column) for column in hit[1]]
+        result = _columns_live(conn, schema, table)
+        if len(_COLUMN_CACHE) >= COLUMN_CACHE_MAX:
+            oldest = min(_COLUMN_CACHE, key=lambda item: _COLUMN_CACHE[item][0])
+            _COLUMN_CACHE.pop(oldest, None)
+        _COLUMN_CACHE[key] = (now, [dict(column) for column in result])
+        return result
+
+
 def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None) -> dict[str, Any]:
     kind = _kind(conn)
     if kind == "mcp":
@@ -2208,7 +2257,7 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
     if kind == "mysql":
         return _my_rows(
             conn, schema, table, limit, offset, order_by, direction,
-            _my_columns(conn, schema, table), filters,
+            _columns(conn, schema, table), filters,
         )
     if kind == "clickhouse":
         return _ch_rows(conn, schema, table, limit, offset, order_by, direction, filters)
@@ -2351,6 +2400,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         },
     }
     conns = [c for c in conns if c["id"] != conn_id] + [record]
+    _invalidate_columns()
     _save(conns)
     return {"connection": _public(record)}
 
@@ -2361,6 +2411,7 @@ async def delete_connection(conn_id: str) -> dict[str, Any]:
     kept = [c for c in conns if c["id"] != conn_id]
     if len(kept) == len(conns):
         raise HTTPException(404, f"connection {conn_id!r} not found")
+    _invalidate_columns()
     _save(kept)
     return {"ok": True}
 
@@ -3074,6 +3125,7 @@ def _build_insert_multi(conn, schema, table, columns, rows) -> str:
 
 
 def _run_mutation(conn, sql: str) -> None:
+    _invalidate_columns()
     kind = _kind(conn)
     if kind == "sqlite":
         _sqlite_mutation(conn, sql)
@@ -3254,6 +3306,7 @@ async def delete_rows_bulk(body: dict[str, Any]) -> dict[str, Any]:
             _ch_mutation(conn, statement)
     else:
         _pg_run(conn, "BEGIN;\n" + ";\n".join(statements) + ";\nCOMMIT;\n", readonly=False)
+    _invalidate_columns()
     _audit(conn, "delete_bulk", preview_sql, rows=len(statements))
     return {"ok": True, "rows": len(statements)}
 
@@ -3339,6 +3392,7 @@ async def import_rows(body: dict[str, Any]) -> dict[str, Any]:
             "BEGIN;\n" + ";\n".join(statements) + ";\nCOMMIT;\n",
             readonly=False,
         )
+    _invalidate_columns()
     _audit(conn, "import", f"INSERT {len(normalized)} row(s) into {schema}.{table}", rows=len(normalized))
     return {"ok": True, "rows": len(normalized), "statements": len(statements)}
 

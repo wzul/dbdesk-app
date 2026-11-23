@@ -40,4 +40,22 @@ text = text.replace(
 open(path, "w", encoding="utf-8").write(text)
 PY
 
-echo "synced plugin.js and dbdesk_api.py from $SOURCE"
+# Hide the MCP connection type: it needs the Hermes runtime, which the
+# standalone app does not ship.
+python3 - "$ROOT/ui/src/plugin.js" <<'PY'
+import sys
+
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+old = """                        jsx('option', { value: 'sqlite', children: 'SQLite (file)' }, 'sqlite'),
+                        jsx('option', { value: 'mcp', children: 'MCP (query tool)' }, 'mcp'),"""
+new = """                        jsx('option', { value: 'sqlite', children: 'SQLite (file)' }, 'sqlite'),
+                        ...(globalThis.__DBDESK_NO_MCP__
+                          ? []
+                          : [jsx('option', { value: 'mcp', children: 'MCP (query tool)' }, 'mcp')]),"""
+if old not in text:
+    raise SystemExit("connection form changed: update scripts/sync-plugin.sh")
+open(path, "w", encoding="utf-8").write(text.replace(old, new, 1))
+PY
+
+echo "synced plugin.js (MCP hidden) and dbdesk_api.py from $SOURCE"

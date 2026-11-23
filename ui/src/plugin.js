@@ -3255,7 +3255,9 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                         jsx('option', { value: 'mysql', children: 'MySQL / MariaDB' }, 'mysql'),
                         jsx('option', { value: 'clickhouse', children: 'ClickHouse' }, 'clickhouse'),
                         jsx('option', { value: 'sqlite', children: 'SQLite (file)' }, 'sqlite'),
-                        jsx('option', { value: 'mcp', children: 'MCP (query tool)' }, 'mcp'),
+                        ...(globalThis.__DBDESK_NO_MCP__
+                          ? []
+                          : [jsx('option', { value: 'mcp', children: 'MCP (query tool)' }, 'mcp')]),
                         jsx('option', { value: 'http', children: 'HTTP (query gateway)' }, 'http')
                       ]
                     })

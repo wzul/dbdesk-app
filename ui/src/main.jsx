@@ -1,3 +1,6 @@
+/* The standalone build has no Hermes runtime, so MCP connections cannot run. */
+globalThis.__DBDESK_NO_MCP__ = true
+
 import './app.css'
 import '@vscode/codicons/dist/codicon.css'
 

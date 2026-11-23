@@ -118,8 +118,8 @@ Notes for the standalone build:
 - **Telegram notices are off** unless `DBDESK_NOTIFY=1` and a `hermes` CLI is on
   PATH. Production approvals still work — approve them in the **Approvals**
   drawer.
-- **MCP connections** need a Hermes runtime; they are listed but cannot run
-  queries here. HTTP gateways work normally.
+- **MCP connections are not offered** in the standalone form: they need the
+  Hermes runtime. HTTP gateways work normally.
 - SQLite needs the file on this machine (no upload).
 
 ## Tests
