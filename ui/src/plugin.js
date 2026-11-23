@@ -3663,7 +3663,7 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                         key: 'headers',
                         label: 'Custom HTTP headers',
                         hint: draft.ch_headers_set
-                          ? 'Headers are saved and encrypted. Leave blank to keep them.'
+                          ? 'Typing new lines replaces the saved set. Leave blank to keep it.'
                           : 'One Name: value per line. Stored encrypted, e.g. Cloudflare Access.',
                         children: jsx('textarea', {
                           value: draft.ch_headers || '',
@@ -3675,6 +3675,26 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                           onChange: set('ch_headers')
                         })
                       }),
+                      draft.ch_headers_set && (draft.ch_header_names || []).length
+                        ? jsxs('div', {
+                            key: 'saved-names',
+                            className: 'flex flex-wrap items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
+                            children: [
+                              jsx('span', { key: 'l', children: 'Saved:' }),
+                              ...(draft.ch_header_names || []).map((name) =>
+                                jsx(
+                                  'span',
+                                  {
+                                    className:
+                                      'rounded-[3px] border border-(--ui-stroke-secondary) px-1 py-0.5 font-mono',
+                                    children: name
+                                  },
+                                  name
+                                )
+                              )
+                            ]
+                          })
+                        : null,
                       draft.ch_headers_set
                         ? jsxs('label', {
                             key: 'clear',

@@ -177,6 +177,13 @@ def _public(conn: dict[str, Any]) -> dict[str, Any]:
         if k not in ("password", "password_enc", "ch_headers", "ch_headers_enc")
     }
     out["ch_headers_set"] = bool(conn.get("ch_headers_enc"))
+    names: list[str] = []
+    if conn.get("ch_headers_enc"):
+        try:
+            names = sorted(_parse_ch_headers(_decrypt(str(conn.get("ch_headers_enc")))).keys())
+        except Exception:  # noqa: BLE001
+            names = []
+    out["ch_header_names"] = names
     out.setdefault("kind", "postgres")
     return out
 

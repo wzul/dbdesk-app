@@ -434,9 +434,11 @@ If Cloudflare returns **error 1010** (Bot Fight Mode), it is rejecting the
 `Python-urllib` browser signature. DB Desk now sends a browser User-Agent by
 default; you can override it with a `User-Agent: …` line in the custom headers.
 
-Headers are AES-GCM encrypted in the connection store, never returned to the UI
-or AI prompts, and only included in exports/backups when you tick **Include
-passwords**. `Host`, `Content-Length`, `Connection` and `Transfer-Encoding` are
+Headers are AES-GCM encrypted in the connection store; values are never returned
+to the UI or AI prompts. The edit form lists the saved header **names** and an
+empty box: typing new lines **replaces** the saved set, leaving it blank keeps
+it, and **Remove saved headers** clears it. Headers are only included in
+exports/backups when you tick **Include passwords**. `Host`, `Content-Length`, `Connection` and `Transfer-Encoding` are
 rejected so the HTTP client keeps control of the transport. The same fields can
 carry other proxy headers (e.g. an API gateway token).
 
