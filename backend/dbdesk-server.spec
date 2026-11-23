@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for the DB Desk sidecar (onedir — fast cold start)."""
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 datas = []
 binaries = []
@@ -16,6 +16,9 @@ hiddenimports = collect_submodules("uvicorn") + [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan.on",
 ]
+
+# CA bundle for outbound HTTPS (AI providers, MCP gateways).
+datas += collect_data_files("certifi")
 
 # Native drivers: psycopg needs its bundled libpq, PyMySQL is pure Python.
 for package in ("psycopg", "psycopg_binary", "pymysql"):

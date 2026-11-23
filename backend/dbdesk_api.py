@@ -35,6 +35,7 @@ import secrets as pysecrets
 import shutil
 import socket
 import sqlite3
+import ssl
 import subprocess
 import threading
 import time
@@ -651,6 +652,22 @@ try:  # pure Python, works everywhere
     import pymysql
 except Exception:  # pragma: no cover - the mysql CLI path still works
     pymysql = None
+
+try:  # bundled CA store (PyInstaller builds have no system OpenSSL paths)
+    import certifi
+
+    _CA_FILE = certifi.where()
+except Exception:  # pragma: no cover
+    _CA_FILE = ""
+
+
+def _ssl_context() -> ssl.SSLContext:
+    if _CA_FILE:
+        try:
+            return ssl.create_default_context(cafile=_CA_FILE)
+        except Exception:
+            pass
+    return ssl.create_default_context()
 
 _POOLS: dict[str, dict[str, Any]] = {}
 _POOLS_GUARD = threading.Lock()
@@ -2173,7 +2190,9 @@ def _mcp_http_json(
         url, data=body, headers=request_headers, method="POST" if body is not None else "GET"
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(
+            request, timeout=timeout, context=_ssl_context()
+        ) as response:
             text = response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:400]
@@ -2437,7 +2456,9 @@ def _mcp_post(
         url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
     )
     try:
-        with urllib.request.urlopen(request, timeout=QUERY_TIMEOUT) as response:
+        with urllib.request.urlopen(
+            request, timeout=QUERY_TIMEOUT, context=_ssl_context()
+        ) as response:
             content_type = response.headers.get_content_type()
             session = response.headers.get("Mcp-Session-Id") or session_id
             body = response.read().decode("utf-8", "replace")
