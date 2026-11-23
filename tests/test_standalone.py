@@ -495,6 +495,32 @@ class McpServer(unittest.TestCase):
         ).json()
         self.assertTrue(preview["preview"])
 
+    def test_generate_sql_from_filters(self) -> None:
+        cid = self.add_connection(readonly=True)
+        result = self.client.post(
+            "/api/table/sql",
+            json={
+                "connection_id": cid,
+                "schema": "main",
+                "table": "people",
+                "filters": [
+                    {"column": "name", "op": "eq", "value": "Ali", "enabled": True},
+                    {"column": "name", "op": "eq", "value": "Siti", "enabled": False},
+                    {"column": "name", "op": "eq", "value": "", "enabled": True},
+                ],
+                "order_by": "name",
+                "order_dir": "desc",
+                "limit": 5,
+            },
+        )
+        self.assertEqual(result.status_code, 200, result.text)
+        sql = result.json()["sql"]
+        self.assertIn('FROM "main"."people"', sql)
+        self.assertIn('"name" = \'Ali\'', sql)
+        self.assertNotIn("Siti", sql)
+        self.assertIn('ORDER BY "name" DESC', sql)
+        self.assertIn("LIMIT 5;", sql)
+
     def test_disabled_filters_are_ignored(self) -> None:
         cid = self.add_connection(readonly=True)
         result = self.client.post(

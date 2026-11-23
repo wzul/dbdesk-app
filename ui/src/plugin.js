@@ -4741,6 +4741,8 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [queriesTab, setQueriesTab] = useState('history')
   const [saveQueryOpen, setSaveQueryOpen] = useState(false)
   const [saveQueryName, setSaveQueryName] = useState('')
+  const [generatedSql, setGeneratedSql] = useState('')
+  const [sqlGenOpen, setSqlGenOpen] = useState(false)
   const [editor, setEditor] = useState(null)
   const [insertOpen, setInsertOpen] = useState(false)
 
@@ -5790,6 +5792,29 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     )
   }, [views, activeId, activeDb, selected])
 
+  const generateSql = async () => {
+    if (!selected || !activeId) return
+    try {
+      const result = await call('/table/sql', {
+        method: 'POST',
+        body: {
+          connection_id: activeId,
+          database: activeDb,
+          schema: selected.schema,
+          table: selected.table,
+          filters,
+          order_by: order.by,
+          order_dir: order.dir,
+          limit
+        }
+      })
+      setGeneratedSql(result.sql || '')
+      setSqlGenOpen(true)
+    } catch (error) {
+      setErr(errText(error))
+    }
+  }
+
   const saveCurrentQuery = async () => {
     const name = saveQueryName.trim()
     if (!name || !sql.trim()) return
@@ -6731,6 +6756,25 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             onCopy: copySelection
                           }),
                           jsx(Button, {
+                            key: 'table-sql',
+                            variant: 'ghost',
+                            size: 'sm',
+                            title: 'Generate SQL from the current table, filters, order and limit',
+                            disabled: !selected,
+                            onClick: () => void generateSql(),
+                            children: jsxs('span', {
+                              className: 'flex items-center gap-1',
+                              children: [
+                                jsx(Codicon, { key: 'i', name: 'code' }),
+                                jsx('span', {
+                                  key: 't',
+                                  className: 'dbd-sm-inline',
+                                  children: 'SQL'
+                                })
+                              ]
+                            })
+                          }),
+                          jsx(Button, {
                             key: 'chart',
                             variant: chartOpen ? 'secondary' : 'ghost',
                             size: 'sm',
@@ -7096,6 +7140,15 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                     children: `${filters.filter((item) => item.enabled !== false).length} active`
                                   }),
                                   jsx('span', { key: 'sp', className: 'flex-1' }),
+                                  jsx(Button, {
+                                    key: 'sql',
+                                    variant: 'secondary',
+                                    size: 'xs',
+                                    disabled: !filters.length,
+                                    title: 'Generate SQL from these filters',
+                                    onClick: () => void generateSql(),
+                                    children: 'SQL'
+                                  }),
                                   jsx(Button, {
                                     key: 'all',
                                     variant: 'ghost',
@@ -8012,6 +8065,70 @@ jsxs('div', {
         : null,
       pending
         ? jsx(SqlConfirm, { key: 'confirm', pending, onCancel: () => setPending(null) })
+        : null,
+      sqlGenOpen
+        ? jsxs('div', {
+            key: 'sqlgen-modal',
+            className: 'fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4',
+            children: [
+              jsxs('div', {
+                key: 'panel',
+                className:
+                  'flex max-h-[82vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[8px] border border-(--ui-stroke-secondary) bg-background shadow-2xl',
+                children: [
+                  jsxs('div', {
+                    key: 'head',
+                    className:
+                      'flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2.5',
+                    children: [
+                      jsx(Codicon, { key: 'i', name: 'code', className: 'text-primary' }),
+                      jsx('span', {
+                        key: 't',
+                        className: 'text-[13px] font-semibold',
+                        children: 'Generated SQL'
+                      }),
+                      jsx('span', { key: 'sp', className: 'flex-1' }),
+                      jsx(Button, {
+                        key: 'copy',
+                        variant: 'secondary',
+                        size: 'sm',
+                        onClick: () => {
+                          void writeClipboardText(generatedSql)
+                          host.notify({ kind: 'info', message: 'SQL copied' })
+                        },
+                        children: 'Copy'
+                      }),
+                      jsx(Button, {
+                        key: 'open',
+                        size: 'sm',
+                        onClick: () => {
+                          setSql(generatedSql)
+                          setSqlGenOpen(false)
+                          setFilterOpen(false)
+                          setTab('sql')
+                        },
+                        children: 'Open in SQL'
+                      }),
+                      jsx(Button, {
+                        key: 'close',
+                        variant: 'ghost',
+                        size: 'sm',
+                        title: 'Close',
+                        onClick: () => setSqlGenOpen(false),
+                        children: jsx(Codicon, { name: 'close' })
+                      })
+                    ]
+                  }),
+                  jsx('pre', {
+                    key: 'sql',
+                    className:
+                      'min-h-0 flex-1 overflow-auto p-3 font-mono text-[12px] leading-6 whitespace-pre',
+                    children: generatedSql
+                  })
+                ]
+              })
+            ]
+          })
         : null,
       saveQueryOpen
         ? jsxs('div', {

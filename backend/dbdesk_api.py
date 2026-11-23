@@ -5057,6 +5057,45 @@ async def table_csv(
     }
 
 
+@router.post("/table/sql")
+async def table_sql(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    kind = _kind(conn)
+    if kind in ("mcp", "http"):
+        raise HTTPException(400, "SQL generation works on PostgreSQL, MySQL/MariaDB, ClickHouse and SQLite")
+    schema = str(body.get("schema") or "")
+    table = str(body.get("table") or "")
+    if not schema or not table:
+        raise HTTPException(400, "schema and table are required")
+    quote = {
+        "postgres": _ident,
+        "mysql": _my_ident,
+        "clickhouse": _ch_ident,
+        "sqlite": _sqlite_ident,
+    }[kind]
+    filters = [item for item in body.get("filters") or [] if isinstance(item, dict)]
+    filters = [
+        item
+        for item in filters
+        if item.get("enabled") is not False
+        and (
+            str(item.get("op") or "").lower() in ("isnull", "notnull")
+            or str(item.get("value") or "") != ""
+        )
+    ]
+    sql = f"SELECT *\nFROM {quote(schema)}.{quote(table)}"
+    where = _where_clause(kind, filters)
+    if where:
+        sql += f"\nWHERE {where}"
+    order_by = str(body.get("order_by") or "").strip()
+    if order_by:
+        direction = "DESC" if str(body.get("order_dir") or "").lower() == "desc" else "ASC"
+        sql += f"\nORDER BY {quote(order_by)} {direction}"
+    limit = max(1, min(int(body.get("limit") or 100), MAX_ROWS))
+    sql += f"\nLIMIT {limit};"
+    return {"sql": sql}
+
+
 @router.post("/table/rows")
 async def table_rows(body: dict[str, Any]) -> dict[str, Any]:
     conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
