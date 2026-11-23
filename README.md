@@ -137,10 +137,15 @@ Set `DBDESK_HOME` to override. The directory contains:
 
 ## What works
 
+- **MCP server for local agents** — Settings → **MCP server** exposes DB Desk
+  to Claude Desktop, Cursor, Hermes or any MCP client over stdio or loopback
+  HTTP. Tools cover connections, databases, tables, columns, indexes, DDL,
+  rows, CSV, SQL and the AI agent. Disabled by default; one toggle generates a
+  bearer token.
 - **Settings (⌘,)** — one preferences window: updates, native notification
-  toggle + test, AI provider (base URL/model/key), application-data path and
-  version. Open it with **⌘,**, the gear on the picker, or the gear in the app
-  header.
+  toggle + test, MCP server, AI provider (base URL/model/key), application-data
+  path and version. Open it with **⌘,**, the gear on the picker, or the gear in
+  the app header.
 - **AI setup assistant** — **AI setup** on the picker: describe the database
   (“MySQL on my VPS behind a bastion”) and the agent returns a field-by-field
   draft; **Use this setup** opens the form prefilled. Passwords are never sent:
@@ -378,6 +383,66 @@ make bundle
 
 Keep the `.p12` and passwords out of the repo; the certificate can be revoked
 from developer.apple.com if it leaks.
+
+## MCP server
+
+DB Desk can act as a Model Context Protocol server so a **local** agent can
+drive the same connections the app uses. Nothing is exposed until you enable it
+in **Settings → MCP server**.
+
+### Transports
+
+**stdio** (Claude Desktop, Cursor, most clients): the bundled sidecar runs as a
+bridge and talks to the open app.
+
+```json
+{
+  "mcpServers": {
+    "dbdesk": {
+      "command": "/Applications/DB Desk.app/Contents/Resources/sidecar/dbdesk-server/dbdesk-server",
+      "args": ["mcp"],
+      "env": { "DBDESK_HOME": "/Users/you/Library/Application Support/DB Desk" }
+    }
+  }
+}
+```
+
+Use **Copy stdio config** in Settings to get the exact paths for your install.
+
+**HTTP** (Streamable HTTP, JSON-RPC 2.0): `POST http://127.0.0.1:<port>/mcp`
+with `Authorization: Bearer <token>`. Use **Copy HTTP config**.
+
+The app must be open. The bridge discovers the port from
+`<app home>/data/runtime.json`; the token lives in `<app home>/data/mcp.json`
+(mode 0600).
+
+### Tools
+
+| Tool | What it does |
+|---|---|
+| `connections_list` | saved connections (no passwords or tokens) |
+| `databases_list` | databases reachable through a connection |
+| `tables_list` | schemas + tables/views |
+| `table_columns` / `table_indexes` / `table_ddl` | structure |
+| `table_rows` | rows with filters, order, limit, offset |
+| `table_csv` | CSV text (capped, reports `truncated`) |
+| `query` | one SQL statement, audited as `mcp_query` |
+| `ask_data` | DB Desk's AI agent, including multi-database local joins |
+
+### Writes
+
+- A **read-only** connection only accepts `SELECT`/`WITH`/`SHOW`/`EXPLAIN`.
+- A writable connection can run writes when **Allow writes** is on (it is on
+  when you first enable MCP; turn it off if the agent should be read-only).
+- Production writes use the existing audit + native notification path.
+- Every MCP statement is written to the audit log with action `mcp_query`.
+
+### Security
+
+- The HTTP endpoint binds to the app's loopback socket only.
+- Requests require the bearer token; rotate it from Settings at any time.
+- Tool results never include passwords, API keys or SSH material.
+- Disable the server (or quit the app) and both transports stop immediately.
 
 ## AI privacy
 

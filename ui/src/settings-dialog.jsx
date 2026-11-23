@@ -43,12 +43,18 @@ export default function SettingsDialog({ open, onClose, version }) {
   const [notifyEnabled, setNotifyEnabled] = useState(true)
   const [notifyState, setNotifyState] = useState('')
   const [home, setHome] = useState('')
+  const [mcp, setMcp] = useState(null)
+  const [mcpBusy, setMcpBusy] = useState(false)
+  const [mcpMessage, setMcpMessage] = useState('')
+  const [mcpReveal, setMcpReveal] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setAiMessage('')
     setUpdateState('')
     setNotifyState('')
+    setMcpMessage('')
+    setMcpReveal(false)
     try {
       setNotifyEnabled(localStorage.getItem(NOTIFY_KEY) !== 'off')
     } catch {
@@ -65,6 +71,9 @@ export default function SettingsDialog({ open, onClose, version }) {
       .then((response) => response.json())
       .then((value) => setHome(value.home || ''))
       .catch(() => {})
+    rest('/mcp/status')
+      .then(setMcp)
+      .catch(() => setMcp(null))
   }, [open])
 
   useEffect(() => {
@@ -93,6 +102,57 @@ export default function SettingsDialog({ open, onClose, version }) {
       setAiMessage(String(error.message || error))
     } finally {
       setSaving(false)
+    }
+  }
+
+
+  const copyText = async (value, label) => {
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+    } catch {
+      try {
+        const area = document.createElement('textarea')
+        area.value = value
+        document.body.appendChild(area)
+        area.select()
+        document.execCommand('copy')
+        document.body.removeChild(area)
+      } catch {
+        setMcpMessage('Clipboard unavailable')
+        return
+      }
+    }
+    setMcpMessage(`${label} copied`)
+  }
+
+  const updateMcp = async (body) => {
+    setMcpBusy(true)
+    setMcpMessage('')
+    try {
+      const value = await rest('/mcp/status', { method: 'POST', body })
+      setMcp(value)
+      setMcpReveal(false)
+      setMcpMessage(value.enabled ? 'MCP server running' : 'MCP server stopped')
+    } catch (error) {
+      setMcpMessage(String(error.message || error))
+    } finally {
+      setMcpBusy(false)
+    }
+  }
+
+  const rotateMcp = async () => {
+    setMcpBusy(true)
+    setMcpMessage('')
+    try {
+      const value = await rest('/mcp/token/rotate', { method: 'POST' })
+      setMcp(value)
+      setMcpReveal(true)
+      setMcpMessage('New token generated — reconnect the agent')
+    } catch (error) {
+      setMcpMessage(String(error.message || error))
+    } finally {
+      setMcpBusy(false)
     }
   }
 
@@ -222,6 +282,122 @@ export default function SettingsDialog({ open, onClose, version }) {
                 Test
               </Button>
             </Row>
+          </Section>
+
+          <Section title="MCP server">
+            <Row
+              label="Local agent access"
+              hint={
+                mcp && mcp.enabled
+                  ? `Loopback only · ${mcp.tools} tools · bearer token`
+                  : 'Let Claude Desktop, Cursor or Hermes drive DB Desk over MCP.'
+              }
+            >
+              <label className="flex items-center gap-2 text-[11.5px]">
+                <input
+                  type="checkbox"
+                  checked={Boolean(mcp && mcp.enabled)}
+                  disabled={mcpBusy || !mcp}
+                  onChange={(event) => void updateMcp({ enabled: event.target.checked })}
+                />
+                Enabled
+              </label>
+              {mcp && mcp.enabled ? (
+                <Badge variant="outline" size="xs">
+                  running
+                </Badge>
+              ) : null}
+            </Row>
+
+            {mcp && mcp.enabled ? (
+              <>
+                <Row label="Endpoint" hint="Streamable HTTP, JSON-RPC 2.0">
+                  <code className="max-w-[260px] truncate rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-1.5 py-0.5 font-mono text-[10.5px]">
+                    {mcp.endpoint}
+                  </code>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void copyText(mcp.endpoint, 'Endpoint')}
+                  >
+                    Copy
+                  </Button>
+                </Row>
+
+                <Row label="Token" hint="Stored 0600 · sent as Authorization: Bearer">
+                  <code className="max-w-[180px] truncate rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-1.5 py-0.5 font-mono text-[10.5px]">
+                    {mcpReveal ? mcp.token : mcp.token_hint || '…'}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMcpReveal((value) => !value)}
+                  >
+                    {mcpReveal ? 'Hide' : 'Show'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void copyText(mcp.token, 'Token')}
+                  >
+                    Copy
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={mcpBusy}
+                    onClick={() => void rotateMcp()}
+                  >
+                    Rotate
+                  </Button>
+                </Row>
+
+                <Row
+                  label="Allow writes"
+                  hint="Writable connections may run INSERT/UPDATE/DELETE; PROD writes notify."
+                >
+                  <label className="flex items-center gap-2 text-[11.5px]">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(mcp.allow_writes)}
+                      disabled={mcpBusy}
+                      onChange={(event) =>
+                        void updateMcp({ allow_writes: event.target.checked })
+                      }
+                    />
+                    Enabled
+                  </label>
+                </Row>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      void copyText(JSON.stringify(mcp.stdio, null, 2), 'stdio config')
+                    }
+                  >
+                    Copy stdio config
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      void copyText(JSON.stringify(mcp.http, null, 2), 'HTTP config')
+                    }
+                  >
+                    Copy HTTP config
+                  </Button>
+                  <span className="text-[10.5px] text-(--ui-text-tertiary)">
+                    Paste into the agent&apos;s MCP servers list.
+                  </span>
+                </div>
+              </>
+            ) : null}
+
+            {mcpMessage ? (
+              <span className="text-[10.5px] text-(--ui-text-secondary)">{mcpMessage}</span>
+            ) : null}
           </Section>
 
           <Section title="AI provider">

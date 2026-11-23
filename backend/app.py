@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "DB Desk"
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 
 
 def _app_home() -> Path:
@@ -45,6 +45,7 @@ from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 from dbdesk_api import router  # noqa: E402
+import mcp_gateway  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 
@@ -67,6 +68,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router, prefix="/api")
+app.include_router(mcp_gateway.runtime_router, prefix="/api")
+app.include_router(mcp_gateway.protocol_router)
 
 
 @app.get("/health")
@@ -92,10 +95,17 @@ async def spa(path: str):
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] in ("mcp", "--mcp", "mcp-stdio"):
+        import mcp_stdio
+
+        mcp_stdio.main()
+        return
+
     import uvicorn
 
     host = os.environ.get("HOST") or "127.0.0.1"
     port = int(os.environ.get("PORT") or os.environ.get("DBDESK_PORT") or 8765)
+    mcp_gateway.set_runtime(port, VERSION)
     if os.environ.get("DBDESK_OPEN") == "1":
         import threading
         import webbrowser

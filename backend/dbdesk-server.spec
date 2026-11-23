@@ -7,6 +7,8 @@ datas = []
 binaries = []
 hiddenimports = collect_submodules("uvicorn") + [
     "fastapi",
+    "mcp_gateway",
+    "mcp_stdio",
     "starlette",
     "anyio",
     "cryptography",
