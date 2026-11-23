@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 
+import { relaunch } from '@tauri-apps/plugin-process'
 import { Badge, Button, Codicon, Input, cn, rest } from './sdk-shim.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
 
@@ -203,8 +204,14 @@ export default function SettingsDialog({ open, onClose, version }) {
           setUpdateState('Installing…')
         }
       })
-      const { relaunch } = await import('@tauri-apps/plugin-process')
-      await relaunch()
+      setUpdateState('Installed — relaunching…')
+      try {
+        await relaunch()
+      } catch (error) {
+        setUpdateState(
+          `Installed. Quit and reopen DB Desk (${error.message || error}).`
+        )
+      }
     } catch (error) {
       setUpdateState(`Update failed: ${error.message || error}`)
     }
