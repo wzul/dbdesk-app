@@ -3222,6 +3222,159 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# AI harness (natural language -> read-only SQL)
+# --------------------------------------------------------------------------- #
+
+AI_DEFAULT_BASE = "https://api.openai.com/v1"
+AI_DEFAULT_MODEL = "gpt-4o-mini"
+
+
+def _ai_path() -> Path:
+    return _data_dir() / "ai.json"
+
+
+def _load_ai_config() -> dict[str, Any]:
+    path = _ai_path()
+    if not path.exists():
+        return {"base_url": AI_DEFAULT_BASE, "model": AI_DEFAULT_MODEL, "api_key_enc": ""}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    return {
+        "base_url": str(data.get("base_url") or AI_DEFAULT_BASE),
+        "model": str(data.get("model") or AI_DEFAULT_MODEL),
+        "api_key_enc": str(data.get("api_key_enc") or ""),
+    }
+
+
+def _save_ai_config(config: dict[str, Any]) -> None:
+    path = _ai_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+def _ai_key(config: dict[str, Any]) -> str:
+    token = config.get("api_key_enc") or ""
+    return _decrypt(token) if token else ""
+
+
+def _ai_post(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    key = _ai_key(config)
+    if not key:
+        raise HTTPException(400, "AI is not configured: add an API key in AI settings")
+    base = str(config.get("base_url") or AI_DEFAULT_BASE).rstrip("/")
+    url = base + "/chat/completions"
+    headers = {"Authorization": f"Bearer {key}"}
+    try:
+        return _mcp_http_json(url, payload=payload, headers=headers, timeout=60)
+    except HTTPException as exc:
+        # Some OpenAI-compatible servers reject response_format.
+        if "response_format" in payload:
+            retry = dict(payload)
+            retry.pop("response_format", None)
+            return _mcp_http_json(url, payload=retry, headers=headers, timeout=60)
+        raise exc
+
+
+def _ai_schema_context(conn: dict[str, Any], schema: str, table: str, question: str) -> str:
+    try:
+        tables = _tree(conn)
+    except HTTPException:
+        tables = []
+    names = [f"{row['schema']}.{row['name']}" for row in tables][:120]
+    lines = [f"Database: {conn.get('dbname') or ''}"]
+    if names:
+        lines.append("Tables: " + ", ".join(names))
+    focus = [
+        row for row in tables
+        if row.get("schema") == schema and row.get("name") == table
+    ]
+    if not focus:
+        lowered = question.lower()
+        focus = [
+            row for row in tables
+            if str(row.get("name") or "").lower() in lowered
+        ][:3]
+    for row in focus[:3]:
+        try:
+            columns = _columns(conn, row["schema"], row["name"])
+        except HTTPException:
+            continue
+        body = ", ".join(
+            f"{column['name']} {column.get('type') or ''}".strip()
+            for column in columns[:60]
+        )
+        lines.append(f"Columns for {row['schema']}.{row['name']}: {body}")
+    return "\n".join(lines)[:20000]
+
+
+def _ai_extract_json(text: str) -> dict[str, Any]:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z0-9]*\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+    try:
+        value = json.loads(cleaned)
+        return value if isinstance(value, dict) else {}
+    except ValueError:
+        match = re.search(r"\{.*\}", cleaned, re.S)
+        if not match:
+            raise HTTPException(502, "the AI did not return JSON")
+        try:
+            value = json.loads(match.group(0))
+        except ValueError as exc:
+            raise HTTPException(502, "the AI returned invalid JSON") from exc
+        return value if isinstance(value, dict) else {}
+
+
+def _ai_request(conn: dict[str, Any], database: str, schema: str, table: str, question: str) -> dict[str, Any]:
+    config = _load_ai_config()
+    dialect = {"postgres": "PostgreSQL", "mysql": "MySQL/MariaDB", "clickhouse": "ClickHouse", "sqlite": "SQLite"}.get(_kind(conn), "SQL")
+    today = datetime.date.today().isoformat()
+    context = _ai_schema_context(conn, schema, table, question)
+    system = (
+        "You are DB Desk's SQL assistant. Translate the user's question into exactly one "
+        f"read-only {dialect} SELECT statement. Reply with JSON only: "
+        '{"sql": "<statement>", "explanation": "<one short sentence>"}. '
+        "Rules: no INSERT/UPDATE/DELETE/DDL, no multiple statements, quote identifiers when needed, "
+        f"add LIMIT 500 when returning detail rows, use today's date {today} for relative dates. "
+        "Use only the tables and columns listed.\n\n" + context
+    )
+    payload = {
+        "model": config.get("model") or AI_DEFAULT_MODEL,
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": question},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    data = _ai_post(config, payload)
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise HTTPException(502, "unexpected response from the AI provider") from exc
+    parsed = _ai_extract_json(str(content))
+    sql = _check_sql(str(parsed.get("sql") or ""))
+    if not READ_SQL.match(sql):
+        raise HTTPException(400, "the AI produced a non-read statement; refused")
+    explanation = str(parsed.get("explanation") or "")[:500]
+    return {"sql": sql, "explanation": explanation}
+
+
+def _ai_run(conn: dict[str, Any], sql: str) -> dict[str, Any]:
+    wrapped = f"SELECT * FROM (\n{sql}\n) AS dbdesk_ai LIMIT {MAX_ROWS}"
+    readonly_conn = dict(conn, readonly=True)
+    started = time.monotonic()
+    result = _query(readonly_conn, wrapped, MAX_ROWS, True)
+    result["duration_ms"] = round((time.monotonic() - started) * 1000)
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # connection bundles (export / import / QR)
 # --------------------------------------------------------------------------- #
 
@@ -3535,6 +3688,52 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     _close_pools()
     _save(conns)
     return {"connection": _public(record)}
+
+
+@router.get("/ai/config")
+async def ai_config() -> dict[str, Any]:
+    config = _load_ai_config()
+    return {
+        "base_url": config["base_url"],
+        "model": config["model"],
+        "configured": bool(_ai_key(config)),
+    }
+
+
+@router.post("/ai/config")
+async def ai_config_save(body: dict[str, Any]) -> dict[str, Any]:
+    current = _load_ai_config()
+    api_key = body.get("api_key")
+    config = {
+        "base_url": str(body.get("base_url") or current["base_url"]).strip() or AI_DEFAULT_BASE,
+        "model": str(body.get("model") or current["model"]).strip() or AI_DEFAULT_MODEL,
+        "api_key_enc": current["api_key_enc"],
+    }
+    if api_key not in (None, ""):
+        config["api_key_enc"] = _encrypt(str(api_key))
+    _save_ai_config(config)
+    return {"ok": True, "configured": bool(config["api_key_enc"]), "base_url": config["base_url"], "model": config["model"]}
+
+
+@router.post("/ai/ask")
+async def ai_ask(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    if _kind(conn) in ("mcp", "http"):
+        raise HTTPException(400, "AI queries work on PostgreSQL, MySQL/MariaDB, ClickHouse and SQLite connections")
+    question = str(body.get("question") or "").strip()[:2000]
+    if not question:
+        raise HTTPException(400, "question is required")
+    schema = str(body.get("schema") or "")
+    table = str(body.get("table") or "")
+    planned = _ai_request(conn, str(body.get("database") or ""), schema, table, question)
+    if body.get("execute") is False:
+        return {"sql": planned["sql"], "explanation": planned["explanation"]}
+    result = _ai_run(conn, planned["sql"])
+    return {
+        "sql": planned["sql"],
+        "explanation": planned["explanation"],
+        **result,
+    }
 
 
 @router.post("/connections/export")

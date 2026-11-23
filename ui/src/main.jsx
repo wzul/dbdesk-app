@@ -12,7 +12,7 @@ import Launcher from './launcher.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.5.1'
+const APP_VERSION = '0.6.0'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
@@ -94,7 +94,85 @@ function Toasts() {
   )
 }
 
+
+function useNativeNotifications() {
+  useEffect(() => {
+    if (!window.__TAURI_INTERNALS__) return
+    let cancelled = false
+    let timer = null
+    let seenApprovals = null
+    let lastAudit = null
+
+    const tick = async () => {
+      if (cancelled || !seenApprovals) return
+      try {
+        const { sendNotification } = await import('@tauri-apps/plugin-notification')
+        const approvals = await rest('/approvals?limit=50')
+        for (const entry of approvals.approvals || []) {
+          if (entry.status === 'pending' && !seenApprovals.has(entry.id)) {
+            seenApprovals.add(entry.id)
+            sendNotification({
+              title: 'DB Desk — approval required',
+              body: `${entry.action} on ${entry.connection_name} (${entry.database})`
+            })
+          }
+        }
+        const audit = await rest('/audit?limit=50')
+        for (const entry of (audit.entries || []).slice().reverse()) {
+          const ts = Number(entry.ts) || 0
+          if (ts <= lastAudit) continue
+          lastAudit = Math.max(lastAudit, ts)
+          if (!entry.production || entry.action === 'approval_requested') continue
+          sendNotification({
+            title: entry.ok ? 'DB Desk — production write' : 'DB Desk — production write failed',
+            body: `${entry.action} on ${entry.connection_name} (${entry.database}) · ${entry.rows} row(s)`
+          })
+        }
+      } catch {
+        /* server starting or notifications unavailable */
+      }
+    }
+
+    const setup = async () => {
+      try {
+        const { isPermissionGranted, requestPermission } = await import(
+          '@tauri-apps/plugin-notification'
+        )
+        let granted = await isPermissionGranted()
+        if (!granted) granted = (await requestPermission()) === 'granted'
+        if (!granted) return
+      } catch {
+        return
+      }
+      try {
+        const [approvals, audit] = await Promise.all([
+          rest('/approvals?limit=50'),
+          rest('/audit?limit=50')
+        ])
+        seenApprovals = new Set(
+          (approvals.approvals || []).filter((entry) => entry.status === 'pending').map((entry) => entry.id)
+        )
+        lastAudit = Math.max(
+          0,
+          ...(audit.entries || []).map((entry) => Number(entry.ts) || 0)
+        )
+      } catch {
+        seenApprovals = new Set()
+        lastAudit = Date.now() / 1000
+      }
+      if (!cancelled) timer = setInterval(tick, 10000)
+    }
+
+    void setup()
+    return () => {
+      cancelled = true
+      if (timer) clearInterval(timer)
+    }
+  }, [])
+}
+
 function Shell() {
+  useNativeNotifications()
   const [view, setView] = useState('connections')
   const [startNew, setStartNew] = useState(false)
   const [generation, setGeneration] = useState(0)

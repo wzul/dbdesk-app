@@ -1,6 +1,6 @@
 [package]
 name = "dbdesk"
-version = "0.5.1"
+version = "0.6.0"
 description = "DB Desk standalone desktop shell"
 edition = "2021"
 rust-version = "1.77"
@@ -10,3 +10,4 @@ tauri-build = { version = "2.7.6", features = [] }
 
 [dependencies]
 tauri = { version = "2.12.7", features = [] }
+tauri-plugin-notification = "2"

@@ -3804,6 +3804,292 @@ function emptyDraft() {
   }
 }
 
+function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
+  const [prompt, setPrompt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  const [config, setConfig] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [baseUrl, setBaseUrl] = useState('')
+  const [model, setModel] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    call('/ai/config')
+      .then((value) => {
+        setConfig(value)
+        setBaseUrl(value.base_url || '')
+        setModel(value.model || '')
+        if (!value.configured) setSettingsOpen(true)
+      })
+      .catch(() => {})
+  }, [])
+
+  const ask = async () => {
+    if (!prompt.trim() || busy) return
+    setBusy(true)
+    setError('')
+    setResult(null)
+    try {
+      const value = await call('/ai/ask', {
+        method: 'POST',
+        body: {
+          connection_id: connectionId,
+          database,
+          schema: schema || '',
+          table: table || '',
+          question: prompt.trim(),
+          execute: true
+        }
+      })
+      setResult(value)
+    } catch (reason) {
+      setError(errText(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveSettings = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const value = await call('/ai/config', {
+        method: 'POST',
+        body: { base_url: baseUrl, model, api_key: apiKey }
+      })
+      setConfig(value)
+      setApiKey('')
+      setSettingsOpen(false)
+    } catch (reason) {
+      setError(errText(reason))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return jsxs('div', {
+    key: 'ai-panel',
+    className:
+      'flex shrink-0 flex-col gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2',
+    children: [
+      jsxs('div', {
+        key: 'row',
+        className: 'flex items-center gap-2',
+        children: [
+          jsx(Codicon, { key: 'i', name: 'sparkle', className: 'text-primary' }),
+          jsx('input', {
+            key: 'q',
+            value: prompt,
+            autoFocus: true,
+            placeholder: 'Ask about this data — e.g. "berapa purchases bulan ini?"',
+            onChange: (event) => setPrompt(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void ask()
+              }
+            },
+            className:
+              'h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-xs outline-none focus:border-primary/60'
+          }),
+          jsx(Button, {
+            key: 'run',
+            size: 'sm',
+            disabled: busy || !prompt.trim() || (config && !config.configured),
+            onClick: () => void ask(),
+            children: busy ? 'Thinking…' : 'Ask'
+          }),
+          jsx(Button, {
+            key: 'settings',
+            variant: 'ghost',
+            size: 'sm',
+            title: 'AI settings',
+            onClick: () => setSettingsOpen((open) => !open),
+            children: jsx(Codicon, { name: 'settings-gear' })
+          }),
+          jsx(Button, {
+            key: 'close',
+            variant: 'ghost',
+            size: 'sm',
+            title: 'Close',
+            onClick: onClose,
+            children: jsx(Codicon, { name: 'close' })
+          })
+        ]
+      }),
+      settingsOpen
+        ? jsxs('div', {
+            key: 'settings',
+            className:
+              'flex flex-col gap-2 rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-2',
+            children: [
+              jsxs('div', {
+                key: 'fields',
+                className: 'grid grid-cols-1 gap-2 sm:grid-cols-3',
+                children: [
+                  jsx('input', {
+                    key: 'base',
+                    value: baseUrl,
+                    placeholder: 'Base URL (https://api.openai.com/v1)',
+                    onChange: (event) => setBaseUrl(event.target.value),
+                    className:
+                      'h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                  }),
+                  jsx('input', {
+                    key: 'model',
+                    value: model,
+                    placeholder: 'Model (gpt-4o-mini)',
+                    onChange: (event) => setModel(event.target.value),
+                    className:
+                      'h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                  }),
+                  jsx('input', {
+                    key: 'key',
+                    type: 'password',
+                    value: apiKey,
+                    placeholder: config && config.configured ? 'API key saved' : 'API key',
+                    onChange: (event) => setApiKey(event.target.value),
+                    className:
+                      'h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                  })
+                ]
+              }),
+              jsxs('div', {
+                key: 'actions',
+                className: 'flex items-center gap-2',
+                children: [
+                  jsx(Button, {
+                    variant: 'secondary',
+                    size: 'sm',
+                    disabled: saving,
+                    onClick: () => void saveSettings(),
+                    children: saving ? 'Saving…' : 'Save'
+                  }),
+                  jsx('span', {
+                    className: 'text-[10.5px] text-(--ui-text-tertiary)',
+                    children:
+                      'OpenAI-compatible endpoint. Only table/column names and your question are sent — no rows.'
+                  })
+                ]
+              })
+            ]
+          })
+        : null,
+      error
+        ? jsx('div', {
+            key: 'err',
+            className:
+              'rounded-[4px] bg-destructive/10 px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap text-destructive',
+            children: error
+          })
+        : null,
+      result
+        ? jsxs('div', {
+            key: 'result',
+            className: 'flex min-h-0 flex-col gap-1.5',
+            children: [
+              jsxs('div', {
+                key: 'meta',
+                className: 'flex items-center gap-2 text-[11px] text-(--ui-text-secondary)',
+                children: [
+                  jsx('span', { key: 'e', children: result.explanation || 'Result' }),
+                  jsx('span', {
+                    key: 'n',
+                    className: 'text-(--ui-text-tertiary)',
+                    children: `${result.rows ? result.rows.length : 0} row(s) · ${result.duration_ms || 0} ms`
+                  })
+                ]
+              }),
+              jsxs('div', {
+                key: 'sqlrow',
+                className: 'flex items-start gap-2',
+                children: [
+                  jsx('pre', {
+                    key: 'sql',
+                    className:
+                      'max-h-24 min-w-0 flex-1 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-2 font-mono text-[10.5px] whitespace-pre-wrap',
+                    children: result.sql
+                  }),
+                  jsxs('div', {
+                    key: 'acts',
+                    className: 'flex shrink-0 flex-col gap-1',
+                    children: [
+                      jsx(Button, {
+                        variant: 'ghost',
+                        size: 'xs',
+                        onClick: () => void writeClipboardText(result.sql),
+                        children: 'Copy SQL'
+                      }),
+                      jsx(Button, {
+                        variant: 'ghost',
+                        size: 'xs',
+                        onClick: () => onUseSql(result.sql),
+                        children: 'Open in SQL'
+                      })
+                    ]
+                  })
+                ]
+              }),
+              result.columns && result.rows
+                ? jsx('div', {
+                    key: 'grid',
+                    className:
+                      'max-h-64 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-background',
+                    children: jsx('table', {
+                      className: 'dbd-grid-table dbd-mono min-w-full',
+                      children: [
+                        jsx('thead', {
+                          key: 'h',
+                          children: jsx('tr', {
+                            children: result.columns.map((column) =>
+                              jsx('th', { children: column.name }, column.name)
+                            )
+                          })
+                        }),
+                        jsx('tbody', {
+                          key: 'b',
+                          children: result.rows.slice(0, 200).map((row, index) =>
+                            jsx(
+                              'tr',
+                              {
+                                children: row.map((value, column) =>
+                                  jsx(
+                                    'td',
+                                    {
+                                      className: 'px-2 py-1',
+                                      children:
+                                        value === null || value === undefined
+                                          ? jsx('span', {
+                                              className: 'text-(--ui-text-tertiary) italic',
+                                              children: 'NULL'
+                                            })
+                                          : typeof value === 'object'
+                                            ? JSON.stringify(value)
+                                            : String(value)
+                                    },
+                                    column
+                                  )
+                                )
+                              },
+                              index
+                            )
+                          )
+                        })
+                      ]
+                    })
+                  })
+                : null
+            ]
+          })
+        : null
+    ]
+  })
+}
+
+
 export function DbDesk({ onHome, startNew = false } = {}) {
   const [connections, setConnections] = useState([])
   const [loaded, setLoaded] = useState(false)
@@ -3835,6 +4121,7 @@ export function DbDesk({ onHome, startNew = false } = {}) {
   const [labelsOpen, setLabelsOpen] = useState(false)
   const [treeOpen, setTreeOpen] = useState(false)
   const [pending, setPending] = useState(null)
+  const [aiOpen, setAiOpen] = useState(false)
 
   useEffect(() => {
     if (startNew) setDraft(emptyDraft())
@@ -5148,6 +5435,23 @@ export function DbDesk({ onHome, startNew = false } = {}) {
             : null,
           jsx('div', { key: 'sp', className: 'flex-1' }),
           jsx(Button, {
+            key: 'ai',
+            variant: aiOpen ? 'secondary' : 'ghost',
+            size: 'sm',
+            title: 'Ask AI (read-only)',
+            onClick: () => {
+              setTab('data')
+              setAiOpen((open) => !open)
+            },
+            children: jsxs('span', {
+              className: 'flex items-center gap-1',
+              children: [
+                jsx(Codicon, { key: 'i', name: 'sparkle' }),
+                jsx('span', { key: 't', className: 'dbd-sm-inline', children: 'AI' })
+              ]
+            })
+          }),
+          jsx(Button, {
             key: 'refresh',
             variant: 'secondary',
             size: 'sm',
@@ -5875,6 +6179,21 @@ export function DbDesk({ onHome, startNew = false } = {}) {
                           })
                         ]
                       }),
+                      aiOpen
+                        ? jsx(AiPanel, {
+                            key: 'ai',
+                            connectionId: activeId,
+                            database: activeDb,
+                            schema: selected ? selected.schema : '',
+                            table: selected ? selected.table : '',
+                            onClose: () => setAiOpen(false),
+                            onUseSql: (sql) => {
+                              setAiOpen(false)
+                              setTab('sql')
+                              setSql(sql)
+                            }
+                          })
+                        : null,
                       selected && filterOpen
                         ? jsxs('div', {
                             key: 'filter-panel',

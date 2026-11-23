@@ -120,6 +120,12 @@ Set `DBDESK_HOME` to override. The directory contains:
 
 ## What works
 
+- **Ask AI (read-only)** — the header **AI** button opens a prompt bar. It sends
+  the current table/column names and your question to an OpenAI-compatible
+  endpoint (OpenAI, OpenRouter, Ollama, LM Studio, ...), receives one SELECT,
+  runs it read-only and shows the SQL and rows. Server-side rules refuse any
+  non-read statement. Configure base URL, model and API key under the AI
+  settings; the key is encrypted at rest and row data is never sent.
 - **Connection picker** — the app opens on a TablePlus-style list: search,
   groups, type icons, read-only/PROD badges; pick a connection, then the full
   browser opens. **New connection** goes straight to the form, and the chevron
@@ -145,9 +151,11 @@ Set `DBDESK_HOME` to override. The directory contains:
 
 Notes for the standalone build:
 
-- **Telegram notices are off** unless `DBDESK_NOTIFY=1` and a `hermes` CLI is on
-  PATH. Production approvals still work — approve them in the **Approvals**
-  drawer.
+- **Native macOS notifications** — approval requests and production writes show
+  a system notification while the app is running (Tauri notification plugin).
+  Nothing is sent to Telegram or any external service. Approve writes in the
+  **Approvals** drawer. Use **Test macOS notification** on the connection picker
+  to check permission.
 - **MCP connections work directly.** Add the streamable-HTTP endpoint
   (e.g. `https://mcp.example.com/mcp`), the tool name and SQL argument,
   then **Authorize**: DB Desk runs OAuth 2.1 with PKCE through a loopback

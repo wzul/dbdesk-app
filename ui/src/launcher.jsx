@@ -95,7 +95,27 @@ export default function Launcher({ onOpen, onNew }) {
   const [reloadKey, setReloadKey] = useState(0)
   const [importOpen, setImportOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState(null)
+  const [notifyState, setNotifyState] = useState('')
   const searchRef = useRef(null)
+
+  const testNotification = async () => {
+    setNotifyState('')
+    try {
+      const { isPermissionGranted, requestPermission, sendNotification } = await import(
+        '@tauri-apps/plugin-notification'
+      )
+      let granted = await isPermissionGranted()
+      if (!granted) granted = (await requestPermission()) === 'granted'
+      if (!granted) {
+        setNotifyState('Permission denied')
+        return
+      }
+      sendNotification({ title: 'DB Desk', body: 'Native notifications are working.' })
+      setNotifyState('Sent')
+    } catch {
+      setNotifyState('Not available')
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -256,9 +276,19 @@ export default function Launcher({ onOpen, onNew }) {
           </div>
         )}
 
-        <p className="pt-1 text-[10.5px] text-(--ui-text-tertiary)">
-          Credentials are encrypted on this Mac. Connections never leave the machine.
-        </p>
+        <div className="flex flex-wrap items-center gap-2 pt-1 text-[10.5px] text-(--ui-text-tertiary)">
+          <span>Credentials are encrypted on this Mac. Connections never leave the machine.</span>
+          {window.__TAURI_INTERNALS__ ? (
+            <button
+              type="button"
+              onClick={() => void testNotification()}
+              className="underline decoration-dotted underline-offset-2 hover:text-(--ui-text-secondary)"
+            >
+              Test macOS notification
+            </button>
+          ) : null}
+          {notifyState ? <span>{notifyState}</span> : null}
+        </div>
       </div>
 
       {importOpen ? (
