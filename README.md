@@ -430,6 +430,10 @@ tunnel:
 
 5. **Test**, then save.
 
+If Cloudflare returns **error 1010** (Bot Fight Mode), it is rejecting the
+`Python-urllib` browser signature. DB Desk now sends a browser User-Agent by
+default; you can override it with a `User-Agent: …` line in the custom headers.
+
 Headers are AES-GCM encrypted in the connection store, never returned to the UI
 or AI prompts, and only included in exports/backups when you tick **Include
 passwords**. `Host`, `Content-Length`, `Connection` and `Transfer-Encoding` are

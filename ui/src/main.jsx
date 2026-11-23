@@ -14,7 +14,7 @@ import { isMacOS, sendNativeNotification } from './notify.js'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.11.1'
+const APP_VERSION = '0.11.2'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',

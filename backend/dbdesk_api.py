@@ -1598,6 +1598,10 @@ def _my_mutation(conn, sql: str) -> None:
 
 
 CH_HEADER_DENY = {"host", "content-length", "connection", "transfer-encoding"}
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+)
 CH_HEADER_LINE = re.compile(r"^([A-Za-z0-9-]+):\s*(.*)$")
 
 
@@ -1665,13 +1669,31 @@ def _ch_url(conn: dict[str, Any], readonly: bool) -> str:
     return f"{scheme}://{host}:{port}{path}?{urllib.parse.urlencode(query)}"
 
 
+def _merge_headers(base: dict[str, str], extra: dict[str, str]) -> dict[str, str]:
+    merged = dict(base)
+    for name, value in extra.items():
+        for existing in [key for key in merged if key.lower() == name.lower()]:
+            merged.pop(existing, None)
+        merged[name] = value
+    return merged
+
+
+def _ch_headers(conn: dict[str, Any]) -> dict[str, str]:
+    return _merge_headers(
+        {
+            "User-Agent": BROWSER_USER_AGENT,
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "X-ClickHouse-User": str(conn.get("user") or "default"),
+            "X-ClickHouse-Key": str(conn.get("password") or ""),
+            "Content-Type": "text/plain; charset=utf-8",
+        },
+        _parse_ch_headers(conn.get("ch_headers")),
+    )
+
+
 def _ch_request(conn: dict[str, Any], sql: str, *, readonly: bool = True, timeout: int = QUERY_TIMEOUT) -> str:
-    headers = {
-        "X-ClickHouse-User": str(conn.get("user") or "default"),
-        "X-ClickHouse-Key": str(conn.get("password") or ""),
-        "Content-Type": "text/plain; charset=utf-8",
-        **_parse_ch_headers(conn.get("ch_headers")),
-    }
+    headers = _ch_headers(conn)
     request = urllib.request.Request(
         _ch_url(conn, readonly), data=sql.encode("utf-8"), headers=headers, method="POST"
     )
@@ -3007,11 +3029,10 @@ def _http_query(conn: dict[str, Any], sql: str, limit: int = MAX_ROWS) -> dict[s
     if method not in ("GET", "POST"):
         method = "POST"
     field = str(conn.get("http_sql_field") or "sql").strip() or "sql"
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": "dbdesk/0.1",
-        **_http_headers(conn),
-    }
+    headers = _merge_headers(
+        {"Accept": "application/json", "User-Agent": BROWSER_USER_AGENT},
+        _http_headers(conn),
+    )
     data: bytes | None = None
     body_mode = str(conn.get("http_body_mode") or "json").strip().lower()
     if method == "GET":
