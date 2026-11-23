@@ -104,6 +104,21 @@ usual signing/notarization secrets (`APPLE_CERTIFICATE`,
   `MAX_EXECUTION_TIME` / `max_statement_time`), so a runaway query cannot block
   the UI forever.
 
+## Updates
+
+The app checks GitHub Releases for a signed update manifest when it opens.
+When a newer version exists, the picker shows **Update available — vX**;
+**Update now** downloads the `.app.tar.gz`, verifies the minisign signature,
+replaces the bundle and relaunches.
+
+- No Apple Developer account is involved: the updater uses its own minisign
+  keypair. The public key is in `src-tauri/tauri.conf.json`; the private key
+  lives only in the `TAURI_SIGNING_PRIVATE_KEY` CI secret.
+- Releases are published by `.github/workflows/release.yml` when a `v*` tag is
+  pushed; it reuses the successful `main` build and writes `latest.json`.
+- The first build with the updater (0.7.0) must be installed manually once;
+  later versions update in place.
+
 ## Data
 
 | Platform | Location |

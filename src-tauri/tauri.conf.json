@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DB Desk",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "identifier": "com.wzul.dbdesk",
   "build": {
     "frontendDist": "../ui/dist"
@@ -14,7 +14,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "DeveloperTool",
     "shortDescription": "PostgreSQL, MySQL/MariaDB, ClickHouse and SQLite browser",
     "longDescription": "DB Desk is a TablePlus-style database browser with a local SQL runner, typed data grid, schema tools, CSV import/export and safety guards. It runs entirely on this machine.",
@@ -25,11 +28,23 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["sidecar"],
+    "resources": [
+      "sidecar"
+    ],
     "macOS": {
       "minimumSystemVersion": "11.0",
       "hardenedRuntime": true,
-      "entitlements": "entitlements.plist"
+      "entitlements": "entitlements.plist",
+      "signingIdentity": "-"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/wzul/dbdesk-app/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENEOEYxN0I5MURCNjU5MTIKUldRU1diWWR1UmVQelgvdDA2WE1uRHhyc29YS3N3RGF5TEpCOTBNbkJPNnEzcVlsNHB0cjZPS20K"
     }
   }
 }

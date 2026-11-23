@@ -160,6 +160,8 @@ fn wait_for_port(port: u16, attempts: u32) -> bool {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let home = std::env::var("DBDESK_HOME")
                 .map(PathBuf::from)

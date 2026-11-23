@@ -12,7 +12,7 @@ import Launcher from './launcher.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.6.2'
+const APP_VERSION = '0.7.0'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',

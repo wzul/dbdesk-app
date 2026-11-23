@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-import { Badge, Codicon, cn, host, rest } from './sdk-shim.jsx'
+import { Badge, Button, Codicon, cn, host, rest } from './sdk-shim.jsx'
 import { ExportDialog, ImportDialog } from './bundle-dialogs.jsx'
 
 const KINDS = {
@@ -151,6 +151,9 @@ export default function Launcher({ onOpen, onNew, onEdit }) {
   const [exportTarget, setExportTarget] = useState(null)
   const [notifyState, setNotifyState] = useState('')
   const [menu, setMenu] = useState(null)
+  const [update, setUpdate] = useState(null)
+  const [updateState, setUpdateState] = useState('')
+  const [checking, setChecking] = useState(false)
   const searchRef = useRef(null)
 
   const testNotification = async () => {
@@ -196,6 +199,50 @@ export default function Launcher({ onOpen, onNew, onEdit }) {
   useEffect(() => {
     searchRef.current?.focus()
   }, [])
+
+  const checkForUpdates = async () => {
+    if (!window.__TAURI_INTERNALS__ || checking) return
+    setChecking(true)
+    setUpdateState('')
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater')
+      const found = await check()
+      setUpdate(found || null)
+      if (!found) setUpdateState('Up to date')
+    } catch (error) {
+      setUpdateState(`Check failed: ${error.message || error}`)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  useEffect(() => {
+    void checkForUpdates()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const installUpdate = async () => {
+    if (!update) return
+    setUpdateState('Downloading…')
+    try {
+      let total = 0
+      let done = 0
+      await update.downloadAndInstall((event) => {
+        if (event.event === 'Started') {
+          total = event.data.contentLength || 0
+        } else if (event.event === 'Progress') {
+          done += event.data.chunkLength
+          setUpdateState(total ? `${Math.round((done / total) * 100)}%` : 'Downloading…')
+        } else if (event.event === 'Finished') {
+          setUpdateState('Installing…')
+        }
+      })
+      const { relaunch } = await import('@tauri-apps/plugin-process')
+      await relaunch()
+    } catch (error) {
+      setUpdateState(`Update failed: ${error.message || error}`)
+    }
+  }
 
   useEffect(() => {
     if (!menu) return
@@ -369,6 +416,22 @@ export default function Launcher({ onOpen, onNew, onEdit }) {
           </div>
         )}
 
+        {window.__TAURI_INTERNALS__ && update ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-[5px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2">
+            <Codicon name="cloud-download" className="text-primary" />
+            <span className="text-[12px] font-medium">
+              Update available — v{update.version}
+            </span>
+            <span className="text-[10.5px] text-(--ui-text-tertiary)">
+              {updateState || 'Download and restart to apply.'}
+            </span>
+            <span className="flex-1" />
+            <Button size="sm" onClick={() => void installUpdate()} disabled={updateState === 'Installing…'}>
+              Update now
+            </Button>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2 pt-1 text-[10.5px] text-(--ui-text-tertiary)">
           <span>Credentials are encrypted on this Mac. Connections never leave the machine.</span>
           {window.__TAURI_INTERNALS__ ? (
@@ -378,6 +441,16 @@ export default function Launcher({ onOpen, onNew, onEdit }) {
               className="underline decoration-dotted underline-offset-2 hover:text-(--ui-text-secondary)"
             >
               Test macOS notification
+            </button>
+          ) : null}
+          {window.__TAURI_INTERNALS__ ? (
+            <button
+              type="button"
+              onClick={() => void checkForUpdates()}
+              disabled={checking}
+              className="underline decoration-dotted underline-offset-2 hover:text-(--ui-text-secondary)"
+            >
+              {checking ? 'Checking updates…' : updateState && !update ? updateState : 'Check for updates'}
             </button>
           ) : null}
           {notifyState ? <span>{notifyState}</span> : null}
