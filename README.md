@@ -118,6 +118,8 @@ replaces the bundle and relaunches.
   pushed; it reuses the successful `main` build and writes `latest.json`.
 - The first build with the updater (0.7.0) must be installed manually once;
   later versions update in place.
+- Manifest URL:
+  `https://github.com/wzul/dbdesk-app/releases/latest/download/latest.json`
 
 ## Data
 
@@ -138,8 +140,10 @@ Set `DBDESK_HOME` to override. The directory contains:
 - **Ask AI (read-only)** — the header **AI** button opens a prompt bar. It sends
   the current table/column names and your question to an OpenAI-compatible
   endpoint (OpenAI, OpenRouter, Ollama, LM Studio, ...), receives one SELECT,
-  runs it read-only and shows the SQL and rows. Server-side rules refuse any
-  non-read statement. Configure base URL, model and API key under the AI
+  runs it read-only and shows the SQL and rows. If the statement fails (for
+  example a wrong column name), the error and the relevant schema are sent back
+  once so the model can correct the query. Server-side rules refuse any non-read
+  statement. Configure base URL, model and API key under the AI
   settings; the key is encrypted at rest and row data is never sent.
 - **Connection picker** — the app opens on a TablePlus-style list: search,
   groups, type icons, read-only/PROD badges; pick a connection, then the full
