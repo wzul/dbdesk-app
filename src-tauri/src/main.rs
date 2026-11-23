@@ -7,9 +7,76 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 struct Server(Mutex<Option<Child>>);
+
+#[derive(Serialize, Deserialize)]
+struct WindowState {
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+}
+
+fn window_state_path(home: &Path) -> PathBuf {
+    home.join("window.json")
+}
+
+fn load_window_state(home: &Path) -> Option<WindowState> {
+    let text = std::fs::read_to_string(window_state_path(home)).ok()?;
+    let state: WindowState = serde_json::from_str(&text).ok()?;
+    if state.width < 900
+        || state.height < 600
+        || state.width > 10000
+        || state.height > 10000
+    {
+        return None;
+    }
+    Some(state)
+}
+
+fn save_window_state(home: &Path, window: &WebviewWindow) {
+    let (Ok(size), Ok(position)) = (window.inner_size(), window.outer_position()) else {
+        return;
+    };
+    if size.width < 900 || size.height < 600 {
+        return;
+    }
+    let state = WindowState {
+        width: size.width,
+        height: size.height,
+        x: position.x,
+        y: position.y,
+    };
+    let Ok(text) = serde_json::to_string_pretty(&state) else {
+        return;
+    };
+    let path = window_state_path(home);
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, text).is_ok() {
+        let _ = std::fs::rename(tmp, path);
+    }
+}
+
+fn state_is_visible(app: &AppHandle, state: &WindowState) -> bool {
+    let Ok(monitors) = app.available_monitors() else {
+        return true;
+    };
+    if monitors.is_empty() {
+        return true;
+    }
+    monitors.iter().any(|monitor| {
+        let position = monitor.position();
+        let size = monitor.size();
+        let overlaps_x = state.x < position.x + size.width as i32
+            && state.x + state.width as i32 > position.x;
+        let overlaps_y = state.y < position.y + size.height as i32
+            && state.y + state.height as i32 > position.y;
+        overlaps_x && overlaps_y
+    })
+}
 
 /// Escape a value for an AppleScript double-quoted string.
 fn applescript_quote(value: &str) -> String {
@@ -331,6 +398,23 @@ fn main() {
             .inner_size(1280.0, 820.0)
             .min_inner_size(900.0, 600.0)
             .build()?;
+            if let Some(state) = load_window_state(&home) {
+                if state_is_visible(app.handle(), &state) {
+                    let _ = _window.set_size(tauri::PhysicalSize::new(state.width, state.height));
+                    let _ = _window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
+                }
+            }
+            {
+                let handle = app.handle().clone();
+                let home_events = home.clone();
+                _window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        if let Some(window) = handle.get_webview_window("main") {
+                            save_window_state(&home_events, &window);
+                        }
+                    }
+                });
+            }
 
             let handle = app.handle().clone();
             let home = home.clone();
@@ -363,6 +447,14 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building DB Desk")
         .run(|app, event| {
+            if matches!(&event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+                let home = std::env::var("DBDESK_HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| default_home());
+                if let Some(window) = app.get_webview_window("main") {
+                    save_window_state(&home, &window);
+                }
+            }
             if let RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<Server>() {
                     if let Ok(mut guard) = state.0.lock() {
