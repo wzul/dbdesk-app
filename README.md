@@ -141,8 +141,12 @@ Notes for the standalone build:
 - **Telegram notices are off** unless `DBDESK_NOTIFY=1` and a `hermes` CLI is on
   PATH. Production approvals still work — approve them in the **Approvals**
   drawer.
-- **MCP connections are not offered** in the standalone form: they need the
-  Hermes runtime. HTTP gateways work normally.
+- **MCP connections work directly.** Add the streamable-HTTP endpoint
+  (e.g. `https://mcp.example.com/mcp`), the tool name and SQL argument,
+  then **Authorize**: DB Desk runs OAuth 2.1 with PKCE through a loopback
+  redirect, opens the system browser, stores the tokens encrypted and refreshes
+  them automatically. No token pasting. Unauthenticated MCP servers also work;
+  Hermes-style named MCP servers still work in the plugin.
 - SQLite needs the file on this machine (no upload).
 
 ## Tests

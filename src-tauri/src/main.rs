@@ -1,6 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::io::ErrorKind;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};

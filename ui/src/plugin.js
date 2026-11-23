@@ -3146,7 +3146,54 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
   const [busy, setBusy] = useState('')
   const [test, setTest] = useState(null)
   const [err, setErr] = useState('')
+  const [mcpStatus, setMcpStatus] = useState(null)
+  const [mcpBusy, setMcpBusy] = useState(false)
+  const standalone = Boolean(globalThis.__DBDESK_STANDALONE__)
   const editing = Boolean(draft.id)
+
+  useEffect(() => {
+    if (!standalone || draft.kind !== 'mcp' || !draft.mcp_url) {
+      setMcpStatus(null)
+      return
+    }
+    let cancelled = false
+    const check = () =>
+      call(`/mcp/oauth/status?url=${encodeURIComponent(draft.mcp_url)}`)
+        .then((result) => {
+          if (!cancelled) setMcpStatus(result)
+        })
+        .catch(() => {})
+    check()
+    const timer = setInterval(check, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [standalone, draft.kind, draft.mcp_url])
+
+  const authorizeMcp = async () => {
+    const url = String(draft.mcp_url || '').trim()
+    if (!url) return
+    setMcpBusy(true)
+    setErr('')
+    try {
+      await call('/mcp/authorize', { method: 'POST', body: { url } })
+      setTest(null)
+    } catch (error) {
+      setErr(errText(error))
+    } finally {
+      setMcpBusy(false)
+    }
+  }
+
+  const forgetMcp = async () => {
+    try {
+      await call('/mcp/logout', { method: 'POST', body: { url: draft.mcp_url } })
+      setMcpStatus({ authorized: false })
+    } catch (error) {
+      setErr(errText(error))
+    }
+  }
 
   const set = (key) => (event) => {
     const value = event && event.target ? event.target.value : event
@@ -3392,15 +3439,63 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                     key: 'mcp',
                     className: 'flex flex-col gap-3',
                     children: [
-                      jsx(Field, {
-                        label: 'MCP server',
-                        hint: 'Name from mcp_servers in config.yaml. Grant it via plugins.entries.dbdesk.mcp_allowlist.',
-                        children: jsx(Input, {
-                          value: draft.mcp_server || '',
-                          placeholder: 'e.g. my-postgres-mcp',
-                          onChange: set('mcp_server')
-                        })
-                      }),
+                      standalone
+                        ? jsx(Field, {
+                            label: 'Server URL',
+                            hint: 'Streamable-HTTP MCP endpoint. Authorize once — tokens refresh automatically.',
+                            children: jsx(Input, {
+                              value: draft.mcp_url || '',
+                              placeholder: 'https://mcp.example.com/mcp',
+                              onChange: set('mcp_url')
+                            })
+                          })
+                        : jsx(Field, {
+                            label: 'MCP server',
+                            hint: 'Name from mcp_servers in config.yaml. Grant it via plugins.entries.dbdesk.mcp_allowlist.',
+                            children: jsx(Input, {
+                              value: draft.mcp_server || '',
+                              placeholder: 'e.g. my-postgres-mcp',
+                              onChange: set('mcp_server')
+                            })
+                          }),
+                      standalone
+                        ? jsxs('div', {
+                            key: 'mcp-auth',
+                            className: 'flex flex-wrap items-center gap-2',
+                            children: [
+                              jsx(Button, {
+                                variant: 'secondary',
+                                size: 'sm',
+                                disabled: mcpBusy || !draft.mcp_url,
+                                onClick: authorizeMcp,
+                                children: mcpBusy
+                                  ? 'Opening browser…'
+                                  : mcpStatus && mcpStatus.authorized
+                                    ? 'Re-authorize'
+                                    : 'Authorize'
+                              }),
+                              jsx('span', {
+                                className:
+                                  'text-[11px] ' +
+                                  (mcpStatus && mcpStatus.authorized
+                                    ? 'text-emerald-600 dark:text-emerald-300'
+                                    : 'text-(--ui-text-tertiary)'),
+                                children:
+                                  mcpStatus && mcpStatus.authorized
+                                    ? 'Authorized'
+                                    : 'Not authorized yet'
+                              }),
+                              mcpStatus && mcpStatus.authorized
+                                ? jsx(Button, {
+                                    variant: 'ghost',
+                                    size: 'sm',
+                                    onClick: forgetMcp,
+                                    children: 'Forget tokens'
+                                  })
+                                : null
+                            ]
+                          })
+                        : null,
                       jsxs('div', {
                         key: 'tool',
                         className: 'dbd-grid-2',
@@ -3423,6 +3518,17 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                           })
                         ]
                       }),
+                      standalone
+                        ? jsx(Field, {
+                            label: 'Extra arguments (optional)',
+                            hint: 'JSON merged into tools/call, e.g. {"database":"analytics"}.',
+                            children: jsx(Input, {
+                              value: draft.mcp_extra_args || '',
+                              placeholder: '{"database":"analytics"}',
+                              onChange: set('mcp_extra_args')
+                            })
+                          })
+                        : null,
                       jsx(Field, {
                         label: 'SQL dialect',
                         children: jsxs('select', {

@@ -26,6 +26,7 @@ import csv
 import datetime
 import decimal
 import hashlib
+import http.server
 import io
 import json
 import os
@@ -700,6 +701,72 @@ def _pool_get(key: str, factory) -> dict[str, Any]:
 
 
 atexit.register(_close_pools)
+
+
+def _pg_rows_sql(conn: dict[str, Any], sql: str) -> list[list[Any]]:
+    if psycopg is not None:
+        _, rows = _pg_native_exec(conn, sql, readonly=True)
+        return rows
+    out = _pg_run(conn, sql.rstrip().rstrip(";") + ";\n")
+    _, rows = _parse_pg_result(out)
+    return rows
+
+
+def _my_rows_sql(conn: dict[str, Any], sql: str) -> list[list[Any]]:
+    if pymysql is not None:
+        _, rows = _my_native_exec(conn, sql, readonly=True)
+        return rows
+    out = _my_run(conn, sql, readonly=True)
+    _, rows = _parse_my(out)
+    return rows
+
+
+def _pg_native_script(conn: dict[str, Any], statements: list[str]) -> None:
+    key = _pool_key(conn, "pg")
+    entry = _pool_get(key, lambda: _pg_open_native(conn))
+    with entry["lock"]:
+        cursor = entry["conn"].cursor()
+        try:
+            cursor.execute("BEGIN")
+            for statement in statements:
+                cursor.execute(statement)
+            cursor.execute("COMMIT")
+        except Exception as exc:
+            try:
+                cursor.execute("ROLLBACK")
+            except Exception:
+                pass
+            _pool_drop(key)
+            raise HTTPException(400, _clean_error(str(exc))) from exc
+        finally:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+
+
+def _my_native_script(conn: dict[str, Any], statements: list[str]) -> None:
+    key = _pool_key(conn, "my")
+    entry = _pool_get(key, lambda: _my_open_native(conn))
+    with entry["lock"]:
+        cursor = entry["conn"].cursor()
+        try:
+            entry["conn"].begin()
+            for statement in statements:
+                cursor.execute(statement)
+            entry["conn"].commit()
+        except Exception as exc:
+            try:
+                entry["conn"].rollback()
+            except Exception:
+                pass
+            _pool_drop(key)
+            raise HTTPException(400, _clean_error(str(exc))) from exc
+        finally:
+            try:
+                cursor.close()
+            except Exception:
+                pass
 
 
 def _pool_drop(key: str) -> None:
@@ -1902,16 +1969,14 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
     if kind == "sqlite":
         return _sqlite_indexes(conn, schema, table)
     if kind == "mysql":
-        out = _my_run(
+        rows = _my_rows_sql(
             conn,
             "SELECT index_name, non_unique, "
             "GROUP_CONCAT(column_name ORDER BY seq_in_index) "
             "FROM information_schema.statistics "
             f"WHERE table_schema = {_my_lit(schema)} AND table_name = {_my_lit(table)} "
             "GROUP BY index_name, non_unique ORDER BY index_name",
-            readonly=True,
         )
-        _, rows = _parse_my(out)
         return [
             {
                 "name": r[0],
@@ -2044,6 +2109,448 @@ def _activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------- #
+# MCP over HTTP (standalone) — JSON-RPC + OAuth (PKCE, loopback redirect)
+# --------------------------------------------------------------------------- #
+
+MCP_PROTOCOL = "2025-06-18"
+_MCP_SESSIONS: dict[str, dict[str, Any]] = {}
+_MCP_FLOWS: dict[str, dict[str, Any]] = {}
+_MCP_GUARD = threading.Lock()
+
+
+def _mcp_tokens_path() -> Path:
+    return _data_dir() / "mcp_tokens.json"
+
+
+def _load_mcp_tokens() -> dict[str, Any]:
+    path = _mcp_tokens_path()
+    if not path.exists():
+        return {"servers": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"servers": {}}
+    servers = data.get("servers") if isinstance(data, dict) else None
+    return {"servers": servers if isinstance(servers, dict) else {}}
+
+
+def _save_mcp_tokens(data: dict[str, Any]) -> None:
+    path = _mcp_tokens_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+def _mcp_http_json(
+    url: str,
+    *,
+    payload: Any = None,
+    form: Any = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> Any:
+    request_headers = {"Accept": "application/json", "User-Agent": "DB Desk"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        request_headers["Content-Type"] = "application/json"
+    elif form is not None:
+        body = urllib.parse.urlencode(form).encode("utf-8")
+        request_headers["Content-Type"] = "application/x-www-form-urlencoded"
+    else:
+        body = None
+    if headers:
+        request_headers.update(headers)
+    request = urllib.request.Request(
+        url, data=body, headers=request_headers, method="POST" if body is not None else "GET"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            text = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        raise HTTPException(502, f"{url} returned {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(502, f"cannot reach {url}: {exc.reason}") from exc
+    if not text.strip():
+        return {}
+    try:
+        return json.loads(text)
+    except ValueError as exc:
+        raise HTTPException(502, f"{url} returned non-JSON") from exc
+
+
+def _mcp_discovery(url: str) -> dict[str, Any]:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(400, "MCP server URL must be http:// or https://")
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    resource = None
+    for candidate in (
+        origin + "/.well-known/oauth-protected-resource",
+        origin + "/.well-known/oauth-protected-resource" + (parsed.path or ""),
+    ):
+        try:
+            resource = _mcp_http_json(candidate, timeout=15)
+            break
+        except HTTPException:
+            continue
+    issuer = origin
+    scope = "mcp"
+    resource_url = url
+    if isinstance(resource, dict):
+        resource_url = str(resource.get("resource") or url)
+        servers = resource.get("authorization_servers") or []
+        if servers:
+            issuer = str(servers[0])
+        if resource.get("scopes_supported"):
+            scope = " ".join(str(item) for item in resource["scopes_supported"])
+    meta = None
+    for candidate in (
+        issuer.rstrip("/") + "/.well-known/oauth-authorization-server",
+        issuer.rstrip("/") + "/.well-known/openid-configuration",
+    ):
+        try:
+            meta = _mcp_http_json(candidate, timeout=15)
+            break
+        except HTTPException:
+            continue
+    if not isinstance(meta, dict) or not meta.get("authorization_endpoint") or not meta.get("token_endpoint"):
+        raise HTTPException(400, "could not discover OAuth endpoints for this MCP server")
+    return {
+        "authorization_endpoint": str(meta["authorization_endpoint"]),
+        "token_endpoint": str(meta["token_endpoint"]),
+        "registration_endpoint": str(meta.get("registration_endpoint") or ""),
+        "scope": str(meta.get("scope") or scope),
+        "resource": resource_url,
+        "issuer": issuer,
+    }
+
+
+def _mcp_register(meta: dict[str, Any], redirect_uri: str) -> str:
+    endpoint = meta.get("registration_endpoint") or ""
+    if not endpoint:
+        raise HTTPException(
+            400,
+            "this MCP server does not support dynamic client registration; "
+            "register a client manually and set mcp_client_id",
+        )
+    payload = _mcp_http_json(
+        endpoint,
+        payload={
+            "client_name": "DB Desk",
+            "redirect_uris": [redirect_uri],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+            "scope": meta.get("scope") or "mcp",
+        },
+    )
+    client_id = str(payload.get("client_id") or "") if isinstance(payload, dict) else ""
+    if not client_id:
+        raise HTTPException(502, "MCP client registration returned no client_id")
+    return client_id
+
+
+def _mcp_save_server(url: str, meta: dict[str, Any], client_id: str, payload: dict[str, Any]) -> None:
+    data = _load_mcp_tokens()
+    entry = data["servers"].get(url) or {}
+    entry.update(
+        {
+            "client_id": client_id,
+            "token_endpoint": meta["token_endpoint"],
+            "resource": meta.get("resource") or url,
+            "scope": meta.get("scope") or "",
+            "access_enc": _encrypt(str(payload.get("access_token") or "")),
+            "expires_at": time.time() + int(payload.get("expires_in") or 3600),
+        }
+    )
+    if payload.get("refresh_token"):
+        entry["refresh_enc"] = _encrypt(str(payload["refresh_token"]))
+    data["servers"][url] = entry
+    _save_mcp_tokens(data)
+
+
+def _mcp_access_token(url: str) -> str:
+    data = _load_mcp_tokens()
+    entry = data["servers"].get(url)
+    if not isinstance(entry, dict) or not entry.get("access_enc"):
+        return ""
+    if float(entry.get("expires_at") or 0) > time.time() + 60:
+        return _decrypt(str(entry["access_enc"]))
+    if not entry.get("refresh_enc"):
+        return ""
+    try:
+        payload = _mcp_http_json(
+            str(entry["token_endpoint"]),
+            form={
+                "grant_type": "refresh_token",
+                "refresh_token": _decrypt(str(entry["refresh_enc"])),
+                "client_id": str(entry.get("client_id") or ""),
+                "resource": str(entry.get("resource") or url),
+            },
+        )
+    except HTTPException:
+        return ""
+    if not isinstance(payload, dict) or not payload.get("access_token"):
+        return ""
+    entry["access_enc"] = _encrypt(str(payload["access_token"]))
+    if payload.get("refresh_token"):
+        entry["refresh_enc"] = _encrypt(str(payload["refresh_token"]))
+    entry["expires_at"] = time.time() + int(payload.get("expires_in") or 3600)
+    data["servers"][url] = entry
+    _save_mcp_tokens(data)
+    return str(payload["access_token"])
+
+
+def _mcp_page(message: str) -> bytes:
+    html = (
+        "<!doctype html><meta charset=utf-8><title>DB Desk</title>"
+        "<style>body{font:14px -apple-system,BlinkMacSystemFont,sans-serif;"
+        "display:grid;place-items:center;height:100vh;margin:0;color:#1f2328}"
+        "div{max-width:380px;text-align:center;line-height:1.5}</style>"
+        f"<div><h2>DB Desk</h2><p>{message}</p></div>"
+    )
+    return html.encode("utf-8")
+
+
+def _mcp_oauth_start(url: str) -> dict[str, Any]:
+    url = url.strip()
+    meta = _mcp_discovery(url)
+    state = pysecrets.token_urlsafe(24)
+    verifier = pysecrets.token_urlsafe(64)
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("utf-8")).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            if parsed.path != "/callback":
+                self._send(404, "Not found")
+                return
+            if params.get("state", [""])[0] != state:
+                self._send(400, "State mismatch. Start the authorization again.")
+                return
+            error = params.get("error", [""])[0]
+            if error:
+                self._send(400, f"Authorization failed: {error}")
+            else:
+                flow = _MCP_FLOWS.get(state) or {}
+                try:
+                    payload = _mcp_http_json(
+                        flow["meta"]["token_endpoint"],
+                        form={
+                            "grant_type": "authorization_code",
+                            "code": params.get("code", [""])[0],
+                            "redirect_uri": flow["redirect"],
+                            "client_id": flow["client_id"],
+                            "code_verifier": flow["verifier"],
+                            "resource": flow["meta"].get("resource") or url,
+                        },
+                    )
+                    _mcp_save_server(url, flow["meta"], flow["client_id"], payload)
+                    self._send(200, "Connected. You can close this window and return to DB Desk.")
+                except Exception as exc:  # noqa: BLE001
+                    self._send(400, f"Token exchange failed: {exc}")
+            threading.Thread(target=server.shutdown, daemon=True).start()
+
+        def _send(self, status: int, message: str) -> None:
+            body = _mcp_page(message)
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: Any) -> None:
+            return
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    port = int(server.server_address[1])
+    redirect_uri = f"http://127.0.0.1:{port}/callback"
+    client_id = _mcp_register(meta, redirect_uri)
+    _MCP_FLOWS[state] = {
+        "url": url,
+        "meta": meta,
+        "client_id": client_id,
+        "redirect": redirect_uri,
+        "verifier": verifier,
+    }
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "scope": meta.get("scope") or "mcp",
+    }
+    if meta.get("resource"):
+        params["resource"] = meta["resource"]
+    endpoint = meta["authorization_endpoint"]
+    auth_url = endpoint + ("&" if "?" in endpoint else "?") + urllib.parse.urlencode(params)
+
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def stop_later() -> None:
+        time.sleep(300)
+        try:
+            server.shutdown()
+        except Exception:
+            pass
+
+    threading.Thread(target=stop_later, daemon=True).start()
+    try:
+        import webbrowser
+
+        webbrowser.open(auth_url)
+    except Exception:
+        pass
+    return {"auth_url": auth_url, "state": state}
+
+
+def _mcp_post(
+    url: str, payload: dict[str, Any], token: str, session_id: str = ""
+) -> tuple[Any, str]:
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "User-Agent": "DB Desk",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if session_id:
+        headers["Mcp-Session-Id"] = session_id
+    request = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=QUERY_TIMEOUT) as response:
+            content_type = response.headers.get_content_type()
+            session = response.headers.get("Mcp-Session-Id") or session_id
+            body = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise HTTPException(401, "mcp_auth_required: authorize this MCP server") from exc
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        raise HTTPException(502, f"MCP returned {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(502, f"MCP unreachable: {exc.reason}") from exc
+    if not body.strip():
+        return None, session
+    message = None
+    if content_type == "text/event-stream" or body.lstrip().startswith("data:"):
+        for line in body.splitlines():
+            if not line.startswith("data:"):
+                continue
+            chunk = line[5:].strip()
+            if not chunk:
+                continue
+            try:
+                parsed = json.loads(chunk)
+            except ValueError:
+                continue
+            if parsed.get("id") == payload.get("id") or "result" in parsed or "error" in parsed:
+                message = parsed
+                break
+        if message is None:
+            raise HTTPException(502, "MCP event stream had no matching response")
+    else:
+        try:
+            message = json.loads(body)
+        except ValueError as exc:
+            raise HTTPException(502, "MCP returned non-JSON") from exc
+    if message.get("error"):
+        error = message["error"]
+        text = error.get("message") if isinstance(error, dict) else str(error)
+        raise HTTPException(400, f"MCP error: {text}"[:1000])
+    return message.get("result"), session
+
+
+def _mcp_session(url: str, token: str) -> str:
+    with _MCP_GUARD:
+        entry = _MCP_SESSIONS.get(url)
+    if entry and entry.get("token") == token:
+        return str(entry.get("session") or "")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": "initialize",
+        "params": {
+            "protocolVersion": MCP_PROTOCOL,
+            "capabilities": {},
+            "clientInfo": {"name": "DB Desk", "version": "0.3.0"},
+        },
+    }
+    result, session = _mcp_post(url, payload, token)
+    try:
+        _mcp_post(url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, token, session or "")
+    except HTTPException:
+        pass
+    with _MCP_GUARD:
+        _MCP_SESSIONS[url] = {
+            "session": session or "",
+            "token": token,
+            "protocol": (result or {}).get("protocolVersion") if isinstance(result, dict) else "",
+        }
+    return session or ""
+
+
+def _mcp_native_call(conn: dict[str, Any], sql: str) -> Any:
+    url = str(conn.get("mcp_url") or "").strip()
+    tool = str(conn.get("mcp_tool") or "query").strip() or "query"
+    argument = str(conn.get("mcp_sql_arg") or "sql").strip() or "sql"
+    arguments: dict[str, Any] = {argument: sql}
+    extra = str(conn.get("mcp_extra_args") or "").strip()
+    if extra:
+        try:
+            parsed = json.loads(extra)
+        except ValueError as exc:
+            raise HTTPException(400, "MCP extra arguments must be a JSON object") from exc
+        if not isinstance(parsed, dict):
+            raise HTTPException(400, "MCP extra arguments must be a JSON object")
+        arguments.update(parsed)
+    token = _mcp_access_token(url)
+    session = _mcp_session(url, token)
+    result, _ = _mcp_post(
+        url,
+        {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": "tools/call",
+            "params": {"name": tool, "arguments": arguments},
+        },
+        token,
+        session,
+    )
+    if result is None:
+        raise HTTPException(502, "MCP returned an empty result")
+    if isinstance(result, dict) and result.get("isError"):
+        text = "\n".join(
+            str(block.get("text", ""))
+            for block in result.get("content") or []
+            if isinstance(block, dict)
+        )
+        raise HTTPException(400, text[:1000] or "MCP tool reported an error")
+    return result
+
+
+def _mcp_status(url: str) -> dict[str, Any]:
+    data = _load_mcp_tokens()
+    entry = data["servers"].get(url) or {}
+    authorized = bool(entry.get("access_enc"))
+    return {
+        "authorized": authorized,
+        "expires_at": entry.get("expires_at"),
+        "scope": entry.get("scope") or "",
+    }
+
+
+# --------------------------------------------------------------------------- #
 # MCP (query tool) transport
 # --------------------------------------------------------------------------- #
 
@@ -2131,6 +2638,9 @@ def _mcp_table(value: Any):
 
 
 def _mcp_call(conn: dict[str, Any], sql: str) -> Any:
+    url = str(conn.get("mcp_url") or "").strip()
+    if url:
+        return _mcp_native_call(conn, sql)
     server = str(conn.get("mcp_server") or "").strip()
     tool = str(conn.get("mcp_tool") or "query").strip() or "query"
     argument = str(conn.get("mcp_sql_arg") or "sql").strip() or "sql"
@@ -2316,10 +2826,11 @@ def _mcp_rows(conn, schema, table, limit, offset, order_by, direction, filters=N
 
 def _mcp_test(conn: dict[str, Any]) -> dict[str, Any]:
     result = _mcp_query(conn, "SELECT 1 AS ok", 1)
+    label = conn.get("mcp_url") or conn.get("mcp_server") or "mcp"
     return {
-        "version": f"MCP · {conn.get('mcp_server')}",
+        "version": f"MCP · {label} · {conn.get('mcp_tool') or 'query'}",
         "database": conn.get("dbname") or "",
-        "user": conn.get("mcp_server") or "mcp",
+        "user": "mcp",
         "probe": result["rows"][:1],
     }
 
@@ -2748,13 +3259,15 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
             "postgres": "postgres", "mysql": "root", "clickhouse": "default",
             "mcp": "mcp", "http": "http", "sqlite": "sqlite",
         }[kind]
+    mcp_url = str(pick("mcp_url", "")).strip()
     mcp_server = str(pick("mcp_server", "")).strip()
     mcp_tool = str(pick("mcp_tool", "query")).strip() or "query"
+    mcp_extra_args = str(pick("mcp_extra_args", "")).strip()
     mcp_sql_arg = str(pick("mcp_sql_arg", "sql")).strip() or "sql"
     mcp_dialect = str(pick("mcp_dialect", "postgres")).strip().lower()
     if kind == "mcp":
-        if not mcp_server:
-            raise HTTPException(400, "MCP server name is required")
+        if not mcp_server and not mcp_url:
+            raise HTTPException(400, "MCP server name or URL is required")
         if mcp_dialect not in ("postgres", "mysql", "clickhouse"):
             raise HTTPException(400, "MCP dialect must be postgres, mysql or clickhouse")
     http_url = str(pick("http_url", "")).strip()
@@ -2801,10 +3314,12 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "ssh_user": "" if kind == "sqlite" else str(pick("ssh_user", "root")).strip(),
         "ssh_port": int(pick("ssh_port", 22)),
         "ssh_key": "" if kind in ("mcp", "http", "sqlite") else str(pick("ssh_key", "")).strip(),
+        "mcp_url": mcp_url,
         "mcp_server": mcp_server,
         "mcp_tool": mcp_tool,
         "mcp_sql_arg": mcp_sql_arg,
         "mcp_dialect": mcp_dialect,
+        "mcp_extra_args": mcp_extra_args,
         "http_url": http_url,
         "http_method": http_method,
         "http_sql_field": http_sql_field,
@@ -2847,7 +3362,7 @@ async def test_connection(body: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "kind", "host", "port", "dbname", "user", "sslmode", "password",
             "ssh_host", "ssh_user", "ssh_port", "ssh_key",
-            "mcp_server", "mcp_tool", "mcp_sql_arg", "mcp_dialect",
+            "mcp_url", "mcp_server", "mcp_tool", "mcp_sql_arg", "mcp_dialect", "mcp_extra_args",
             "http_url", "http_method", "http_sql_field", "http_headers",
             "http_body_mode", "http_dialect", "http_timeout", "tunnel_command", "tunnel_timeout",
             "tunnel_env",
@@ -2902,8 +3417,7 @@ async def connection_databases(conn_id: str) -> dict[str, Any]:
     elif kind == "sqlite":
         names = ["main"]
     elif kind == "mysql":
-        out = _my_run(conn, "SHOW DATABASES", readonly=True)
-        _, rows = _parse_my(out)
+        rows = _my_rows_sql(conn, "SHOW DATABASES")
         names = [
             r[0] for r in rows
             if r and r[0] and r[0] not in ("information_schema", "performance_schema", "mysql", "sys")
@@ -2916,11 +3430,13 @@ async def connection_databases(conn_id: str) -> dict[str, Any]:
             if r and r[0] not in ("system", "INFORMATION_SCHEMA", "information_schema")
         ]
     else:
-        names = _pg_json(
-            conn,
-            "SELECT coalesce(json_agg(datname ORDER BY datname), '[]'::json) "
-            "FROM pg_database WHERE datistemplate = false",
-        ) or []
+        names = [
+            row[0]
+            for row in _pg_rows_sql(
+                conn,
+                "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname",
+            )
+        ]
     labels = conn.get("db_labels") or {}
     return {
         "databases": [
@@ -2936,8 +3452,7 @@ async def database_hints(conn_id: str) -> dict[str, Any]:
     if _kind(conn) != "mysql":
         return {"hints": {}}
 
-    out = _my_run(conn, "SHOW DATABASES", readonly=True)
-    _, rows = _parse_my(out)
+    rows = _my_rows_sql(conn, "SHOW DATABASES")
     names = [
         r[0] for r in rows
         if r and r[0] and r[0] not in ("information_schema", "performance_schema", "mysql", "sys")
@@ -2946,25 +3461,21 @@ async def database_hints(conn_id: str) -> dict[str, Any]:
     hints: dict[str, str] = {}
     for name in names:
         try:
-            meta = _my_run(
+            found = _my_rows_sql(
                 conn,
                 "SELECT table_name FROM information_schema.tables "
                 f"WHERE table_schema = {_my_lit(name)} "
                 "AND (table_name = 'options' OR table_name LIKE '%options') "
                 "ORDER BY CHAR_LENGTH(table_name), table_name LIMIT 1",
-                readonly=True,
             )
-            _, found = _parse_my(meta)
             table = found[0][0] if found and found[0] else ""
             if not table:
                 continue
-            value = _my_run(
+            option = _my_rows_sql(
                 conn,
                 f"SELECT option_value FROM {_my_ident(name)}.{_my_ident(str(table))} "
                 "WHERE option_name = 'siteurl' LIMIT 1",
-                readonly=True,
             )
-            _, option = _parse_my(value)
             url = str(option[0][0]) if option and option[0] else ""
             if url:
                 host = urllib.parse.urlparse(url if "//" in url else f"//{url}").hostname or ""
@@ -2985,17 +3496,15 @@ async def wordpress_info(conn_id: str, database: str = "") -> dict[str, Any]:
         }
     db = str(conn.get("dbname") or "")
     try:
-        out = _my_run(
+        rows = _my_rows_sql(
             conn,
             "SELECT table_name FROM information_schema.tables "
             f"WHERE table_schema = {_my_lit(db)} "
             "AND (table_name = 'options' OR table_name LIKE '%options') "
             "ORDER BY CHAR_LENGTH(table_name), table_name LIMIT 1",
-            readonly=True,
         )
     except HTTPException:
         return {"found": False, "message": "Could not inspect the schema."}
-    _, rows = _parse_my(out)
     options_table = rows[0][0] if rows and rows[0] else ""
     if not options_table:
         return {"found": False, "message": "No WordPress options table found in this database."}
@@ -3003,13 +3512,11 @@ async def wordpress_info(conn_id: str, database: str = "") -> dict[str, Any]:
     prefix = options_table[: -len("options")] if options_table.endswith("options") else ""
     options: dict[str, str] = {}
     try:
-        out = _my_run(
+        rows = _my_rows_sql(
             conn,
             f"SELECT option_name, option_value FROM {_my_ident(db)}.{_my_ident(str(options_table))} "
             "WHERE option_name IN ('siteurl','home','blogname','template','stylesheet','active_plugins')",
-            readonly=True,
         )
-        _, rows = _parse_my(out)
         for row in rows:
             if row and len(row) >= 2:
                 options[str(row[0])] = str(row[1] or "")
@@ -3018,25 +3525,21 @@ async def wordpress_info(conn_id: str, database: str = "") -> dict[str, Any]:
 
     counts = {"post": 0, "page": 0, "attachment": 0, "users": 0}
     try:
-        out = _my_run(
+        rows = _my_rows_sql(
             conn,
             f"SELECT post_type, COUNT(*) FROM {_my_ident(db)}.{_my_ident(prefix + 'posts')} "
             "GROUP BY post_type",
-            readonly=True,
         )
-        _, rows = _parse_my(out)
         for row in rows:
             if row and row[0] in counts:
                 counts[str(row[0])] = int(row[1] or 0)
     except HTTPException:
         pass
     try:
-        out = _my_run(
+        rows = _my_rows_sql(
             conn,
             f"SELECT COUNT(*) FROM {_my_ident(db)}.{_my_ident(prefix + 'users')}",
-            readonly=True,
         )
-        _, rows = _parse_my(out)
         if rows and rows[0]:
             counts["users"] = int(rows[0][0] or 0)
     except HTTPException:
@@ -3136,6 +3639,30 @@ async def table_ddl(conn_id: str, schema: str, table: str, database: str = "") -
     if not schema or not table:
         raise HTTPException(400, "schema and table are required")
     return {"ddl": _ddl(conn, schema, table)}
+
+
+@router.post("/mcp/authorize")
+async def mcp_authorize(body: dict[str, Any]) -> dict[str, Any]:
+    url = str(body.get("url") or "").strip()
+    if not url:
+        raise HTTPException(400, "MCP server URL is required")
+    return _mcp_oauth_start(url)
+
+
+@router.get("/mcp/oauth/status")
+async def mcp_oauth_status(url: str) -> dict[str, Any]:
+    return _mcp_status(url.strip())
+
+
+@router.post("/mcp/logout")
+async def mcp_logout(body: dict[str, Any]) -> dict[str, Any]:
+    url = str(body.get("url") or "").strip()
+    if url:
+        data = _load_mcp_tokens()
+        data["servers"].pop(url, None)
+        _save_mcp_tokens(data)
+        _MCP_SESSIONS.pop(url, None)
+    return {"ok": True}
 
 
 @router.get("/views")
@@ -3722,12 +4249,18 @@ async def delete_rows_bulk(body: dict[str, Any]) -> dict[str, Any]:
     if kind == "sqlite":
         _sqlite_exec(conn, statements)
     elif kind == "mysql":
-        _my_run(conn, "START TRANSACTION;\n" + ";\n".join(statements) + ";\nCOMMIT;", readonly=False)
+        if pymysql is not None:
+            _my_native_script(conn, statements)
+        else:
+            _my_run(conn, "START TRANSACTION;\n" + ";\n".join(statements) + ";\nCOMMIT;", readonly=False)
     elif kind == "clickhouse":
         for statement in statements:
             _ch_mutation(conn, statement)
     else:
-        _pg_run(conn, "BEGIN;\n" + ";\n".join(statements) + ";\nCOMMIT;\n", readonly=False)
+        if psycopg is not None:
+            _pg_native_script(conn, statements)
+        else:
+            _pg_run(conn, "BEGIN;\n" + ";\n".join(statements) + ";\nCOMMIT;\n", readonly=False)
     _invalidate_columns()
     _audit(conn, "delete_bulk", preview_sql, rows=len(statements))
     return {"ok": True, "rows": len(statements)}
@@ -3803,17 +4336,23 @@ async def import_rows(body: dict[str, Any]) -> dict[str, Any]:
         for statement in statements:
             _ch_mutation(conn, statement)
     elif kind == "mysql":
-        _my_run(
-            conn,
-            "START TRANSACTION;\n" + ";\n".join(statements) + ";\nCOMMIT;",
-            readonly=False,
-        )
+        if pymysql is not None:
+            _my_native_script(conn, statements)
+        else:
+            _my_run(
+                conn,
+                "START TRANSACTION;\n" + ";\n".join(statements) + ";\nCOMMIT;",
+                readonly=False,
+            )
     else:
-        _pg_run(
-            conn,
-            "BEGIN;\n" + ";\n".join(statements) + ";\nCOMMIT;\n",
-            readonly=False,
-        )
+        if psycopg is not None:
+            _pg_native_script(conn, statements)
+        else:
+            _pg_run(
+                conn,
+                "BEGIN;\n" + ";\n".join(statements) + ";\nCOMMIT;\n",
+                readonly=False,
+            )
     _invalidate_columns()
     _audit(conn, "import", f"INSERT {len(normalized)} row(s) into {schema}.{table}", rows=len(normalized))
     return {"ok": True, "rows": len(normalized), "statements": len(statements)}
