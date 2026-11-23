@@ -43,9 +43,11 @@ const STYLES = `
 .dbd-app { font-size: 12px; }
 .dbd-app input, .dbd-app select, .dbd-app textarea { border-radius: 3px; }
 .dbd-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.dbd-grid-table { border-collapse: collapse; font-size: 11.5px; }
-.dbd-grid-table tbody tr { height: 24px; }
-.dbd-grid-table tbody td { height: 24px; }
+.dbd-grid-table { border-collapse: collapse; font-size: 12px; }
+.dbd-grid-table tbody tr { height: 26px; }
+.dbd-grid-table tbody td { height: 26px; }
+.dbd-grid-table thead th { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
+.dark .dbd-grid-table thead th { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
 .dbd-grid-table th, .dbd-grid-table td {
   padding: 3px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 55%, transparent);
@@ -478,8 +480,8 @@ function isNumeric(value) {
   return value !== null && /^-?\d+(\.\d+)?$/.test(String(value))
 }
 
-const TD = 'border-b border-(--ui-stroke-secondary)/50 px-2 py-1 align-top whitespace-nowrap'
-const TH = 'sticky top-0 z-10 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-1.5 text-left align-bottom font-medium whitespace-nowrap'
+const TD = 'border-b border-(--ui-stroke-secondary) px-2 py-1 align-middle whitespace-nowrap'
+const TH = 'sticky top-0 z-10 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-1.5 text-left align-bottom text-[11px] font-semibold whitespace-nowrap text-(--ui-text-secondary)'
 
 function CellMenu({ menu, onClose, onEdit, onCopy, onCopyRow, onFollow, onRowDetail }) {
   const top = Math.max(8, Math.min(window.innerHeight - 210, menu.rect.bottom + 6))
@@ -5317,9 +5319,9 @@ export function DbDesk({ onHome, startNew = false } = {}) {
                         {
                           type: 'button',
                           className: cn(
-                            'flex w-full items-center gap-1.5 rounded-[3px] px-1.5 py-1 text-left text-[11.5px]',
+                            'flex w-full items-center gap-1.5 rounded-[3px] border-l-2 border-transparent px-1.5 py-1 text-left text-[11.5px]',
                             conn.id === activeId
-                              ? 'bg-(--ui-bg-quaternary) text-(--ui-text-primary)'
+                              ? 'border-primary bg-(--ui-bg-quaternary) text-(--ui-text-primary)'
                               : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)'
                           ),
                           onClick: () => {
@@ -5613,7 +5615,7 @@ export function DbDesk({ onHome, startNew = false } = {}) {
                       jsxs('div', {
                         key: 'bar',
                         className:
-                          'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) px-2 py-1.5',
+                          'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
                         children: [
                           jsx(Button, {
                             variant: 'secondary',
@@ -5671,6 +5673,11 @@ export function DbDesk({ onHome, startNew = false } = {}) {
                                 }`
                               })
                             : null,
+                          jsx('span', {
+                            key: 'sep-actions',
+                            className:
+                              'mx-0.5 h-4 w-px shrink-0 bg-(--ui-stroke-secondary)'
+                          }),
                           canInsert
                             ? jsx(Button, {
                                 key: 'insert',
@@ -5713,6 +5720,11 @@ export function DbDesk({ onHome, startNew = false } = {}) {
                                 children: exporting ? 'Exporting…' : 'Export CSV'
                               })
                             : null,
+                          jsx('span', {
+                            key: 'sep-tools',
+                            className:
+                              'mx-0.5 h-4 w-px shrink-0 bg-(--ui-stroke-secondary)'
+                          }),
                           jsx(Button, {
                             key: 'views',
                             variant: tableViews.length ? 'secondary' : 'ghost',

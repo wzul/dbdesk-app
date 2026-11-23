@@ -1,6 +1,6 @@
 [package]
 name = "dbdesk"
-version = "0.4.0"
+version = "0.5.0"
 description = "DB Desk standalone desktop shell"
 edition = "2021"
 rust-version = "1.77"

@@ -12,6 +12,43 @@ import Launcher from './launcher.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
+const APP_VERSION = '0.5.0'
+
+const KIND_LABELS = {
+  postgres: 'PostgreSQL',
+  mysql: 'MySQL / MariaDB',
+  clickhouse: 'ClickHouse',
+  sqlite: 'SQLite',
+  mcp: 'MCP',
+  http: 'HTTP gateway'
+}
+
+function StatusBar({ connection }) {
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-3 border-t border-(--ui-stroke-secondary) bg-(--ui-bg-sidebar) px-3 text-[10.5px] text-(--ui-text-tertiary)">
+      <span className="flex items-center gap-1.5">
+        <span
+          className={
+            'size-1.5 rounded-full ' +
+            (connection ? 'bg-emerald-500' : 'bg-(--ui-text-tertiary) opacity-50')
+          }
+        />
+        <span className="text-(--ui-text-secondary)">
+          {connection ? 'Connected' : 'No connection'}
+        </span>
+      </span>
+      {connection ? <span className="truncate">{connection.name}</span> : null}
+      {connection ? (
+        <span className="truncate">{KIND_LABELS[connection.kind] || connection.kind}</span>
+      ) : null}
+      {connection ? (
+        <span>{connection.readonly ? 'read-only' : 'writes allowed'}</span>
+      ) : null}
+      <span className="flex-1" />
+      <span>DB Desk {APP_VERSION}</span>
+    </div>
+  )
+}
 
 /* Follow the OS light/dark preference (the page uses the `dark:` variant). */
 const scheme = window.matchMedia('(prefers-color-scheme: dark)')
@@ -61,6 +98,27 @@ function Shell() {
   const [view, setView] = useState('connections')
   const [startNew, setStartNew] = useState(false)
   const [generation, setGeneration] = useState(0)
+  const [active, setActive] = useState(null)
+
+  useEffect(() => {
+    if (view !== 'app') return
+    let cancelled = false
+    let id = ''
+    try {
+      id = localStorage.getItem(ACTIVE_KEY) || ''
+    } catch {
+      /* private mode */
+    }
+    rest('/connections')
+      .then((result) => {
+        if (cancelled) return
+        setActive((result.connections || []).find((item) => item.id === id) || null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [view, generation])
 
   const open = (id) => {
     try {
@@ -83,11 +141,16 @@ function Shell() {
     return <Launcher onOpen={open} onNew={create} />
   }
   return (
-    <DbDesk
-      key={generation}
-      startNew={startNew}
-      onHome={() => setView('connections')}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">
+        <DbDesk
+          key={generation}
+          startNew={startNew}
+          onHome={() => setView('connections')}
+        />
+      </div>
+      <StatusBar connection={active} />
+    </div>
   )
 }
 
