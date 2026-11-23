@@ -415,7 +415,8 @@ tunnel:
 1. In Cloudflare Zero Trust create a **service token** (Access → Service Auth).
 2. Add a ClickHouse connection: **host** = the public hostname (a full
    `https://…` URL is accepted and normalized), **port** `443`, **SSL mode**
-   `require`. An `https://` host implies `require` and port 443.
+   `require`. An `https://` host implies `require` and port 443; port 443
+   also implies https (unless SSL mode is `disable`).
 3. Set **HTTP path** if the endpoint is mounted on a subpath (default `/`).
 4. Paste the headers into **Custom HTTP headers**, one per line:
 

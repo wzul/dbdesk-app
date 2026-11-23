@@ -1624,15 +1624,16 @@ def _parse_ch_headers(raw: Any, *, strict: bool = False) -> dict[str, str]:
 def _ch_target(conn: dict[str, Any]) -> tuple[str, str, str, str]:
     """Resolve scheme/host/port/path, accepting a full URL in the host field."""
     raw = str(conn.get("host") or "127.0.0.1").strip()
-    scheme = "https" if str(conn.get("sslmode") or "") in (
-        "require", "verify-ca", "verify-full"
-    ) else "http"
+    sslmode = str(conn.get("sslmode") or "").lower()
+    scheme = "https" if sslmode in ("require", "verify-ca", "verify-full") else "http"
+    explicit_scheme = ""
     port = str(conn.get("port") or 8123)
     path = str(conn.get("ch_path") or "/").strip() or "/"
     if "://" in raw:
         parts = urllib.parse.urlsplit(raw if raw.startswith(("http://", "https://")) else "//" + raw)
         if parts.scheme:
-            scheme = "https" if parts.scheme.lower() == "https" else "http"
+            explicit_scheme = parts.scheme.lower()
+            scheme = "https" if explicit_scheme == "https" else "http"
         host = parts.hostname or raw
         if parts.port:
             port = str(parts.port)
@@ -1648,6 +1649,8 @@ def _ch_target(conn: dict[str, Any]) -> tuple[str, str, str, str]:
                 port = port_part
     if not path.startswith("/"):
         path = "/" + path
+    if not explicit_scheme and port == "443" and sslmode != "disable":
+        scheme = "https"
     if ":" in host and not host.startswith("[") and host.count(":") > 1:
         host = f"[{host}]"
     return scheme, host, port, path
@@ -4406,6 +4409,8 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
             ch_path = parts.path
         if parts.scheme.lower() == "https" and sslmode_value in ("disable", "prefer"):
             sslmode_value = "require"
+    if kind == "clickhouse" and port == 443 and sslmode_value == "prefer":
+        sslmode_value = "require"
     if not ch_path.startswith("/"):
         ch_path = "/" + ch_path
     if "?" in ch_path or "\n" in ch_path or "\r" in ch_path:
