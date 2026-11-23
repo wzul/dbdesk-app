@@ -5614,8 +5614,10 @@ export function DbDesk({ onHome, startNew = false } = {}) {
                     children: [
                       jsxs('div', {
                         key: 'bar',
-                        className:
-                          'flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
+                        className: cn(
+                          'shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
+                          selected ? 'flex' : 'hidden'
+                        ),
                         children: [
                           jsx(Button, {
                             variant: 'secondary',
@@ -5873,7 +5875,7 @@ export function DbDesk({ onHome, startNew = false } = {}) {
                           })
                         ]
                       }),
-                      filterOpen
+                      selected && filterOpen
                         ? jsxs('div', {
                             key: 'filter-panel',
                             className:
