@@ -145,10 +145,36 @@ refreshes them from a local Hermes checkout:
 scripts/sync-plugin.sh /path/to/.hermes/plugins/dbdesk
 ```
 
-## Signing & notarization (macOS)
+## Signing & notarization (macOS, optional)
 
-Unsigned DMGs work only after right-click → **Open**, and macOS may refuse them
-outright on other people's machines. Signing + notarization fixes that.
+The default CI builds are **unsigned** and free: they run on your own Mac after
+the steps below. Signing + notarization is only needed for clean distribution to
+other people, and requires a paid Apple Developer account.
+
+### Install an unsigned build (no Apple Developer account)
+
+**Build it on the Mac that will run it** — locally built apps are not
+quarantined, so Gatekeeper does not complain at all:
+
+```bash
+git clone https://github.com/wzul/dbdesk-app
+cd dbdesk-app
+make install          # Node, Python deps
+make bundle           # Python + Rust toolchain required
+open "src-tauri/target/release/bundle/macos/DB Desk.app"
+```
+
+**Or download the CI DMG**, drag **DB Desk** to Applications, then:
+
+- macOS 15+: open it once, then **System Settings → Privacy & Security → Open
+  Anyway**; or
+- remove the quarantine flag:
+
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/DB Desk.app"
+  ```
+
+Only do this for a build you trust (this repository's CI or your own).
 
 ### What you need
 
