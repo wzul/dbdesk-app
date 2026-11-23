@@ -433,6 +433,27 @@ The app must be open. The bridge discovers the port from
 | `table_csv` | CSV text (capped, reports `truncated`) |
 | `query` | one SQL statement, audited as `mcp_query` |
 | `ask_data` | DB Desk's AI agent, including multi-database local joins |
+| `connection_draft` | propose a connection; the user reviews it and types the password |
+| `connection_update` | edit non-secret fields (host, port, db, user, group, SSH) |
+| `connection_delete` | queue deletion for approval |
+| `connection_test` | open the saved connection and return server details |
+| `views_list` / `view_create` / `view_delete` | manage saved views |
+| `app_status` | version, data path, counts, AI model, MCP and notification state |
+| `settings_update` | toggle notifications, set the AI model, turn MCP writes off |
+
+### Connection drafts
+
+An agent cannot receive or send database passwords. `connection_draft` stores a
+pending draft; the picker shows **Agent drafted “…”** with **Review**. The normal
+connection form opens prefilled, the user types the password, and saving marks
+the draft applied. Drafts never contain secret-like keys.
+
+### Destructive actions
+
+`connection_delete` and production `connection_update` create entries in
+**Approvals**. Nothing changes until the user approves; the audit log records
+both the request and the result. `settings_update` cannot enable writes, change
+the AI base URL/key or read the MCP token.
 
 ### Writes
 

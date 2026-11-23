@@ -3,8 +3,6 @@ import React, { useEffect, useState } from 'react'
 import { Badge, Button, Codicon, Input, cn, rest } from './sdk-shim.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
 
-const NOTIFY_KEY = 'dbdesk.notifications'
-
 function Section({ title, children }) {
   return (
     <section className="flex flex-col gap-2 border-b border-(--ui-stroke-secondary) px-4 py-3 last:border-b-0">
@@ -59,11 +57,9 @@ export default function SettingsDialog({ open, onClose, version }) {
     setMcpMessage('')
     setMcpReveal(false)
     setNotifyDiag(null)
-    try {
-      setNotifyEnabled(localStorage.getItem(NOTIFY_KEY) !== 'off')
-    } catch {
-      setNotifyEnabled(true)
-    }
+    rest('/prefs')
+      .then((value) => setNotifyEnabled(Boolean(value.notifications)))
+      .catch(() => setNotifyEnabled(true))
     rest('/ai/config')
       .then((value) => {
         setConfig(value)
@@ -260,11 +256,7 @@ export default function SettingsDialog({ open, onClose, version }) {
 
   const toggleNotifications = (checked) => {
     setNotifyEnabled(checked)
-    try {
-      localStorage.setItem(NOTIFY_KEY, checked ? 'on' : 'off')
-    } catch {
-      /* private mode */
-    }
+    rest('/prefs', { method: 'POST', body: { notifications: checked } }).catch(() => {})
   }
 
   return (

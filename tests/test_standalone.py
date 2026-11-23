@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 os.environ.setdefault("DBDESK_HOME", tempfile.mkdtemp(prefix="dbdesk-test-"))
+os.environ.setdefault("DBDESK_NO_NOTIFY", "1")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -262,6 +263,139 @@ class McpServer(unittest.TestCase):
         self.assertEqual(
             self.rpc({"jsonrpc": "2.0", "id": 1, "method": "ping"}, rotated).status_code, 200
         )
+
+
+    def test_connection_draft_flow(self) -> None:
+        token = self.enable()
+        result = self.call_tool(
+            token,
+            "connection_draft",
+            {
+                "kind": "postgres",
+                "name": "Agent PG",
+                "host": "db.example.com",
+                "port": 5432,
+                "dbname": "app",
+                "user": "app",
+                "password": "must-not-leak",
+                "note": "from the agent",
+            },
+        )
+        self.assertFalse(result["isError"])
+        draft = json.loads(result["content"][0]["text"])["draft"]
+        self.assertEqual(draft["status"], "pending")
+        self.assertNotIn("password", json.dumps(draft["draft"]).lower())
+        self.assertNotIn("must-not-leak", json.dumps(draft))
+
+        listed = self.client.get("/api/connection-drafts").json()["drafts"]
+        self.assertEqual([item["id"] for item in listed], [draft["id"]])
+
+        done = self.client.post(f"/api/connection-drafts/{draft['id']}/applied")
+        self.assertEqual(done.status_code, 200)
+        self.assertEqual(self.client.get("/api/connection-drafts").json()["drafts"], [])
+
+    def test_connection_update_and_delete_approval(self) -> None:
+        token = self.enable()
+        cid = self.add_connection(readonly=True)
+
+        updated = self.call_tool(
+            token, "connection_update", {"connection_id": cid, "name": "renamed"}
+        )
+        self.assertFalse(updated["isError"])
+        payload = json.loads(updated["content"][0]["text"])
+        self.assertEqual(payload["connection"]["name"], "renamed")
+
+        deleted = self.call_tool(token, "connection_delete", {"connection_id": cid})
+        self.assertFalse(deleted["isError"])
+        approval = json.loads(deleted["content"][0]["text"])["pending_approval"]
+        self.assertEqual(approval["action"], "delete_connection")
+        self.assertTrue(any(c["id"] == cid for c in self.client.get("/api/connections").json()["connections"]))
+
+        decided = self.client.post(
+            f"/api/approvals/{approval['id']}/decision", json={"decision": "approve"}
+        )
+        self.assertEqual(decided.status_code, 200, decided.text)
+        self.assertFalse(
+            any(c["id"] == cid for c in self.client.get("/api/connections").json()["connections"])
+        )
+
+    def test_production_update_requires_approval(self) -> None:
+        token = self.enable()
+        response = self.client.post(
+            "/api/connections",
+            json={
+                "kind": "sqlite",
+                "name": "prod-sqlite",
+                "dbname": self.db_path,
+                "readonly": True,
+                "production": True,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        cid = response.json()["connection"]["id"]
+
+        queued = self.call_tool(
+            token, "connection_update", {"connection_id": cid, "name": "prod-renamed"}
+        )
+        self.assertFalse(queued["isError"])
+        approval = json.loads(queued["content"][0]["text"])["pending_approval"]
+        self.assertEqual(approval["action"], "update_connection")
+        current = next(
+            c for c in self.client.get("/api/connections").json()["connections"] if c["id"] == cid
+        )
+        self.assertEqual(current["name"], "prod-sqlite")
+
+        decided = self.client.post(
+            f"/api/approvals/{approval['id']}/decision", json={"decision": "approve"}
+        )
+        self.assertEqual(decided.status_code, 200, decided.text)
+        current = next(
+            c for c in self.client.get("/api/connections").json()["connections"] if c["id"] == cid
+        )
+        self.assertEqual(current["name"], "prod-renamed")
+
+    def test_status_settings_views(self) -> None:
+        token = self.enable()
+        cid = self.add_connection(readonly=True)
+        status = json.loads(self.call_tool(token, "app_status")["content"][0]["text"])
+        self.assertEqual(status["mcp"]["tools"], 19)
+        self.assertIn("connections", status)
+
+        toggled = self.call_tool(
+            token, "settings_update", {"notifications": False, "ai_model": "test-model"}
+        )
+        self.assertFalse(toggled["isError"])
+        self.assertEqual(self.client.get("/api/prefs").json()["notifications"], False)
+        self.assertEqual(self.client.get("/api/ai/config").json()["model"], "test-model")
+
+        refused = self.call_tool(token, "settings_update", {"allow_writes": True})
+        self.assertTrue(refused["isError"])
+
+        created = self.call_tool(
+            token,
+            "view_create",
+            {
+                "name": "adults",
+                "connection_id": cid,
+                "schema": "main",
+                "table": "people",
+                "order_by": "id",
+            },
+        )
+        self.assertFalse(created["isError"])
+        view_id = json.loads(created["content"][0]["text"])["view"]["id"]
+        listed = self.call_tool(token, "views_list")
+        self.assertIn("adults", listed["content"][0]["text"])
+        removed = self.call_tool(token, "view_delete", {"view_id": view_id})
+        self.assertFalse(removed["isError"])
+
+    def test_connection_test(self) -> None:
+        token = self.enable()
+        cid = self.add_connection(readonly=True)
+        result = self.call_tool(token, "connection_test", {"connection_id": cid})
+        self.assertFalse(result["isError"])
+        payload = json.loads(result["content"][0]["text"])
+        self.assertTrue(payload["ok"])
 
 
 if __name__ == "__main__":

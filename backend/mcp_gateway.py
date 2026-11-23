@@ -165,6 +165,133 @@ def _status() -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# connection drafts, prefs and approvals
+# --------------------------------------------------------------------------- #
+
+DRAFT_KINDS = {"postgres", "mysql", "clickhouse", "sqlite"}
+DRAFT_TEXT_FIELDS = (
+    "group", "host", "user", "sslmode", "ssh_host", "ssh_user", "tunnel_command",
+)
+UPDATE_FIELDS = (
+    "name", "group", "host", "port", "dbname", "user", "sslmode",
+    "ssh_host", "ssh_user", "ssh_port", "tunnel_command",
+)
+
+
+def _drafts_path() -> Path:
+    return _data_dir() / "connection-drafts.json"
+
+
+def _load_drafts() -> list[dict[str, Any]]:
+    try:
+        value = json.loads(_drafts_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        value = {}
+    drafts = value.get("drafts") if isinstance(value, dict) else None
+    return [item for item in drafts or [] if isinstance(item, dict) and item.get("id")][:50]
+
+
+def _save_drafts(drafts: list[dict[str, Any]]) -> None:
+    path = _drafts_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"drafts": drafts[:50]}, indent=2), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+def _sanitize_draft(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ToolError("draft must be an object")
+    kind = str(value.get("kind") or "postgres").strip().lower()
+    if kind not in DRAFT_KINDS:
+        raise ToolError("kind must be postgres, mysql, clickhouse or sqlite")
+    name = str(value.get("name") or "").strip()[:80]
+    dbname = str(value.get("dbname") or "").strip()[:500]
+    if not name:
+        raise ToolError("name is required")
+    if not dbname:
+        raise ToolError("dbname is required")
+    draft: dict[str, Any] = {"kind": kind, "name": name, "dbname": dbname}
+    for field in DRAFT_TEXT_FIELDS:
+        item = str(value.get(field) or "").strip()
+        if item:
+            draft[field] = item[:200]
+    default_port = {"postgres": 5432, "mysql": 3306, "clickhouse": 8123}.get(kind, 0)
+    draft["port"] = _int(value.get("port"), default_port, 0, 65535)
+    draft["ssh_port"] = _int(value.get("ssh_port"), 22, 0, 65535)
+    draft["readonly"] = bool(value.get("readonly", True))
+    draft["production"] = bool(value.get("production", False))
+    if kind == "sqlite":
+        for field in ("host", "port", "user", "sslmode", "ssh_host", "ssh_user", "ssh_port"):
+            draft.pop(field, None)
+    return draft
+
+
+def _create_draft(draft: dict[str, Any], note: str = "") -> dict[str, Any]:
+    entry = {
+        "id": secrets.token_hex(6),
+        "created_at": time.time(),
+        "status": "pending",
+        "source": "agent",
+        "note": note[:500],
+        "draft": draft,
+    }
+    with _LOCK:
+        drafts = _load_drafts()
+        drafts.append(entry)
+        _save_drafts(drafts)
+    return entry
+
+
+def _prefs_path() -> Path:
+    return _data_dir() / "prefs.json"
+
+
+def _load_prefs() -> dict[str, Any]:
+    try:
+        value = json.loads(_prefs_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        value = {}
+    return {"notifications": bool(value.get("notifications", True))}
+
+
+def _save_prefs(prefs: dict[str, Any]) -> None:
+    path = _prefs_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+def _request_approval(
+    conn: dict[str, Any], action: str, preview: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    entry = {
+        "id": secrets.token_hex(6),
+        "ts": time.time(),
+        "connection_id": conn.get("id"),
+        "connection_name": conn.get("name", ""),
+        "database": conn.get("dbname", ""),
+        "schema": "",
+        "table": "",
+        "action": action,
+        "sql": preview[:4000],
+        "hash": api._approval_hash(preview),
+        "status": "pending",
+        "decided_at": None,
+        "used_at": None,
+        "source": "mcp",
+        "payload": payload,
+    }
+    entries = api._load_approvals()
+    entries.append(entry)
+    api._save_approvals(entries[:300])
+    api._approval_notice(entry)
+    api._audit(conn, "approval_requested", preview)
+    return entry
+
+
+# --------------------------------------------------------------------------- #
 # tools
 # --------------------------------------------------------------------------- #
 
@@ -332,6 +459,146 @@ async def _ask_data(args: dict[str, Any]) -> dict[str, Any]:
     return api._ai_agent(body)
 
 
+async def _connection_draft(args: dict[str, Any]) -> dict[str, Any]:
+    entry = _create_draft(_sanitize_draft(args), str(args.get("note") or ""))
+    return {
+        "draft": entry,
+        "next": (
+            "Review it in DB Desk and type the password there. Secrets must never be "
+            "sent through this tool."
+        ),
+    }
+
+
+async def _connection_update(args: dict[str, Any]) -> dict[str, Any]:
+    cid = _required(args, "connection_id")
+    conn = api._get(cid)
+    changes: dict[str, Any] = {}
+    for field in UPDATE_FIELDS:
+        if field not in args:
+            continue
+        value = args.get(field)
+        if field in ("port", "ssh_port"):
+            changes[field] = _int(value, int(conn.get(field) or 0), 0, 65535)
+        else:
+            changes[field] = str(value or "").strip()[:500]
+    if "production" in args:
+        changes["production"] = bool(args.get("production"))
+    if not changes:
+        raise ToolError("no supported fields to update")
+    preview = (
+        f'-- update connection "{conn.get("name")}"\n'
+        + "\n".join(f"-- {key} = {value}" for key, value in sorted(changes.items()))
+    )
+    if conn.get("production") or changes.get("production") is True:
+        approval = _request_approval(
+            conn, "update_connection", preview, {"connection_id": cid, "changes": changes}
+        )
+        return {
+            "pending_approval": approval,
+            "message": "Production change queued. Approve it in DB Desk → Approvals.",
+        }
+    body = {**api._public(conn), **changes, "id": cid}
+    result = await api.save_connection(body)
+    api._audit(conn, "mcp_connection_update", preview, ok=True, notify=False)
+    return {"connection": result["connection"], "changed": sorted(changes)}
+
+
+async def _connection_delete(args: dict[str, Any]) -> dict[str, Any]:
+    cid = _required(args, "connection_id")
+    conn = api._get(cid)
+    preview = (
+        f'-- delete connection "{conn.get("name")}" '
+        f'({conn.get("kind")}, {conn.get("dbname")})'
+    )
+    approval = _request_approval(
+        conn, "delete_connection", preview, {"connection_id": cid}
+    )
+    return {
+        "pending_approval": approval,
+        "message": "Deletion queued. Approve it in DB Desk → Approvals.",
+    }
+
+
+async def _connection_test(args: dict[str, Any]) -> dict[str, Any]:
+    cid = _required(args, "connection_id")
+    conn = api._get(cid)
+    result = await api.test_connection({"id": cid})
+    api._audit(conn, "mcp_connection_test", "-- test connection", ok=True, notify=False)
+    return result
+
+
+async def _views_list(args: dict[str, Any]) -> dict[str, Any]:
+    return await api.list_views()
+
+
+async def _view_create(args: dict[str, Any]) -> dict[str, Any]:
+    body = {
+        "name": _required(args, "name"),
+        "connection_id": _required(args, "connection_id"),
+        "database": str(args.get("database") or ""),
+        "schema": _required(args, "schema"),
+        "table": _required(args, "table"),
+        "filters": args.get("filters") if isinstance(args.get("filters"), list) else [],
+        "order_by": str(args.get("order_by") or ""),
+        "order_dir": str(args.get("order_dir") or "asc"),
+        "limit": _int(args.get("limit"), 100, 1, 1000),
+    }
+    return await api.save_view(body)
+
+
+async def _view_delete(args: dict[str, Any]) -> dict[str, Any]:
+    return await api.delete_view(_required(args, "view_id"))
+
+
+async def _app_status(args: dict[str, Any]) -> dict[str, Any]:
+    ai = api._load_ai_config()
+    mcp = _load_config()
+    return {
+        "version": _VERSION,
+        "home": str(_home()),
+        "connections": len(api._load()),
+        "saved_views": len(api._load_views()),
+        "ai": {"configured": bool(api._ai_key(ai)), "model": ai.get("model", "")},
+        "mcp": {
+            "enabled": mcp["enabled"],
+            "allow_writes": mcp["allow_writes"],
+            "tools": len(TOOL_SPECS),
+        },
+        "notifications": _load_prefs()["notifications"],
+    }
+
+
+async def _settings_update(args: dict[str, Any]) -> dict[str, Any]:
+    changed: list[str] = []
+    if "notifications" in args:
+        prefs = _load_prefs()
+        prefs["notifications"] = bool(args.get("notifications"))
+        _save_prefs(prefs)
+        changed.append("notifications")
+    if "ai_model" in args:
+        model = str(args.get("ai_model") or "").strip()[:100]
+        if not model:
+            raise ToolError("ai_model must not be empty")
+        await api.ai_config_save({"model": model})
+        changed.append("ai_model")
+    if "allow_writes" in args:
+        if bool(args.get("allow_writes")):
+            raise ToolError(
+                "enabling writes must be done by the user in DB Desk → Settings → MCP server"
+            )
+        with _LOCK:
+            config = _load_config()
+            config["allow_writes"] = False
+            _save_config(config)
+        changed.append("allow_writes")
+    if not changed:
+        raise ToolError("supported settings: notifications, ai_model, allow_writes=false")
+    result = await _app_status({})
+    result["changed"] = changed
+    return result
+
+
 def _required(args: dict[str, Any], key: str) -> str:
     value = str(args.get(key) or "").strip()
     if not value:
@@ -496,6 +763,144 @@ TOOL_SPECS: list[dict[str, Any]] = [
         ),
         "handler": _ask_data,
         "read_only": True,
+    },
+    {
+        "name": "connection_draft",
+        "title": "Draft a connection",
+        "description": (
+            "Create a pending connection draft (no password). The user reviews it in "
+            "DB Desk and types the secret there."
+        ),
+        "inputSchema": _schema(
+            {
+                "kind": {"type": "string", "enum": ["postgres", "mysql", "clickhouse", "sqlite"]},
+                "name": _STR,
+                "group": _STR,
+                "host": _STR,
+                "port": {"type": "integer"},
+                "dbname": _STR,
+                "user": _STR,
+                "sslmode": _STR,
+                "ssh_host": _STR,
+                "ssh_user": _STR,
+                "ssh_port": {"type": "integer"},
+                "tunnel_command": _STR,
+                "readonly": {"type": "boolean"},
+                "production": {"type": "boolean"},
+                "note": _STR,
+            },
+            ["kind", "name", "dbname"],
+        ),
+        "handler": _connection_draft,
+        "read_only": False,
+    },
+    {
+        "name": "connection_update",
+        "title": "Update a connection",
+        "description": (
+            "Update non-secret fields of an existing connection. Production changes "
+            "create an approval and wait for the user."
+        ),
+        "inputSchema": _schema(
+            {
+                "connection_id": _STR,
+                "name": _STR,
+                "group": _STR,
+                "host": _STR,
+                "port": {"type": "integer"},
+                "dbname": _STR,
+                "user": _STR,
+                "sslmode": _STR,
+                "ssh_host": _STR,
+                "ssh_user": _STR,
+                "ssh_port": {"type": "integer"},
+                "tunnel_command": _STR,
+                "production": {"type": "boolean"},
+            },
+            ["connection_id"],
+        ),
+        "handler": _connection_update,
+        "read_only": False,
+    },
+    {
+        "name": "connection_delete",
+        "title": "Delete a connection",
+        "description": "Queue deletion of a connection; the user must approve it in DB Desk.",
+        "inputSchema": _schema({"connection_id": _STR}, ["connection_id"]),
+        "handler": _connection_delete,
+        "read_only": False,
+    },
+    {
+        "name": "connection_test",
+        "title": "Test a connection",
+        "description": "Open the saved connection and return server/version details.",
+        "inputSchema": _schema({"connection_id": _STR}, ["connection_id"]),
+        "handler": _connection_test,
+        "read_only": True,
+    },
+    {
+        "name": "views_list",
+        "title": "List saved views",
+        "description": "List saved table views (filters, ordering, limits).",
+        "inputSchema": _schema({}),
+        "handler": _views_list,
+        "read_only": True,
+    },
+    {
+        "name": "view_create",
+        "title": "Save a view",
+        "description": "Create or replace a saved view for a table.",
+        "inputSchema": _schema(
+            {
+                "name": _STR,
+                "connection_id": _STR,
+                "database": _STR,
+                "schema": _STR,
+                "table": _STR,
+                "filters": {"type": "array", "items": {"type": "object"}},
+                "order_by": _STR,
+                "order_dir": {"type": "string", "enum": ["asc", "desc"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+            },
+            ["name", "connection_id", "schema", "table"],
+        ),
+        "handler": _view_create,
+        "read_only": False,
+    },
+    {
+        "name": "view_delete",
+        "title": "Delete a saved view",
+        "description": "Delete a saved view by id.",
+        "inputSchema": _schema({"view_id": _STR}, ["view_id"]),
+        "handler": _view_delete,
+        "read_only": False,
+    },
+    {
+        "name": "app_status",
+        "title": "DB Desk status",
+        "description": (
+            "Version, data path, connection/view counts, AI configured/model and MCP state."
+        ),
+        "inputSchema": _schema({}),
+        "handler": _app_status,
+        "read_only": True,
+    },
+    {
+        "name": "settings_update",
+        "title": "Update safe settings",
+        "description": (
+            "Toggle notifications, set the AI model, or turn MCP writes off. It cannot "
+            "change the AI base URL, API key, MCP token or enable writes."
+        ),
+        "inputSchema": _schema(
+            {
+                "notifications": {"type": "boolean"},
+                "ai_model": _STR,
+                "allow_writes": {"type": "boolean"},
+            }
+        ),
+        "handler": _settings_update,
+        "read_only": False,
     },
 ]
 
@@ -676,3 +1081,38 @@ async def mcp_rotate() -> dict[str, Any]:
         config["token"] = _new_token()
         _save_config(config)
     return _status()
+
+
+@runtime_router.get("/connection-drafts")
+async def list_connection_drafts() -> dict[str, Any]:
+    return {"drafts": [item for item in _load_drafts() if item.get("status") == "pending"]}
+
+
+@runtime_router.post("/connection-drafts/{draft_id}/{action}")
+async def update_connection_draft(draft_id: str, action: str) -> dict[str, Any]:
+    if action not in ("applied", "dismissed"):
+        raise HTTPException(404, "unknown draft action")
+    with _LOCK:
+        drafts = _load_drafts()
+        entry = next((item for item in drafts if item.get("id") == draft_id), None)
+        if entry is None:
+            raise HTTPException(404, "draft not found")
+        entry["status"] = action
+        entry["updated_at"] = time.time()
+        _save_drafts(drafts)
+    return {"draft": entry}
+
+
+@runtime_router.get("/prefs")
+async def get_prefs() -> dict[str, Any]:
+    return _load_prefs()
+
+
+@runtime_router.post("/prefs")
+async def set_prefs(body: dict[str, Any]) -> dict[str, Any]:
+    with _LOCK:
+        prefs = _load_prefs()
+        if "notifications" in body:
+            prefs["notifications"] = bool(body.get("notifications"))
+        _save_prefs(prefs)
+    return prefs

@@ -2631,7 +2631,7 @@ function ApprovalsDrawer({ approvals, onDecide, onRefresh, onClose }) {
                   jsx('div', { className: 'text-sm font-semibold', children: 'Approvals' }),
                   jsx('div', {
                     className: 'text-[11px] text-(--ui-text-tertiary)',
-                    children: `${pending.length} pending · production writes only`
+                    children: `${pending.length} pending · writes and agent actions`
                   })
                 ]
               }),
@@ -3228,7 +3228,15 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
     setBusy('save')
     setErr('')
     try {
-      const result = await call('/connections', { method: 'POST', body: draft })
+      const { _draftId, ...body } = draft
+      const result = await call('/connections', { method: 'POST', body })
+      if (_draftId) {
+        try {
+          await call(`/connection-drafts/${_draftId}/applied`, { method: 'POST' })
+        } catch {
+          /* the draft can stay pending; saving the connection already succeeded */
+        }
+      }
       onSaved(result.connection)
     } catch (error) {
       setErr(errText(error))
@@ -3593,6 +3601,14 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                       })
                 ]
               }),
+              draft._draftId
+                ? jsx('div', {
+                    className:
+                      'rounded-[3px] border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-(--ui-text-secondary)',
+                    children:
+                      'Drafted by the agent. Type the password here — it is never sent to the AI provider.'
+                  })
+                : null,
               !['mcp', 'http', 'sqlite'].includes(draft.kind || 'postgres')
                 ? jsx(Field, {
                     label: 'Password',

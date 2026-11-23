@@ -14,7 +14,7 @@ import { isMacOS, sendNativeNotification } from './notify.js'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.10.1'
+const APP_VERSION = '0.11.0'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
@@ -108,9 +108,10 @@ function useNativeNotifications() {
     const tick = async () => {
       if (cancelled || !seenApprovals) return
       try {
-        if (localStorage.getItem('dbdesk.notifications') === 'off') return
+        const prefs = await rest('/prefs')
+        if (!prefs.notifications) return
       } catch {
-        /* private mode */
+        /* server starting */
       }
       try {
         const approvals = await rest('/approvals?limit=50')
@@ -265,6 +266,7 @@ function Shell() {
           onEdit={edit}
           onSetup={setup}
           onSettings={() => setSettingsOpen(true)}
+          onReviewDraft={(entry) => setup({ ...entry.draft, _draftId: entry.id })}
         />
         <SettingsDialog
           open={settingsOpen}

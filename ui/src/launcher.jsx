@@ -142,7 +142,7 @@ function ContextMenu({ menu, onClose, onOpen, onEdit, onTest, onExport, onDelete
   )
 }
 
-export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings }) {
+export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, onReviewDraft }) {
   const [connections, setConnections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -151,29 +151,36 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings })
   const [importOpen, setImportOpen] = useState(false)
   const [setupOpen, setSetupOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState(null)
-  const [notifyState, setNotifyState] = useState('')
+  const [drafts, setDrafts] = useState([])
   const [menu, setMenu] = useState(null)
   const [update, setUpdate] = useState(null)
   const [updateState, setUpdateState] = useState('')
   const [checking, setChecking] = useState(false)
   const searchRef = useRef(null)
 
-  const testNotification = async () => {
-    setNotifyState('')
+  useEffect(() => {
+    let cancelled = false
+    const loadDrafts = () => {
+      rest('/connection-drafts')
+        .then((result) => {
+          if (!cancelled) setDrafts(result.drafts || [])
+        })
+        .catch(() => {})
+    }
+    loadDrafts()
+    const timer = setInterval(loadDrafts, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [reloadKey])
+
+  const dismissDraft = async (draftId) => {
     try {
-      const { isPermissionGranted, requestPermission, sendNotification } = await import(
-        '@tauri-apps/plugin-notification'
-      )
-      let granted = await isPermissionGranted()
-      if (!granted) granted = (await requestPermission()) === 'granted'
-      if (!granted) {
-        setNotifyState('Permission denied')
-        return
-      }
-      sendNotification({ title: 'DB Desk', body: 'Native notifications are working.' })
-      setNotifyState('Sent')
+      await rest(`/connection-drafts/${draftId}/dismissed`, { method: 'POST' })
+      setDrafts((current) => current.filter((draft) => draft.id !== draftId))
     } catch {
-      setNotifyState('Not available')
+      /* keep it visible */
     }
   }
 
@@ -366,6 +373,47 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings })
             New connection
           </button>
         </div>
+
+        {drafts.length ? (
+          <div className="flex flex-col gap-2">
+            {drafts.map((draft) => (
+              <div
+                key={draft.id}
+                className="flex items-center gap-3 rounded-[6px] border border-primary/30 bg-primary/5 px-3 py-2"
+              >
+                <Codicon name="sparkle" className="shrink-0 text-primary" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12px] font-medium">
+                    Agent drafted “{draft.draft.name}”
+                  </div>
+                  <div className="truncate text-[10.5px] text-(--ui-text-tertiary)">
+                    {draft.draft.kind} · {draft.draft.dbname}
+                    {draft.draft.host ? ` · ${draft.draft.host}` : ''} · password needed
+                  </div>
+                  {draft.note ? (
+                    <div className="truncate text-[10px] text-(--ui-text-tertiary)">
+                      {draft.note}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onReviewDraft(draft)}
+                  className="flex h-7 shrink-0 items-center gap-1 rounded-[4px] bg-primary px-2.5 text-xs font-medium text-white hover:opacity-90"
+                >
+                  Review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void dismissDraft(draft.id)}
+                  className="flex h-7 shrink-0 items-center rounded-[4px] border border-(--ui-stroke-secondary) px-2.5 text-xs hover:bg-(--ui-bg-secondary)"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="relative">
           <Codicon

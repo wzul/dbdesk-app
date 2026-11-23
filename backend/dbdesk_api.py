@@ -5317,6 +5317,33 @@ async def decide_approval(approval_id: str, body: dict[str, Any]) -> dict[str, A
         raise HTTPException(409, f"approval already {entry.get('status')}")
     entry["status"] = "approved" if decision == "approve" else "denied"
     entry["decided_at"] = time.time()
+    action = str(entry.get("action") or "")
+    payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+    if decision == "approve" and action in ("delete_connection", "update_connection"):
+        target = str(payload.get("connection_id") or entry.get("connection_id") or "")
+        try:
+            existing = _get(target)
+        except HTTPException as exc:
+            entry["status"] = "failed"
+            entry["error"] = str(exc.detail)
+            _save_approvals(entries)
+            raise
+        if action == "delete_connection":
+            _audit(existing, "mcp_connection_delete", str(entry.get("sql") or ""), ok=True, notify=False)
+            _save([conn for conn in _load() if conn["id"] != target])
+            _close_pools()
+            _invalidate_columns()
+        else:
+            changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
+            try:
+                await save_connection({**_public(existing), **changes, "id": target})
+            except HTTPException as exc:
+                entry["status"] = "failed"
+                entry["error"] = str(exc.detail)
+                _save_approvals(entries)
+                raise
+            _audit(existing, "mcp_connection_update", str(entry.get("sql") or ""), ok=True, notify=False)
+        entry["used_at"] = time.time()
     _save_approvals(entries)
     return {"approval": entry}
 
