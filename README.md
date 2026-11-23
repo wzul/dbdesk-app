@@ -27,6 +27,14 @@ backend adapters, wrapped in a small Tauri shell with a Python sidecar.
 └──────────────────────────────┘
 ```
 
+## Requirements
+
+- **Node.js 26 LTS** (or any 22.12+; the repo ships `.nvmrc`)
+- **Python 3.11+**
+- **Rust stable** (1.77+) and Xcode Command Line Tools on macOS
+- `psql` and/or `mysql` clients for those connection types (SQLite uses the
+  Python standard library)
+
 The server binds to `127.0.0.1` only. Credentials are encrypted at rest with
 AES-GCM in the app-data directory (see *Data* below) and are never returned to
 the UI.
