@@ -140,9 +140,11 @@ Set `DBDESK_HOME` to override. The directory contains:
 - **Ask AI (read-only)** — the header **AI** button opens a prompt bar. It sends
   the current table/column names and your question to an OpenAI-compatible
   endpoint (OpenAI, OpenRouter, Ollama, LM Studio, ...), receives one SELECT,
-  runs it read-only and shows the SQL and rows. If the statement fails (for
-  example a wrong column name), the error and the relevant schema are sent back
-  once so the model can correct the query. Server-side rules refuse any non-read
+  runs it read-only and shows the SQL and rows. The panel is a **chat**: press
+  Enter, read the result, then type a follow-up (“pecahkan ikut bulan”) and the
+  previous SQL/answers are carried into the next request. If a statement fails
+  (for example a wrong column name), the error and the relevant schema are sent
+  back once so the model can correct the query. Server-side rules refuse any non-read
   statement. Configure base URL, model and API key under the AI
   settings; the key is encrypted at rest and row data is never sent.
 - **Connection picker** — the app opens on a TablePlus-style list: search,

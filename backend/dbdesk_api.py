@@ -3356,6 +3356,20 @@ def _ai_extract_json(text: str) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
 
 
+def _ai_history(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    messages = []
+    for item in value[-12:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "")
+        content = str(item.get("content") or "")[:4000]
+        if role in ("user", "assistant") and content.strip():
+            messages.append({"role": role, "content": content})
+    return messages
+
+
 def _ai_request(
     conn: dict[str, Any],
     database: str,
@@ -3364,6 +3378,7 @@ def _ai_request(
     question: str,
     error: str = "",
     previous: str = "",
+    history: Any = None,
 ) -> dict[str, Any]:
     config = _load_ai_config()
     dialect = {"postgres": "PostgreSQL", "mysql": "MySQL/MariaDB", "clickhouse": "ClickHouse", "sqlite": "SQLite"}.get(_kind(conn), "SQL")
@@ -3377,10 +3392,9 @@ def _ai_request(
         f"add LIMIT 500 when returning detail rows, use today's date {today} for relative dates. "
         "Use only the tables and columns listed.\n\n" + context
     )
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": question},
-    ]
+    messages = [{"role": "system", "content": system}]
+    messages.extend(_ai_history(history))
+    messages.append({"role": "user", "content": question})
     if error:
         messages.append(
             {
@@ -3777,7 +3791,8 @@ async def ai_ask(body: dict[str, Any]) -> dict[str, Any]:
     schema = str(body.get("schema") or "")
     table = str(body.get("table") or "")
     database = str(body.get("database") or "")
-    planned = _ai_request(conn, database, schema, table, question)
+    history = body.get("history")
+    planned = _ai_request(conn, database, schema, table, question, history=history)
     if body.get("execute") is False:
         return {"sql": planned["sql"], "explanation": planned["explanation"]}
     retried = False
@@ -3794,6 +3809,7 @@ async def ai_ask(body: dict[str, Any]) -> dict[str, Any]:
             question,
             error=str(exc.detail),
             previous=planned["sql"],
+            history=history,
         )
         retried = True
         result = _ai_run(conn, planned["sql"])
