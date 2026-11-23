@@ -137,6 +137,14 @@ Set `DBDESK_HOME` to override. The directory contains:
 
 ## What works
 
+- **Settings (⌘,)** — one preferences window: updates, native notification
+  toggle + test, AI provider (base URL/model/key), application-data path and
+  version. Open it with **⌘,**, the gear on the picker, or the gear in the app
+  header.
+- **AI setup assistant** — **AI setup** on the picker: describe the database
+  (“MySQL on my VPS behind a bastion”) and the agent returns a field-by-field
+  draft; **Use this setup** opens the form prefilled. Passwords are never sent:
+  the draft is sanitized server-side and the form leaves the password blank.
 - **Ask AI (read-only)** — the header **AI** button opens a prompt bar. It sends
   the current table/column names and your question to an OpenAI-compatible
   endpoint (OpenAI, OpenRouter, Ollama, LM Studio, ...), receives one SELECT,
@@ -357,6 +365,21 @@ make bundle
 
 Keep the `.p12` and passwords out of the repo; the certificate can be revoked
 from developer.apple.com if it leaks.
+
+## AI privacy
+
+- **Prompts are built from allowlists, not connection records.** Data questions
+  send table/column names, the question and previous SQL only — never rows,
+  passwords, tokens, SSH keys, headers or tunnel env.
+- **AI setup** sends only your message and generic instructions. The returned
+  draft is sanitized: keys containing `password`, `token`, `secret`, `key`,
+  `header`, `env`, `auth` or `cookie` are dropped.
+- **Secrets at rest** stay AES-GCM encrypted and are decrypted only to open the
+  database connection.
+- **Local-only option**: point the base URL at Ollama/LM Studio on
+  `127.0.0.1` and nothing leaves the Mac.
+- The test suite asserts that a saved password never appears in an AI payload
+  and that setup drafts cannot carry secrets.
 
 ## Security
 

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Badge, Button, Codicon, cn, host, rest } from './sdk-shim.jsx'
 import { ExportDialog, ImportDialog } from './bundle-dialogs.jsx'
+import SetupDialog from './setup-dialog.jsx'
 
 const KINDS = {
   postgres: { label: 'PostgreSQL', icon: 'database', tone: 'text-sky-600 dark:text-sky-400' },
@@ -141,13 +142,14 @@ function ContextMenu({ menu, onClose, onOpen, onEdit, onTest, onExport, onDelete
   )
 }
 
-export default function Launcher({ onOpen, onNew, onEdit }) {
+export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings }) {
   const [connections, setConnections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const [importOpen, setImportOpen] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState(null)
   const [notifyState, setNotifyState] = useState('')
   const [menu, setMenu] = useState(null)
@@ -321,6 +323,28 @@ export default function Launcher({ onOpen, onNew, onEdit }) {
           <span className="flex-1" />
           <button
             type="button"
+            onClick={onSettings}
+            title="Settings (⌘,)"
+            className={cn(
+              'flex size-8 items-center justify-center rounded-[4px] border border-(--ui-stroke-secondary)',
+              'bg-transparent text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)'
+            )}
+          >
+            <Codicon name="settings-gear" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSetupOpen(true)}
+            className={cn(
+              'flex h-8 items-center gap-1.5 rounded-[4px] border border-(--ui-stroke-secondary)',
+              'bg-transparent px-3 text-xs font-medium hover:bg-(--ui-bg-secondary)'
+            )}
+          >
+            <Codicon name="sparkle" className="text-primary" />
+            AI setup
+          </button>
+          <button
+            type="button"
             onClick={() => setImportOpen(true)}
             className={cn(
               'flex h-8 items-center gap-1.5 rounded-[4px] border border-(--ui-stroke-secondary)',
@@ -434,26 +458,7 @@ export default function Launcher({ onOpen, onNew, onEdit }) {
 
         <div className="flex flex-wrap items-center gap-2 pt-1 text-[10.5px] text-(--ui-text-tertiary)">
           <span>Credentials are encrypted on this Mac. Connections never leave the machine.</span>
-          {window.__TAURI_INTERNALS__ ? (
-            <button
-              type="button"
-              onClick={() => void testNotification()}
-              className="underline decoration-dotted underline-offset-2 hover:text-(--ui-text-secondary)"
-            >
-              Test macOS notification
-            </button>
-          ) : null}
-          {window.__TAURI_INTERNALS__ ? (
-            <button
-              type="button"
-              onClick={() => void checkForUpdates()}
-              disabled={checking}
-              className="underline decoration-dotted underline-offset-2 hover:text-(--ui-text-secondary)"
-            >
-              {checking ? 'Checking updates…' : updateState && !update ? updateState : 'Check for updates'}
-            </button>
-          ) : null}
-          {notifyState ? <span>{notifyState}</span> : null}
+
         </div>
       </div>
 
@@ -468,6 +473,15 @@ export default function Launcher({ onOpen, onNew, onEdit }) {
       ) : null}
       {exportTarget ? (
         <ExportDialog connection={exportTarget} onClose={() => setExportTarget(null)} />
+      ) : null}
+      {setupOpen ? (
+        <SetupDialog
+          onClose={() => setSetupOpen(false)}
+          onUse={(draft) => {
+            setSetupOpen(false)
+            onSetup(draft)
+          }}
+        />
       ) : null}
       {menu ? (
         <ContextMenu

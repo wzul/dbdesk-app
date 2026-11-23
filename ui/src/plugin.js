@@ -4249,7 +4249,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
 }
 
 
-export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {}) {
+export function DbDesk({ onHome, startNew = false, editConnectionId = '', initialDraft = null, onSettings } = {}) {
   const [connections, setConnections] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [activeId, setActiveId] = useState(readActive)
@@ -4298,6 +4298,12 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {})
     // The standalone launcher remounts the page with a new key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!initialDraft) return
+    setDraft({ ...emptyDraft(), ...initialDraft, password: '' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDraft])
   const [selection, setSelection] = useState(null)
   const [queriesOpen, setQueriesOpen] = useState(false)
   const [views, setViews] = useState([])
@@ -5604,6 +5610,16 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {})
               })
             : null,
           jsx('div', { key: 'sp', className: 'flex-1' }),
+          onSettings
+            ? jsx(Button, {
+                key: 'settings',
+                variant: 'ghost',
+                size: 'sm',
+                title: 'Settings (⌘,)',
+                onClick: onSettings,
+                children: jsx(Codicon, { name: 'settings-gear' })
+              })
+            : null,
           jsx(Button, {
             key: 'ai',
             variant: aiOpen ? 'secondary' : 'ghost',

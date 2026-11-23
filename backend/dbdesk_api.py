@@ -3243,6 +3243,80 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# AI setup assistant (connection picker)
+# --------------------------------------------------------------------------- #
+
+SETUP_FIELDS = {
+    "kind", "name", "group", "host", "port", "dbname", "user", "sslmode",
+    "ssh_host", "ssh_user", "ssh_port", "tunnel_command",
+    "http_url", "http_method", "http_dialect", "mcp_url", "mcp_tool",
+}
+SETUP_KINDS = {"postgres", "mysql", "clickhouse", "sqlite", "http"}
+SECRET_HINTS = ("pass", "secret", "token", "key", "cookie", "auth", "header", "env")
+
+
+def _ai_setup_sanitize(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    draft: dict[str, Any] = {}
+    for key, item in value.items():
+        name = str(key)
+        lowered = name.lower()
+        if name not in SETUP_FIELDS or any(hint in lowered for hint in SECRET_HINTS):
+            continue
+        if name == "kind":
+            kind = str(item or "").lower()
+            if kind not in SETUP_KINDS:
+                continue
+            draft[name] = kind
+        elif name in ("port", "ssh_port"):
+            try:
+                draft[name] = int(item)
+            except (TypeError, ValueError):
+                continue
+        elif item not in (None, ""):
+            draft[name] = str(item)[:200]
+    return draft
+
+
+def _ai_setup(question: str, history: Any) -> dict[str, Any]:
+    config = _load_ai_config()
+    system = (
+        "You are DB Desk's connection setup assistant. Help the user fill a database "
+        "connection form. Reply with JSON only: "
+        '{"answer": "<short reply, ask a clarifying question if needed>", '
+        '"draft": {<connection fields>}}. '
+        "Allowed draft fields: kind (postgres, mysql, clickhouse, sqlite, http), name, group, "
+        "host, port, dbname, user, sslmode, ssh_host, ssh_user, ssh_port, tunnel_command, "
+        "http_url, http_method, http_dialect. "
+        "NEVER include a password, token, cookie, header value, private key or secret in the "
+        "answer or draft; the user types secrets into the form. Omit unknown fields. "
+        "Defaults: postgres 5432, mysql 3306, clickhouse 8123; use ssh_* only when the user "
+        "mentions a tunnel/bastion."
+    )
+    messages = [{"role": "system", "content": system}]
+    messages.extend(_ai_history(history))
+    messages.append({"role": "user", "content": question})
+    payload = {
+        "model": config.get("model") or AI_DEFAULT_MODEL,
+        "temperature": 0,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+    }
+    data = _ai_post(config, payload)
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise HTTPException(502, "unexpected response from the AI provider") from exc
+    parsed = _ai_extract_json(str(content))
+    answer = str(parsed.get("answer") or "").strip()[:2000]
+    draft = _ai_setup_sanitize(parsed.get("draft"))
+    if not answer and not draft:
+        raise HTTPException(502, "the AI returned no setup suggestion")
+    return {"answer": answer, "draft": draft}
+
+
+# --------------------------------------------------------------------------- #
 # AI harness (natural language -> read-only SQL)
 # --------------------------------------------------------------------------- #
 
@@ -3786,6 +3860,14 @@ async def ai_config_save(body: dict[str, Any]) -> dict[str, Any]:
         config["api_key_enc"] = _encrypt(str(api_key))
     _save_ai_config(config)
     return {"ok": True, "configured": bool(config["api_key_enc"]), "base_url": config["base_url"], "model": config["model"]}
+
+
+@router.post("/ai/setup")
+async def ai_setup(body: dict[str, Any]) -> dict[str, Any]:
+    question = str(body.get("question") or "").strip()[:1200]
+    if not question:
+        raise HTTPException(400, "question is required")
+    return _ai_setup(question, body.get("history"))
 
 
 @router.post("/ai/ask")

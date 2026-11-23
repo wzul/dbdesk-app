@@ -9,10 +9,11 @@ import { createRoot } from 'react-dom/client'
 
 import plugin, { DbDesk } from './plugin.js'
 import Launcher from './launcher.jsx'
+import SettingsDialog from './settings-dialog.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.7.4'
+const APP_VERSION = '0.8.0'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
@@ -106,6 +107,11 @@ function useNativeNotifications() {
     const tick = async () => {
       if (cancelled || !seenApprovals) return
       try {
+        if (localStorage.getItem('dbdesk.notifications') === 'off') return
+      } catch {
+        /* private mode */
+      }
+      try {
         const { sendNotification } = await import('@tauri-apps/plugin-notification')
         const approvals = await rest('/approvals?limit=50')
         for (const entry of approvals.approvals || []) {
@@ -178,6 +184,8 @@ function Shell() {
   const [generation, setGeneration] = useState(0)
   const [active, setActive] = useState(null)
   const [editId, setEditId] = useState('')
+  const [setupDraft, setSetupDraft] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (view !== 'app') return
@@ -227,21 +235,64 @@ function Shell() {
     setView('app')
   }
 
+  useEffect(() => {
+    const handler = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+        event.preventDefault()
+        setSettingsOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  const setup = (draft) => {
+    setSetupDraft(draft)
+    setStartNew(true)
+    setEditId('')
+    setGeneration((value) => value + 1)
+    setView('app')
+  }
+
   if (view === 'connections') {
-    return <Launcher onOpen={open} onNew={create} onEdit={edit} />
+    return (
+      <>
+        <Launcher
+          onOpen={open}
+          onNew={create}
+          onEdit={edit}
+          onSetup={setup}
+          onSettings={() => setSettingsOpen(true)}
+        />
+        <SettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          version={APP_VERSION}
+        />
+      </>
+    )
   }
   return (
+    <>
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
         <DbDesk
           key={generation}
           startNew={startNew}
           editConnectionId={editId}
+          initialDraft={setupDraft}
+          onSettings={() => setSettingsOpen(true)}
           onHome={() => setView('connections')}
         />
       </div>
       <StatusBar connection={active} />
     </div>
+    <SettingsDialog
+      open={settingsOpen}
+      onClose={() => setSettingsOpen(false)}
+      version={APP_VERSION}
+    />
+    </>
   )
 }
 
