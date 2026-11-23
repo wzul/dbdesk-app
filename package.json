@@ -1,7 +1,7 @@
 {
   "name": "dbdesk-standalone",
   "private": true,
-  "version": "0.7.3",
+  "version": "0.7.4",
   "scripts": {
     "dev": "npm --prefix ui run dev",
     "build:ui": "npm --prefix ui run build",

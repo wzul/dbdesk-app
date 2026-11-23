@@ -3906,8 +3906,19 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
     }
   }
 
-  const assistantTurn = (message, index) =>
-    jsxs('div', {
+  const assistantTurn = (message, index) => {
+    if (!message.sql) {
+      return jsx(
+        'div',
+        {
+          key: `a-${index}`,
+          className: 'text-[12.5px] leading-relaxed whitespace-pre-wrap',
+          children: message.explanation || ''
+        },
+        `a-${index}`
+      )
+    }
+    return jsxs('div', {
       key: `a-${index}`,
       className: 'flex flex-col gap-2 pb-1',
       children: [
@@ -4015,6 +4026,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
           : null
       ]
     })
+  }
 
   return jsxs('div', {
     key: 'ai-panel',

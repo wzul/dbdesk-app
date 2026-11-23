@@ -3385,9 +3385,11 @@ def _ai_request(
     today = datetime.date.today().isoformat()
     context = _ai_schema_context(conn, schema, table, question)
     system = (
-        "You are DB Desk's SQL assistant. Translate the user's question into exactly one "
-        f"read-only {dialect} SELECT statement. Reply with JSON only: "
+        "You are DB Desk's SQL assistant. For data questions, translate them into exactly one "
+        f"read-only {dialect} SELECT statement and reply with JSON only: "
         '{"sql": "<statement>", "explanation": "<one short sentence>"}. '
+        "If the user greets you, thanks you, or asks something that is not a data question, "
+        'do not invent SQL: reply with {"answer": "<short helpful reply>", "sql": ""}. '
         "Rules: no INSERT/UPDATE/DELETE/DDL, no multiple statements, quote identifiers when needed, "
         f"add LIMIT 500 when returning detail rows, use today's date {today} for relative dates. "
         "Use only the tables and columns listed.\n\n" + context
@@ -3423,7 +3425,13 @@ def _ai_request(
     except (KeyError, IndexError, TypeError) as exc:
         raise HTTPException(502, "unexpected response from the AI provider") from exc
     parsed = _ai_extract_json(str(content))
-    sql = _check_sql(str(parsed.get("sql") or ""))
+    sql_text = str(parsed.get("sql") or "").strip()
+    if not sql_text:
+        answer = str(parsed.get("answer") or parsed.get("explanation") or "").strip()
+        if not answer:
+            raise HTTPException(502, "the AI returned neither SQL nor an answer")
+        return {"sql": "", "explanation": answer[:1000]}
+    sql = _check_sql(sql_text)
     if not READ_SQL.match(sql):
         raise HTTPException(400, "the AI produced a non-read statement; refused")
     explanation = str(parsed.get("explanation") or "")[:500]
@@ -3793,6 +3801,8 @@ async def ai_ask(body: dict[str, Any]) -> dict[str, Any]:
     database = str(body.get("database") or "")
     history = body.get("history")
     planned = _ai_request(conn, database, schema, table, question, history=history)
+    if not planned["sql"]:
+        return {"sql": "", "explanation": planned["explanation"]}
     if body.get("execute") is False:
         return {"sql": planned["sql"], "explanation": planned["explanation"]}
     retried = False
