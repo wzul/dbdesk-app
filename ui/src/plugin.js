@@ -8181,6 +8181,7 @@ jsxs('div', {
             key: 'queries',
             connectionId: activeId,
             currentSql: sql,
+            initialTab: queriesTab,
             onPick: (text) => {
               setSql(text)
               setQueriesOpen(false)
