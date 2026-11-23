@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Badge, Codicon, cn, rest } from './sdk-shim.jsx'
+import { ExportDialog, ImportDialog } from './bundle-dialogs.jsx'
 
 const KINDS = {
   postgres: { label: 'PostgreSQL', icon: 'database', tone: 'text-sky-600 dark:text-sky-400' },
@@ -23,51 +24,66 @@ function targetOf(connection) {
   return `${connection.host || ''}:${connection.port || ''}/${connection.dbname || ''}`
 }
 
-function ConnectionRow({ connection, onOpen }) {
+function ConnectionRow({ connection, onOpen, onExport }) {
   const kind = kindOf(connection)
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(connection.id)}
+    <div
       className={cn(
-        'group flex w-full items-center gap-3 rounded-[6px] border border-transparent px-3 py-2.5 text-left',
-        'hover:border-(--ui-stroke-secondary) hover:bg-(--ui-bg-secondary)',
-        'focus-visible:border-primary/60 focus-visible:outline-none'
+        'group flex items-center gap-1 rounded-[6px] border border-transparent',
+        'hover:border-(--ui-stroke-secondary) hover:bg-(--ui-bg-secondary)'
       )}
     >
-      <span
+      <button
+        type="button"
+        onClick={() => onOpen(connection.id)}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-[6px] px-3 py-2.5 text-left focus-visible:outline-none"
+      >
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-[5px] border',
+            'border-(--ui-stroke-secondary) bg-(--ui-bg-secondary)'
+          )}
+        >
+          <Codicon name={kind.icon} className={cn('text-base', kind.tone)} />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[13px] font-medium">{connection.name}</span>
+            {connection.production ? (
+              <Badge variant="destructive" size="xs">
+                PROD
+              </Badge>
+            ) : null}
+            {connection.readonly ? (
+              <Badge variant="outline" size="xs">
+                read-only
+              </Badge>
+            ) : null}
+          </span>
+          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-tertiary)">
+            <span className="shrink-0">{kind.label}</span>
+            <span className="shrink-0 opacity-50">·</span>
+            <span className="truncate font-mono">{targetOf(connection)}</span>
+          </span>
+        </span>
+        <Codicon
+          name="chevron-right"
+          className="shrink-0 text-(--ui-text-tertiary) opacity-0 transition-opacity group-hover:opacity-100"
+        />
+      </button>
+      <button
+        type="button"
+        title="Export / share"
+        onClick={() => onExport(connection)}
         className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-[5px] border',
-          'border-(--ui-stroke-secondary) bg-(--ui-bg-secondary)'
+          'mr-2 flex size-7 shrink-0 items-center justify-center rounded-[4px]',
+          'text-(--ui-text-tertiary) opacity-0 transition-opacity',
+          'hover:bg-(--ui-bg-quaternary) group-hover:opacity-100 focus-visible:opacity-100'
         )}
       >
-        <Codicon name={kind.icon} className={cn('text-base', kind.tone)} />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13px] font-medium">{connection.name}</span>
-          {connection.production ? (
-            <Badge variant="destructive" size="xs">
-              PROD
-            </Badge>
-          ) : null}
-          {connection.readonly ? (
-            <Badge variant="outline" size="xs">
-              read-only
-            </Badge>
-          ) : null}
-        </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-tertiary)">
-          <span className="shrink-0">{kind.label}</span>
-          <span className="shrink-0 opacity-50">·</span>
-          <span className="truncate font-mono">{targetOf(connection)}</span>
-        </span>
-      </span>
-      <Codicon
-        name="chevron-right"
-        className="shrink-0 text-(--ui-text-tertiary) opacity-0 transition-opacity group-hover:opacity-100"
-      />
-    </button>
+        <Codicon name="link" />
+      </button>
+    </div>
   )
 }
 
@@ -76,6 +92,9 @@ export default function Launcher({ onOpen, onNew }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+  const [importOpen, setImportOpen] = useState(false)
+  const [exportTarget, setExportTarget] = useState(null)
   const searchRef = useRef(null)
 
   useEffect(() => {
@@ -97,7 +116,7 @@ export default function Launcher({ onOpen, onNew }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [reloadKey])
 
   useEffect(() => {
     searchRef.current?.focus()
@@ -141,6 +160,17 @@ export default function Launcher({ onOpen, onNew }) {
             </p>
           </div>
           <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className={cn(
+              'flex h-8 items-center gap-1.5 rounded-[4px] border border-(--ui-stroke-secondary)',
+              'bg-transparent px-3 text-xs font-medium hover:bg-(--ui-bg-secondary)'
+            )}
+          >
+            <Codicon name="cloud-download" />
+            Import
+          </button>
           <button
             type="button"
             onClick={onNew}
@@ -214,7 +244,12 @@ export default function Launcher({ onOpen, onNew }) {
                   {group === 'Ungrouped' ? 'Connections' : group}
                 </div>
                 {items.map((connection) => (
-                  <ConnectionRow key={connection.id} connection={connection} onOpen={onOpen} />
+                  <ConnectionRow
+                    key={connection.id}
+                    connection={connection}
+                    onOpen={onOpen}
+                    onExport={setExportTarget}
+                  />
                 ))}
               </div>
             ))}
@@ -225,6 +260,19 @@ export default function Launcher({ onOpen, onNew }) {
           Credentials are encrypted on this Mac. Connections never leave the machine.
         </p>
       </div>
+
+      {importOpen ? (
+        <ImportDialog
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            setImportOpen(false)
+            setReloadKey((value) => value + 1)
+          }}
+        />
+      ) : null}
+      {exportTarget ? (
+        <ExportDialog connection={exportTarget} onClose={() => setExportTarget(null)} />
+      ) : null}
     </div>
   )
 }

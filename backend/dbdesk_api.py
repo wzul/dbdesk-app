@@ -779,14 +779,13 @@ def _pool_drop(key: str) -> None:
             pass
 
 
-def _native_cell(value: Any) -> Any:
-    """JSON-friendly value for psycopg/PyMySQL results."""
+def _jsonable(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     if isinstance(value, dict):
-        return {str(key): _native_cell(item) for key, item in value.items()}
+        return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
-        return [_native_cell(item) for item in value]
+        return [_jsonable(item) for item in value]
     if isinstance(value, (bytes, bytearray, memoryview)):
         raw = bytes(value)
         try:
@@ -802,6 +801,15 @@ def _native_cell(value: Any) -> Any:
     if isinstance(value, uuid.UUID):
         return str(value)
     return str(value)
+
+
+def _native_cell(value: Any) -> Any:
+    """JSON-friendly value for psycopg/PyMySQL results."""
+    if isinstance(value, (dict, list, tuple, set)):
+        # Grid cells expect text for JSON values; encode once, without
+        # double-encoding nested objects.
+        return json.dumps(_jsonable(value), separators=(",", ":"), default=str)
+    return _jsonable(value)
 
 
 # --- PostgreSQL ------------------------------------------------------------ #
@@ -3214,6 +3222,194 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# connection bundles (export / import / QR)
+# --------------------------------------------------------------------------- #
+
+BUNDLE_FORMAT = "dbdesk.connections"
+BUNDLE_VERSION = 1
+
+
+def _b64(value: bytes) -> str:
+    return base64.b64encode(value).decode("ascii")
+
+
+def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
+    kind = str(conn.get("kind") or "postgres")
+    fields = ["name", "group", "dbname", "readonly", "production"]
+    if kind in ("postgres", "mysql", "clickhouse"):
+        fields += ["host", "port", "user"]
+        if kind == "postgres":
+            fields += ["sslmode"]
+        fields += [
+            "ssh_host", "ssh_user", "ssh_port", "ssh_key",
+            "tunnel_command", "tunnel_env", "tunnel_timeout",
+        ]
+    if kind == "mcp":
+        fields += [
+            "mcp_url", "mcp_server", "mcp_tool", "mcp_sql_arg",
+            "mcp_dialect", "mcp_extra_args",
+        ]
+    if kind == "http":
+        fields += [
+            "http_url", "http_method", "http_sql_field", "http_headers",
+            "http_body_mode", "http_dialect", "http_timeout",
+        ]
+    defaults = {
+        "readonly": True,
+        "production": False,
+        "sslmode": "prefer",
+        "ssh_user": "root",
+        "ssh_port": 22,
+        "tunnel_timeout": 25,
+        "mcp_tool": "query",
+        "mcp_sql_arg": "sql",
+        "mcp_dialect": "postgres",
+        "http_method": "POST",
+        "http_sql_field": "sql",
+        "http_body_mode": "json",
+        "http_dialect": "postgres",
+        "http_timeout": 30,
+    }
+    item: dict[str, Any] = {"kind": kind}
+    for key in fields:
+        value = conn.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if key in defaults and value == defaults[key]:
+            continue
+        item[key] = value
+    return item
+
+
+def _bundle_export(connections: list[dict[str, Any]], include_secrets: bool, passphrase: str) -> dict[str, Any]:
+    items = []
+    for conn in connections:
+        item = _bundle_item(conn)
+        if include_secrets:
+            item["password"] = _decrypt(conn.get("password_enc", ""))
+        items.append(item)
+    payload = {
+        "format": BUNDLE_FORMAT,
+        "version": BUNDLE_VERSION,
+        "created_at": time.time(),
+        "connections": items,
+    }
+    if not include_secrets:
+        return {"bundle": json.dumps(payload, separators=(",", ":")), "encrypted": False}
+    if len(passphrase) < 8:
+        raise HTTPException(400, "passphrase must be at least 8 characters")
+    if AESGCM is None:
+        raise HTTPException(500, "cryptography is not available")
+    salt = os.urandom(16)
+    nonce = os.urandom(12)
+    key = hashlib.scrypt(
+        passphrase.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32
+    )
+    ciphertext = AESGCM(key).encrypt(
+        nonce, json.dumps(payload, separators=(",", ":")).encode("utf-8"), None
+    )
+    envelope = {
+        "format": BUNDLE_FORMAT,
+        "version": BUNDLE_VERSION,
+        "encrypted": True,
+        "kdf": {"name": "scrypt", "n": 2**14, "r": 8, "p": 1, "salt": _b64(salt)},
+        "nonce": _b64(nonce),
+        "ciphertext": _b64(ciphertext),
+    }
+    return {"bundle": json.dumps(envelope, separators=(",", ":")), "encrypted": True}
+
+
+def _bundle_parse(bundle: str, passphrase: str) -> list[dict[str, Any]]:
+    text = (bundle or "").strip()
+    if not text:
+        raise HTTPException(400, "bundle is required")
+    if text.startswith("dbdesk://"):
+        parsed = urllib.parse.urlparse(text)
+        text = urllib.parse.unquote(parsed.query or parsed.path or "")
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        raise HTTPException(400, "bundle is not valid JSON") from exc
+    if not isinstance(data, dict) or data.get("format") != BUNDLE_FORMAT:
+        raise HTTPException(400, "not a DB Desk connection bundle")
+    if data.get("encrypted"):
+        if not passphrase:
+            raise HTTPException(400, "this bundle is encrypted; passphrase is required")
+        if AESGCM is None:
+            raise HTTPException(500, "cryptography is not available")
+        kdf = data.get("kdf") or {}
+        try:
+            salt = base64.b64decode(str(kdf.get("salt") or ""))
+            nonce = base64.b64decode(str(data.get("nonce") or ""))
+            ciphertext = base64.b64decode(str(data.get("ciphertext") or ""))
+            key = hashlib.scrypt(
+                passphrase.encode("utf-8"),
+                salt=salt,
+                n=int(kdf.get("n") or 2**14),
+                r=int(kdf.get("r") or 8),
+                p=int(kdf.get("p") or 1),
+                dklen=32,
+            )
+            plaintext = AESGCM(key).decrypt(nonce, ciphertext, None)
+            data = json.loads(plaintext.decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, "could not decrypt the bundle (wrong passphrase?)") from exc
+    items = data.get("connections")
+    if not isinstance(items, list) or not items:
+        raise HTTPException(400, "bundle has no connections")
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _record_from_bundle(item: dict[str, Any], record_id: str) -> dict[str, Any]:
+    kind = str(item.get("kind") or "postgres")
+    if kind not in KINDS:
+        raise HTTPException(400, f"unknown database type {kind!r} in bundle")
+    password = item.get("password")
+    record = {
+        "id": record_id,
+        "kind": kind,
+        "name": str(item.get("name") or item.get("dbname") or "Imported")[:120],
+        "group": str(item.get("group") or "")[:80],
+        "host": str(item.get("host") or ""),
+        "port": int(item.get("port") or 0),
+        "dbname": str(item.get("dbname") or ""),
+        "user": str(item.get("user") or ""),
+        "password_enc": _encrypt(str(password)) if password not in (None, "") else "",
+        "sslmode": str(item.get("sslmode") or "prefer"),
+        "readonly": bool(item.get("readonly", True)),
+        "production": bool(item.get("production", False)),
+        "ssh_host": str(item.get("ssh_host") or ""),
+        "ssh_user": str(item.get("ssh_user") or "root"),
+        "ssh_port": int(item.get("ssh_port") or 22),
+        "ssh_key": str(item.get("ssh_key") or ""),
+        "mcp_url": str(item.get("mcp_url") or ""),
+        "mcp_server": str(item.get("mcp_server") or ""),
+        "mcp_tool": str(item.get("mcp_tool") or "query"),
+        "mcp_sql_arg": str(item.get("mcp_sql_arg") or "sql"),
+        "mcp_dialect": str(item.get("mcp_dialect") or "postgres"),
+        "mcp_extra_args": str(item.get("mcp_extra_args") or ""),
+        "http_url": str(item.get("http_url") or ""),
+        "http_method": str(item.get("http_method") or "POST"),
+        "http_sql_field": str(item.get("http_sql_field") or "sql"),
+        "http_headers": str(item.get("http_headers") or ""),
+        "http_body_mode": str(item.get("http_body_mode") or "json"),
+        "http_dialect": str(item.get("http_dialect") or "postgres"),
+        "http_timeout": int(item.get("http_timeout") or 30),
+        "tunnel_command": str(item.get("tunnel_command") or ""),
+        "tunnel_env": str(item.get("tunnel_env") or ""),
+        "tunnel_timeout": int(item.get("tunnel_timeout") or 25),
+        "db_labels": {
+            str(key)[:128]: str(value)[:80]
+            for key, value in (item.get("db_labels") or {}).items()
+            if str(value).strip()
+        },
+    }
+    if not record["dbname"]:
+        raise HTTPException(400, "bundle connection is missing a database name")
+    return record
+
+
+# --------------------------------------------------------------------------- #
 # connections
 # --------------------------------------------------------------------------- #
 
@@ -3339,6 +3535,61 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     _close_pools()
     _save(conns)
     return {"connection": _public(record)}
+
+
+@router.post("/connections/export")
+async def export_connections(body: dict[str, Any]) -> dict[str, Any]:
+    ids = [str(value) for value in (body.get("ids") or []) if str(value).strip()]
+    connections = _load()
+    selected = [conn for conn in connections if not ids or conn["id"] in ids]
+    if not selected:
+        raise HTTPException(404, "no connections to export")
+    result = _bundle_export(
+        selected,
+        bool(body.get("include_secrets")),
+        str(body.get("passphrase") or ""),
+    )
+    result["count"] = len(selected)
+    return result
+
+
+@router.post("/connections/import")
+async def import_connections(body: dict[str, Any]) -> dict[str, Any]:
+    items = _bundle_parse(
+        str(body.get("bundle") or ""), str(body.get("passphrase") or "")
+    )
+    if body.get("preview"):
+        return {
+            "preview": True,
+            "count": len(items),
+            "connections": [
+                {
+                    "name": str(item.get("name") or item.get("dbname") or "Imported"),
+                    "kind": str(item.get("kind") or "postgres"),
+                    "host": str(item.get("host") or ""),
+                    "port": int(item.get("port") or 0),
+                    "dbname": str(item.get("dbname") or ""),
+                    "production": bool(item.get("production", False)),
+                    "readonly": bool(item.get("readonly", True)),
+                    "has_password": item.get("password") not in (None, ""),
+                }
+                for item in items
+            ],
+        }
+    connections = _load()
+    existing = {conn["id"] for conn in connections}
+    added = 0
+    for item in items:
+        record = _record_from_bundle(item, uuid.uuid4().hex[:12])
+        while record["id"] in existing:
+            record["id"] = uuid.uuid4().hex[:12]
+        existing.add(record["id"])
+        connections.append(record)
+        added += 1
+    _invalidate_columns()
+    _close_pools()
+    _save(connections)
+    return {"ok": True, "added": added, "count": len(items)}
 
 
 @router.delete("/connections/{conn_id}")

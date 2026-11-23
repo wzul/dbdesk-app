@@ -124,6 +124,13 @@ Set `DBDESK_HOME` to override. The directory contains:
   groups, type icons, read-only/PROD badges; pick a connection, then the full
   browser opens. **New connection** goes straight to the form, and the chevron
   in the header returns to the list.
+- **Import / export & QR** — export one connection from the share icon or all of
+  them from the picker as a `.dbdesk` bundle. Passwords are left out by default;
+  tick **Include passwords** to encrypt them with a passphrase (scrypt +
+  AES-GCM). Import accepts a file, pasted bundle or `dbdesk://` link, shows a
+  preview, then merges with new ids. **Show QR** renders a scannable code for a
+  single connection (QR capacity is limited, so large bundles fall back to the
+  file/copy).
 - Everything the plugin page does:
 
 - connections (Postgres, MySQL/MariaDB, ClickHouse, SQLite) with SSH tunnels,

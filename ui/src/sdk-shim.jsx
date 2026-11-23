@@ -6,13 +6,14 @@
  * top of React + plain HTML.
  */
 import React from 'react'
+import { twMerge } from 'tailwind-merge'
 
 export const ROUTES_AREA = 'routes'
 export const SIDEBAR_NAV_AREA = 'sidebar'
 export const PALETTE_AREA = 'palette'
 
 export function cn(...parts) {
-  return parts.filter(Boolean).join(' ')
+  return twMerge(parts.filter(Boolean).join(' '))
 }
 
 const BUTTON_BASE =
