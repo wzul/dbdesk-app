@@ -653,6 +653,7 @@ function Grid({
   selection,
   onSelectCell,
   onSelectRow,
+  onOpenRow,
   fkMap,
   onFollowFk,
   onLongPress,
@@ -824,9 +825,10 @@ function Grid({
                         'cursor-pointer text-right tabular-nums text-(--ui-text-tertiary)',
                         sel && ri >= sel.r0 && ri <= sel.r1 && 'dbd-selected'
                       ),
-                      onClick: onSelectRow
-                        ? (event) => onSelectRow(ri, event.shiftKey)
-                        : undefined,
+                      onClick: (event) => {
+                        if (onSelectRow) onSelectRow(ri, event.shiftKey)
+                        if (onOpenRow && !event.shiftKey) onOpenRow(ri)
+                      },
                       children: ri + 1
                     })
                   ]
@@ -1219,7 +1221,7 @@ function InsertDrawer({ schema, table, columns, onClose, onInsert }) {
   }
 
   return jsxs('div', {
-    className: 'absolute inset-0 z-40 flex justify-end bg-black/30',
+    className: 'absolute inset-0 z-40 flex justify-end',
     children: [
       jsx('button', {
         key: 'bg',
@@ -1486,7 +1488,7 @@ function ViewsDrawer({ label, views, canSave, onApply, onSave, onDelete, onClose
 
 function RowDrawer({ columns, row, onClose }) {
   return jsxs('div', {
-    className: 'absolute inset-0 z-40 flex justify-end bg-black/30',
+    className: 'absolute inset-x-0 bottom-0 top-[44px] z-40 flex justify-end',
     children: [
       jsx('button', {
         key: 'bg',
@@ -1504,52 +1506,58 @@ function RowDrawer({ columns, row, onClose }) {
             key: 'head',
             className: 'flex items-center justify-between',
             children: [
-              jsx('div', { className: 'text-sm font-semibold', children: 'Row detail' }),
+              jsx('div', { className: 'text-sm font-semibold', children: 'Record' }),
               jsx(Button, {
                 variant: 'ghost',
                 size: 'icon-xs',
+                title: 'Close',
                 onClick: onClose,
                 children: jsx(Codicon, { name: 'close' })
               })
             ]
           }),
           jsx('div', {
-            key: 'table',
-            className: 'overflow-auto rounded-[3px] border border-(--ui-stroke-secondary)',
-            children: jsxs('table', {
-              className: 'dbd-grid-table dbd-mono w-max min-w-full',
-              children: [
-                jsx('thead', {
-                  children: jsxs('tr', {
-                    children: ['column', 'value'].map((label) => jsx('th', { children: label }, label))
-                  })
-                }),
-                jsx('tbody', {
-                  children: columns.map((column, index) => {
-                    const value = row[index]
-                    const text =
-                      value === null
-                        ? 'NULL'
-                        : typeof value === 'object'
-                          ? JSON.stringify(value)
-                          : String(value)
-                    return jsxs(
-                      'tr',
-                      {
-                        children: [
-                          jsx('td', { children: column.name }),
-                          jsx('td', {
-                            className: 'max-w-[360px]',
-                            title: text,
-                            children: jsx('span', { className: 'dbd-cell-inner', children: text })
-                          })
-                        ]
-                      },
-                      column.name
-                    )
-                  })
-                })
-              ]
+            key: 'fields',
+            className: 'flex flex-col gap-3',
+            children: columns.map((column, index) => {
+              const value = row[index]
+              const text =
+                value === null
+                  ? 'NULL'
+                  : typeof value === 'object'
+                    ? JSON.stringify(value)
+                    : String(value)
+              return jsxs(
+                'div',
+                {
+                  className: 'flex flex-col gap-1',
+                  children: [
+                    jsxs('div', {
+                      key: 'label',
+                      className: 'flex items-baseline justify-between gap-2',
+                      children: [
+                        jsx('span', {
+                          className: 'text-[11px] font-medium text-(--ui-text-secondary)',
+                          children: column.name
+                        }),
+                        jsx('span', {
+                          className: 'text-[10px] font-mono text-(--ui-text-tertiary)',
+                          children: column.type || ''
+                        })
+                      ]
+                    }),
+                    jsx('div', {
+                      key: 'value',
+                      className: cn(
+                        'rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-1.5 font-mono text-[11px] break-words whitespace-pre-wrap',
+                        value === null && 'italic text-(--ui-text-tertiary)'
+                      ),
+                      children: text
+                    })
+                  ]
+                },
+                column.name
+              )
             })
           })
         ]
@@ -4008,7 +4016,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
   return jsxs('div', {
     key: 'ai-panel',
     className:
-      'flex shrink-0 flex-col gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2',
+      'absolute inset-y-0 right-0 z-30 flex w-[360px] max-w-[85vw] flex-col gap-2 border-l border-(--ui-stroke-secondary) bg-background px-3 py-2 shadow-2xl',
     children: [
       jsxs('div', {
         key: 'row',
@@ -6017,7 +6025,10 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {})
               tab === 'data'
                 ? jsxs('div', {
                     key: 'data',
-                    className: 'flex min-h-0 flex-1 flex-col',
+                    className: cn(
+                      'flex min-h-0 flex-1 flex-col',
+                      aiOpen && 'relative pr-[360px]'
+                    ),
                     children: [
                       jsxs('div', {
                         key: 'bar',
@@ -6220,7 +6231,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {})
                             ? jsx('span', {
                                 key: 'hint',
                                 className: 'hidden text-[10.5px] whitespace-nowrap text-(--ui-text-tertiary) xl:inline',
-                                children: 'double-click a cell to edit'
+                                children: 'double-click a cell to edit · click # for record'
                               })
                             : selected && active && !active.readonly && pkColumns.length === 0
                               ? jsx('span', {
@@ -6487,6 +6498,8 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {})
                             selection,
                             onSelectCell: selectCell,
                             onSelectRow: selectRow,
+                        onOpenRow: (rowIndex) => setRowDetail(rowIndex),
+                            onOpenRow: (rowIndex) => setRowDetail(rowIndex),
                             fkMap,
                             onFollowFk: followFk,
                             onLongPress: openCellMenu,

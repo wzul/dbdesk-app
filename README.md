@@ -147,6 +147,9 @@ Set `DBDESK_HOME` to override. The directory contains:
   back once so the model can correct the query. Server-side rules refuse any non-read
   statement. Configure base URL, model and API key under the AI
   settings; the key is encrypted at rest and row data is never sent.
+- **Docked AI and record panels** — the AI chat opens on the right without
+  covering the grid; clicking a row number opens a TablePlus-style **Record**
+  panel on the right with each column name, type and value.
 - **Connection picker** — the app opens on a TablePlus-style list: search,
   groups, type icons, read-only/PROD badges; pick a connection, then the full
   browser opens. Right-click a connection for **Open / Edit / Test / Export /

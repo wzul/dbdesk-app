@@ -9,7 +9,15 @@
     "core:default",
     "notification:default",
     "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
     "process:default",
     "process:allow-restart"
-  ]
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*",
+      "http://localhost:*"
+    ]
+  }
 }
