@@ -551,6 +551,26 @@ async def _view_delete(args: dict[str, Any]) -> dict[str, Any]:
     return await api.delete_view(_required(args, "view_id"))
 
 
+async def _queries_list(args: dict[str, Any]) -> dict[str, Any]:
+    return await api.list_saved()
+
+
+async def _query_save(args: dict[str, Any]) -> dict[str, Any]:
+    name = _required(args, "name")
+    sql = api._check_sql(str(args.get("sql") or ""))
+    body = {
+        "name": name,
+        "sql": sql,
+        "connection_id": str(args.get("connection_id") or ""),
+        "database": str(args.get("database") or ""),
+    }
+    return await api.save_query(body)
+
+
+async def _query_delete(args: dict[str, Any]) -> dict[str, Any]:
+    return await api.delete_saved(_required(args, "query_id"))
+
+
 async def _app_status(args: dict[str, Any]) -> dict[str, Any]:
     ai = api._load_ai_config()
     mcp = _load_config()
@@ -873,6 +893,33 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "description": "Delete a saved view by id.",
         "inputSchema": _schema({"view_id": _STR}, ["view_id"]),
         "handler": _view_delete,
+        "read_only": False,
+    },
+    {
+        "name": "queries_list",
+        "title": "List saved queries",
+        "description": "List saved SQL snippets (name, SQL, connection).",
+        "inputSchema": _schema({}),
+        "handler": _queries_list,
+        "read_only": True,
+    },
+    {
+        "name": "query_save",
+        "title": "Save a query",
+        "description": "Save one SQL statement under a name for the user.",
+        "inputSchema": _schema(
+            {"name": _STR, "sql": _STR, "connection_id": _STR, "database": _STR},
+            ["name", "sql"],
+        ),
+        "handler": _query_save,
+        "read_only": False,
+    },
+    {
+        "name": "query_delete",
+        "title": "Delete a saved query",
+        "description": "Delete a saved query by id.",
+        "inputSchema": _schema({"query_id": _STR}, ["query_id"]),
+        "handler": _query_delete,
         "read_only": False,
     },
     {

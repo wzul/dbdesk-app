@@ -438,6 +438,7 @@ The app must be open. The bridge discovers the port from
 | `connection_delete` | queue deletion for approval |
 | `connection_test` | open the saved connection and return server details |
 | `views_list` / `view_create` / `view_delete` | manage saved views |
+| `queries_list` / `query_save` / `query_delete` | manage the SQL snippets in the Queries drawer |
 | `app_status` | version, data path, counts, AI model, MCP and notification state |
 | `settings_update` | toggle notifications, set the AI model, turn MCP writes off |
 

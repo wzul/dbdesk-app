@@ -358,7 +358,7 @@ class McpServer(unittest.TestCase):
         token = self.enable()
         cid = self.add_connection(readonly=True)
         status = json.loads(self.call_tool(token, "app_status")["content"][0]["text"])
-        self.assertEqual(status["mcp"]["tools"], 19)
+        self.assertEqual(status["mcp"]["tools"], 22)
         self.assertIn("connections", status)
 
         toggled = self.call_tool(
@@ -388,6 +388,31 @@ class McpServer(unittest.TestCase):
         self.assertIn("adults", listed["content"][0]["text"])
         removed = self.call_tool(token, "view_delete", {"view_id": view_id})
         self.assertFalse(removed["isError"])
+
+    def test_saved_queries(self) -> None:
+        token = self.enable()
+        cid = self.add_connection(readonly=True)
+        saved = self.call_tool(
+            token,
+            "query_save",
+            {
+                "name": "all people",
+                "sql": "select * from people;",
+                "connection_id": cid,
+            },
+        )
+        self.assertFalse(saved["isError"])
+        entry = json.loads(saved["content"][0]["text"])["query"]
+        self.assertEqual(entry["name"], "all people")
+        self.assertEqual(entry["sql"], "select * from people")
+
+        listed = self.call_tool(token, "queries_list")
+        self.assertIn("all people", listed["content"][0]["text"])
+
+        removed = self.call_tool(token, "query_delete", {"query_id": entry["id"]})
+        self.assertFalse(removed["isError"])
+        listed = self.call_tool(token, "queries_list")
+        self.assertNotIn("all people", listed["content"][0]["text"])
 
     def test_connection_test(self) -> None:
         token = self.enable()
