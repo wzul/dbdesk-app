@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-import { Badge, Codicon, cn, rest } from './sdk-shim.jsx'
+import { Badge, Codicon, cn, host, rest } from './sdk-shim.jsx'
 import { ExportDialog, ImportDialog } from './bundle-dialogs.jsx'
 
 const KINDS = {
@@ -24,7 +24,7 @@ function targetOf(connection) {
   return `${connection.host || ''}:${connection.port || ''}/${connection.dbname || ''}`
 }
 
-function ConnectionRow({ connection, onOpen, onExport }) {
+function ConnectionRow({ connection, onOpen, onExport, onMenu }) {
   const kind = kindOf(connection)
   return (
     <div
@@ -36,6 +36,10 @@ function ConnectionRow({ connection, onOpen, onExport }) {
       <button
         type="button"
         onClick={() => onOpen(connection.id)}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          onMenu(connection, event.clientX, event.clientY)
+        }}
         className="flex min-w-0 flex-1 items-center gap-3 rounded-[6px] px-3 py-2.5 text-left focus-visible:outline-none"
       >
         <span
@@ -87,7 +91,57 @@ function ConnectionRow({ connection, onOpen, onExport }) {
   )
 }
 
-export default function Launcher({ onOpen, onNew }) {
+function ContextMenu({ menu, onClose, onOpen, onEdit, onTest, onExport, onDelete }) {
+  const width = 210
+  const left = Math.min(menu.x, window.innerWidth - width - 8)
+  const top = Math.min(menu.y, window.innerHeight - 190)
+  const item =
+    'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-(--ui-bg-secondary)'
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        onClick={onClose}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          onClose()
+        }}
+      />
+      <div
+        className="fixed z-50 flex flex-col rounded-[5px] border border-(--ui-stroke-secondary) bg-background py-1 shadow-xl"
+        style={{ left, top, width }}
+      >
+        <button type="button" className={item} onClick={() => onOpen(menu.connection)}>
+          <Codicon name="arrow-right" className="text-(--ui-text-tertiary)" />
+          Open
+        </button>
+        <button type="button" className={item} onClick={() => onEdit(menu.connection)}>
+          <Codicon name="edit" className="text-(--ui-text-tertiary)" />
+          Edit connection
+        </button>
+        <button type="button" className={item} onClick={() => onTest(menu.connection)}>
+          <Codicon name="debug-alt" className="text-(--ui-text-tertiary)" />
+          Test connection
+        </button>
+        <button type="button" className={item} onClick={() => onExport(menu.connection)}>
+          <Codicon name="link" className="text-(--ui-text-tertiary)" />
+          Export / share…
+        </button>
+        <div className="my-1 h-px bg-(--ui-stroke-secondary)" />
+        <button
+          type="button"
+          className={item + ' text-destructive'}
+          onClick={() => onDelete(menu.connection)}
+        >
+          <Codicon name="trash" />
+          Delete connection
+        </button>
+      </div>
+    </>
+  )
+}
+
+export default function Launcher({ onOpen, onNew, onEdit }) {
   const [connections, setConnections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -96,6 +150,7 @@ export default function Launcher({ onOpen, onNew }) {
   const [importOpen, setImportOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState(null)
   const [notifyState, setNotifyState] = useState('')
+  const [menu, setMenu] = useState(null)
   const searchRef = useRef(null)
 
   const testNotification = async () => {
@@ -141,6 +196,43 @@ export default function Launcher({ onOpen, onNew }) {
   useEffect(() => {
     searchRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    if (!menu) return
+    const onKey = (event) => {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menu])
+
+  const testConnection = async (connection) => {
+    setMenu(null)
+    try {
+      const result = await rest('/connections/test', {
+        method: 'POST',
+        body: { id: connection.id }
+      })
+      host.notify({
+        kind: 'success',
+        message: `Connected: ${result.server.version || connection.name}`
+      })
+    } catch (error) {
+      host.notify({ kind: 'error', message: String(error.message || error) })
+    }
+  }
+
+  const deleteConnection = async (connection) => {
+    setMenu(null)
+    if (!window.confirm(`Delete connection "${connection.name}"?`)) return
+    try {
+      await rest(`/connections/${connection.id}`, { method: 'DELETE' })
+      setReloadKey((value) => value + 1)
+      host.notify({ kind: 'success', message: `Deleted “${connection.name}”` })
+    } catch (error) {
+      host.notify({ kind: 'error', message: String(error.message || error) })
+    }
+  }
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -269,6 +361,7 @@ export default function Launcher({ onOpen, onNew }) {
                     connection={connection}
                     onOpen={onOpen}
                     onExport={setExportTarget}
+                    onMenu={(connection, x, y) => setMenu({ connection, x, y })}
                   />
                 ))}
               </div>
@@ -302,6 +395,26 @@ export default function Launcher({ onOpen, onNew }) {
       ) : null}
       {exportTarget ? (
         <ExportDialog connection={exportTarget} onClose={() => setExportTarget(null)} />
+      ) : null}
+      {menu ? (
+        <ContextMenu
+          menu={menu}
+          onClose={() => setMenu(null)}
+          onOpen={(connection) => {
+            setMenu(null)
+            onOpen(connection.id)
+          }}
+          onEdit={(connection) => {
+            setMenu(null)
+            onEdit(connection.id)
+          }}
+          onTest={testConnection}
+          onExport={(connection) => {
+            setMenu(null)
+            setExportTarget(connection)
+          }}
+          onDelete={deleteConnection}
+        />
       ) : null}
     </div>
   )

@@ -4090,7 +4090,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
 }
 
 
-export function DbDesk({ onHome, startNew = false } = {}) {
+export function DbDesk({ onHome, startNew = false, editConnectionId = '' } = {}) {
   const [connections, setConnections] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [activeId, setActiveId] = useState(readActive)
@@ -4122,6 +4122,17 @@ export function DbDesk({ onHome, startNew = false } = {}) {
   const [treeOpen, setTreeOpen] = useState(false)
   const [pending, setPending] = useState(null)
   const [aiOpen, setAiOpen] = useState(false)
+  const editHandled = useRef(false)
+
+  useEffect(() => {
+    if (editHandled.current || !editConnectionId) return
+    const connection = connections.find((item) => item.id === editConnectionId)
+    if (!connection) return
+    editHandled.current = true
+    setActiveId(connection.id)
+    writeActive(connection.id)
+    setDraft({ ...emptyDraft(), ...connection, password: '' })
+  }, [editConnectionId, connections])
 
   useEffect(() => {
     if (startNew) setDraft(emptyDraft())

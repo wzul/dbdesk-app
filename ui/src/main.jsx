@@ -12,7 +12,7 @@ import Launcher from './launcher.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.6.0'
+const APP_VERSION = '0.6.1'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
@@ -177,15 +177,18 @@ function Shell() {
   const [startNew, setStartNew] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [active, setActive] = useState(null)
+  const [editId, setEditId] = useState('')
 
   useEffect(() => {
     if (view !== 'app') return
     let cancelled = false
-    let id = ''
-    try {
-      id = localStorage.getItem(ACTIVE_KEY) || ''
-    } catch {
-      /* private mode */
+    let id = editId
+    if (!id) {
+      try {
+        id = localStorage.getItem(ACTIVE_KEY) || ''
+      } catch {
+        /* private mode */
+      }
     }
     rest('/connections')
       .then((result) => {
@@ -196,7 +199,7 @@ function Shell() {
     return () => {
       cancelled = true
     }
-  }, [view, generation])
+  }, [view, generation, editId])
 
   const open = (id) => {
     try {
@@ -205,18 +208,27 @@ function Shell() {
       /* private mode */
     }
     setStartNew(false)
+    setEditId('')
     setGeneration((value) => value + 1)
     setView('app')
   }
 
   const create = () => {
     setStartNew(true)
+    setEditId('')
+    setGeneration((value) => value + 1)
+    setView('app')
+  }
+
+  const edit = (id) => {
+    setStartNew(false)
+    setEditId(id)
     setGeneration((value) => value + 1)
     setView('app')
   }
 
   if (view === 'connections') {
-    return <Launcher onOpen={open} onNew={create} />
+    return <Launcher onOpen={open} onNew={create} onEdit={edit} />
   }
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -224,6 +236,7 @@ function Shell() {
         <DbDesk
           key={generation}
           startNew={startNew}
+          editConnectionId={editId}
           onHome={() => setView('connections')}
         />
       </div>
