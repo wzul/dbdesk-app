@@ -203,10 +203,15 @@ Set `DBDESK_HOME` to override. The directory contains:
 Notes for the standalone build:
 
 - **Native macOS notifications** — approval requests and production writes show
-  a system notification while the app is running (Tauri notification plugin).
-  Nothing is sent to Telegram or any external service. Approve writes in the
-  **Approvals** drawer. Use **Test macOS notification** on the connection picker
-  to check permission.
+  a system notification while the app is running. Nothing is sent to Telegram or
+  any external service. Approve writes in the **Approvals** drawer; test with
+  **Settings → Notifications → Test**.
+  Because the build is ad-hoc signed (no Apple Developer ID), macOS ties the
+  notification permission to the current signature and drops it after every
+  update. Open **System Settings → Notifications → DB Desk**, enable it and
+  choose **Alerts**; the Settings panel has a shortcut plus diagnostics. The
+  **Fallback** test posts through Script Editor for setups where native delivery
+  still fails. With a Developer ID build the permission survives updates.
 - **MCP connections work directly.** Add the streamable-HTTP endpoint
   (e.g. `https://mcp.example.com/mcp`), the tool name and SQL argument,
   then **Authorize**: DB Desk runs OAuth 2.1 with PKCE through a loopback

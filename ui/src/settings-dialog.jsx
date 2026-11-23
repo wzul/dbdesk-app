@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 
 import { Badge, Button, Codicon, Input, cn, rest } from './sdk-shim.jsx'
+import { isMacOS, sendNativeNotification } from './notify.js'
 
 const NOTIFY_KEY = 'dbdesk.notifications'
 
@@ -47,6 +48,8 @@ export default function SettingsDialog({ open, onClose, version }) {
   const [mcpBusy, setMcpBusy] = useState(false)
   const [mcpMessage, setMcpMessage] = useState('')
   const [mcpReveal, setMcpReveal] = useState(false)
+  const [notifyDiag, setNotifyDiag] = useState(null)
+  const [diagBusy, setDiagBusy] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -55,6 +58,7 @@ export default function SettingsDialog({ open, onClose, version }) {
     setNotifyState('')
     setMcpMessage('')
     setMcpReveal(false)
+    setNotifyDiag(null)
     try {
       setNotifyEnabled(localStorage.getItem(NOTIFY_KEY) !== 'off')
     } catch {
@@ -194,23 +198,64 @@ export default function SettingsDialog({ open, onClose, version }) {
     }
   }
 
-  const testNotification = async () => {
-    setNotifyState('')
+
+  const runNotifyDiagnostics = async () => {
+    if (!window.__TAURI_INTERNALS__) {
+      setNotifyDiag({ error: 'Diagnostics are available in the desktop app.' })
+      return
+    }
+    setDiagBusy(true)
     try {
-      const { isPermissionGranted, requestPermission, sendNotification } = await import(
-        '@tauri-apps/plugin-notification'
-      )
-      let granted = await isPermissionGranted()
-      if (!granted) granted = (await requestPermission()) === 'granted'
-      if (!granted) {
-        setNotifyState('Permission denied')
+      const { invoke } = await import('@tauri-apps/api/core')
+      setNotifyDiag(await invoke('notification_diagnostics'))
+    } catch (error) {
+      setNotifyDiag({ error: String(error) })
+    } finally {
+      setDiagBusy(false)
+    }
+  }
+
+  const openNotificationSettings = async () => {
+    if (!window.__TAURI_INTERNALS__) {
+      setNotifyState('Only available in the desktop app')
+      return
+    }
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('open_notification_settings')
+    } catch (error) {
+      setNotifyState(String(error.message || error))
+    }
+  }
+
+  const testNotification = async (fallback = false) => {
+    setNotifyState('')
+    if (!isMacOS() && !fallback) {
+      try {
+        const { isPermissionGranted, requestPermission } = await import(
+          '@tauri-apps/plugin-notification'
+        )
+        let granted = await isPermissionGranted()
+        if (!granted) granted = (await requestPermission()) === 'granted'
+        if (!granted) {
+          setNotifyState('Permission denied')
+          return
+        }
+      } catch {
+        setNotifyState('Not available')
         return
       }
-      sendNotification({ title: 'DB Desk', body: 'Native notifications are working.' })
-      setNotifyState('Sent')
-    } catch {
-      setNotifyState('Not available')
     }
+    const channel = await sendNativeNotification(
+      fallback ? 'DB Desk (Script Editor fallback)' : 'DB Desk',
+      fallback
+        ? 'Fallback delivery works. This banner is posted by Script Editor.'
+        : 'Native notifications are working.',
+      { fallback }
+    )
+    if (channel === 'osascript') setNotifyState('Sent as Script Editor')
+    else if (channel === 'native') setNotifyState('Sent to Notification Center')
+    else setNotifyState('Not available')
   }
 
   const toggleNotifications = (checked) => {
@@ -281,7 +326,78 @@ export default function SettingsDialog({ open, onClose, version }) {
               <Button variant="secondary" size="sm" onClick={() => void testNotification()}>
                 Test
               </Button>
+              {isMacOS() ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Post through Script Editor (works without a permission entry)"
+                  onClick={() => void testNotification(true)}
+                >
+                  Fallback
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={diagBusy}
+                onClick={() => void runNotifyDiagnostics()}
+              >
+                {diagBusy ? 'Checking…' : 'Diagnostics'}
+              </Button>
             </Row>
+            {notifyDiag ? (
+              <div className="flex flex-col gap-1 rounded-[5px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-1.5 font-mono text-[10px] leading-4 text-(--ui-text-secondary)">
+                {notifyDiag.error ? (
+                  <span>{notifyDiag.error}</span>
+                ) : (
+                  <>
+                    <span className="truncate" title={notifyDiag.path}>
+                      bundle {notifyDiag.path || 'unknown'}
+                    </span>
+                    <span>
+                      {notifyDiag.in_applications ? 'in /Applications' : 'not in /Applications'} ·{' '}
+                      {notifyDiag.translocated ? 'translocated' : 'normal path'} ·{' '}
+                      {notifyDiag.signature || 'unknown'} ·{' '}
+                      {notifyDiag.signature_ok ? 'signature valid' : 'signature invalid'}
+                    </span>
+                    <span>
+                      notification registration:{' '}
+                      {notifyDiag.registered === 'found'
+                        ? 'found'
+                        : notifyDiag.registered === 'missing'
+                          ? 'not found'
+                          : 'unknown'}
+                    </span>
+                    {!notifyDiag.signature_ok && notifyDiag.signature_error ? (
+                      <span className="whitespace-pre-wrap text-destructive">
+                        {notifyDiag.signature_error}
+                      </span>
+                    ) : null}
+                    {notifyDiag.translocated ? (
+                      <span className="text-amber-600 dark:text-amber-300">
+                        macOS is running a translocated copy. Move DB Desk to /Applications and
+                        reopen it.
+                      </span>
+                    ) : null}
+                  </>
+                )}
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="mt-1 self-start"
+                  onClick={() => void openNotificationSettings()}
+                >
+                  Open Notification Settings
+                </Button>
+              </div>
+            ) : null}
+            <div className="text-[10.5px] leading-4 text-(--ui-text-tertiary)">
+              Ad-hoc builds (no Apple Developer ID) lose their notification permission
+              on every update. If Test shows “Sent” but nothing appears, open
+              System Settings → Notifications → DB Desk, enable it and choose
+              <span className="font-medium"> Alerts</span>. The Fallback button posts
+              through Script Editor instead.
+            </div>
           </Section>
 
           <Section title="MCP server">

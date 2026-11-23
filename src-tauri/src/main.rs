@@ -11,6 +11,152 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 struct Server(Mutex<Option<Child>>);
 
+/// Escape a value for an AppleScript double-quoted string.
+fn applescript_quote(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', " ")
+        .replace('\n', " ")
+}
+
+/// Deliver a notification through `osascript`.
+///
+/// macOS rejects `UNUserNotificationCenter` authorization for ad-hoc signed
+/// apps (no Developer ID), and the Tauri plugin reports success even when the
+/// delivery is dropped. AppleScript posts through System Events and still works
+/// for ad-hoc builds; the banner is attributed to Script Editor.
+#[tauri::command]
+fn native_notify(title: String, body: String) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "display notification \"{}\" with title \"{}\"",
+            applescript_quote(&body),
+            applescript_quote(&title)
+        );
+        let output = Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(script)
+            .output()
+            .map_err(|err| format!("osascript could not run: {err}"))?;
+        if !output.status.success() {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if detail.is_empty() {
+                "osascript failed".to_string()
+            } else {
+                detail
+            });
+        }
+        Ok("osascript".to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (title, body);
+        Err("native_notify is macOS-only".to_string())
+    }
+}
+
+
+/// Best-effort notification diagnostics for the Settings panel.
+#[tauri::command]
+fn notification_diagnostics() -> serde_json::Value {
+    let exe = std::env::current_exe().ok();
+    let app = exe.as_ref().and_then(|path| {
+        path.ancestors()
+            .find(|item| item.extension().map(|ext| ext == "app").unwrap_or(false))
+            .map(|item| item.to_path_buf())
+    });
+    let path = app
+        .as_ref()
+        .map(|item| item.display().to_string())
+        .unwrap_or_default();
+    let translocated = path.contains("/AppTranslocation/");
+    let in_applications = path.starts_with("/Applications");
+
+    let mut signature_ok = false;
+    let mut signature_error = String::new();
+    let mut signature = "unknown".to_string();
+    let mut hardened = false;
+    #[cfg(target_os = "macos")]
+    {
+      if let Some(bundle) = &app {
+        if let Ok(output) = Command::new("/usr/bin/codesign")
+            .args(["--verify", "--deep", "--strict"])
+            .arg(bundle)
+            .output()
+        {
+            signature_ok = output.status.success();
+            signature_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        }
+        if let Ok(output) = Command::new("/usr/bin/codesign")
+            .args(["-dv", "--verbose=2"])
+            .arg(bundle)
+            .output()
+        {
+            let text = String::from_utf8_lossy(&output.stderr).to_string();
+            hardened = text.contains("runtime");
+            if text.contains("Signature=adhoc") {
+                signature = "ad-hoc".to_string();
+            } else if let Some(line) = text.lines().find(|line| line.starts_with("Authority=")) {
+                signature = line.trim_start_matches("Authority=").to_string();
+            }
+        }
+      }
+    }
+
+    let mut registered = "unknown".to_string();
+    #[cfg(target_os = "macos")]
+    {
+      if let Ok(home) = std::env::var("HOME") {
+        let prefs = format!("{home}/Library/Preferences/com.apple.ncprefs.plist");
+        if Path::new(&prefs).exists() {
+            if let Ok(output) = Command::new("/usr/bin/plutil")
+                .args(["-p", &prefs])
+                .output()
+            {
+                let text = String::from_utf8_lossy(&output.stdout).to_string();
+                if !text.is_empty() {
+                    registered = if text.contains("com.wzul.dbdesk") {
+                        "found".to_string()
+                    } else {
+                        "missing".to_string()
+                    };
+                }
+            }
+        }
+      }
+    }
+
+    serde_json::json!({
+        "path": path,
+        "in_applications": in_applications,
+        "translocated": translocated,
+        "signature": signature,
+        "signature_ok": signature_ok,
+        "signature_error": signature_error,
+        "hardened_runtime": hardened,
+        "registered": registered,
+    })
+}
+
+/// Open System Settings → Notifications (best effort).
+#[tauri::command]
+fn open_notification_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("/usr/bin/open")
+            .arg("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+            .status()
+            .map_err(|err| format!("could not open System Settings: {err}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("only available on macOS".to_string())
+    }
+}
+
 fn binary_name() -> &'static str {
     if cfg!(windows) {
         "dbdesk-server.exe"
@@ -162,6 +308,11 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![
+            native_notify,
+            notification_diagnostics,
+            open_notification_settings
+        ])
         .setup(|app| {
             let home = std::env::var("DBDESK_HOME")
                 .map(PathBuf::from)
