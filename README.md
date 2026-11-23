@@ -116,7 +116,7 @@ replaces the bundle and relaunches.
   lives only in the `TAURI_SIGNING_PRIVATE_KEY` CI secret.
 - Releases are published by `.github/workflows/release.yml` when a `v*` tag is
   pushed; it reuses the successful `main` build and writes `latest.json`.
-- The first build with the updater (0.7.0) must be installed manually once;
+- The first build with the updater (0.7.1) must be installed manually once;
   later versions update in place.
 - Manifest URL:
   `https://github.com/wzul/dbdesk-app/releases/latest/download/latest.json`
