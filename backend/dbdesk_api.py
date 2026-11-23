@@ -1621,14 +1621,40 @@ def _parse_ch_headers(raw: Any, *, strict: bool = False) -> dict[str, str]:
     return headers
 
 
-def _ch_url(conn: dict[str, Any], readonly: bool) -> str:
-    secure = str(conn.get("sslmode") or "") in ("require", "verify-ca", "verify-full")
-    scheme = "https" if secure else "http"
-    host = str(conn.get("host") or "127.0.0.1")
+def _ch_target(conn: dict[str, Any]) -> tuple[str, str, str, str]:
+    """Resolve scheme/host/port/path, accepting a full URL in the host field."""
+    raw = str(conn.get("host") or "127.0.0.1").strip()
+    scheme = "https" if str(conn.get("sslmode") or "") in (
+        "require", "verify-ca", "verify-full"
+    ) else "http"
     port = str(conn.get("port") or 8123)
     path = str(conn.get("ch_path") or "/").strip() or "/"
+    if "://" in raw:
+        parts = urllib.parse.urlsplit(raw if raw.startswith(("http://", "https://")) else "//" + raw)
+        if parts.scheme:
+            scheme = "https" if parts.scheme.lower() == "https" else "http"
+        host = parts.hostname or raw
+        if parts.port:
+            port = str(parts.port)
+        elif scheme == "https" and port == "8123":
+            port = "443"
+        if parts.path and parts.path != "/" and path == "/":
+            path = parts.path
+    else:
+        host = raw.split("/", 1)[0]
+        if host.count(":") == 1:
+            host, _, port_part = host.partition(":")
+            if port_part.isdigit():
+                port = port_part
     if not path.startswith("/"):
         path = "/" + path
+    if ":" in host and not host.startswith("[") and host.count(":") > 1:
+        host = f"[{host}]"
+    return scheme, host, port, path
+
+
+def _ch_url(conn: dict[str, Any], readonly: bool) -> str:
+    scheme, host, port, path = _ch_target(conn)
     query = {"database": str(conn.get("dbname") or "default"), "default_format": "JSONCompact"}
     if readonly:
         query["readonly"] = "1"
@@ -1653,7 +1679,9 @@ def _ch_request(conn: dict[str, Any], sql: str, *, readonly: bool = True, timeou
         body = exc.read().decode("utf-8", "replace")
         raise HTTPException(400, _clean_error(body)) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise HTTPException(502, f"ClickHouse request failed: {exc}") from exc
+        raise HTTPException(
+            502, f"ClickHouse request failed ({_ch_url(conn, readonly)}): {exc}"
+        ) from exc
 
 
 def _ch_json(conn: dict[str, Any], sql: str, *, readonly: bool = True) -> Any:
@@ -4366,6 +4394,18 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         _parse_ch_headers(str(ch_headers), strict=True)
         ch_headers_enc = _encrypt(str(ch_headers).strip())
     ch_path = str(pick("ch_path", "/")).strip() or "/"
+    sslmode_value = str(pick("sslmode", "prefer")).strip() or "prefer"
+    if kind == "clickhouse" and "://" in host:
+        parts = urllib.parse.urlsplit(host)
+        host = parts.hostname or host.strip()
+        if parts.port:
+            port = int(parts.port)
+        elif parts.scheme.lower() == "https" and port == 8123:
+            port = 443
+        if parts.path and parts.path != "/" and ch_path == "/":
+            ch_path = parts.path
+        if parts.scheme.lower() == "https" and sslmode_value in ("disable", "prefer"):
+            sslmode_value = "require"
     if not ch_path.startswith("/"):
         ch_path = "/" + ch_path
     if "?" in ch_path or "\n" in ch_path or "\r" in ch_path:
@@ -4386,7 +4426,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "password_enc": password_enc,
         "ch_headers_enc": ch_headers_enc,
         "ch_path": ch_path,
-        "sslmode": str(pick("sslmode", "prefer")).strip() or "prefer",
+        "sslmode": sslmode_value,
         "readonly": True if kind in ("mcp", "http") else bool(pick("readonly", True)),
         "production": bool(pick("production", False)),
         "ai_schema": bool(pick("ai_schema", True)),

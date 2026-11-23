@@ -3568,6 +3568,10 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                   : jsx(Field, {
                       key: 'host',
                       label: 'Host',
+                      hint:
+                        (draft.kind || 'postgres') === 'clickhouse'
+                          ? 'Hostname or https:// URL. For Cloudflare use port 443 and SSL require.'
+                          : undefined,
                       children: jsx(Input, { value: draft.host || '', onChange: set('host') })
                     }),
               jsxs('div', {
