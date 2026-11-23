@@ -1676,7 +1676,9 @@ def _ch_request(conn: dict[str, Any], sql: str, *, readonly: bool = True, timeou
         _ch_url(conn, readonly), data=sql.encode("utf-8"), headers=headers, method="POST"
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout + 5) as response:
+        with urllib.request.urlopen(
+            request, timeout=timeout + 5, context=_ssl_context()
+        ) as response:
             return response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")
@@ -3025,7 +3027,9 @@ def _http_query(conn: dict[str, Any], sql: str, limit: int = MAX_ROWS) -> dict[s
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(
+            request, timeout=timeout, context=_ssl_context()
+        ) as response:
             body = response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")
