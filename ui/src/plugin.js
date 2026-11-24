@@ -5372,6 +5372,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [openDbQuery, setOpenDbQuery] = useState('')
   const [openDbSelected, setOpenDbSelected] = useState('')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [editor, setEditor] = useState(null)
   const [insertOpen, setInsertOpen] = useState(false)
 
@@ -6633,6 +6634,10 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
           setShortcutsOpen(false)
           return
         }
+        if (headerMenuOpen) {
+          setHeaderMenuOpen(false)
+          return
+        }
         if (moreOpen) {
           setMoreOpen(false)
           return
@@ -6696,7 +6701,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tab, selected, offset, filterOpen, shortcutsOpen, moreOpen, loadRows, runQuery, sql, newSqlTab])
+  }, [tab, selected, offset, filterOpen, shortcutsOpen, headerMenuOpen, moreOpen, loadRows, runQuery, sql, newSqlTab])
 
   const markTabDirty = () => {
     setTabs((current) =>
@@ -7038,7 +7043,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     children: [
       jsxs('header', {
         key: 'header',
-        className: 'flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-chrome) px-3 py-2',
+        className: 'flex shrink-0 items-center gap-1.5 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-chrome) px-2 py-1.5',
         children: [
           jsx(Button, {
             key: 'menu',
@@ -7073,7 +7078,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                   jsx('span', {
                     key: 'n',
                     className:
-                      'min-w-0 flex-1 truncate font-medium text-(--ui-text-secondary)',
+                      'min-w-0 flex-1 cursor-pointer truncate font-medium text-(--ui-text-secondary) hover:underline',
+                    title: 'Connection settings',
+                    onClick: editActive,
                     children: active.name
                   }),
                   jsx(Button, {
@@ -7165,7 +7172,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
             ? jsx(Button, {
                 key: 'settings',
                 variant: 'ghost',
-                size: 'sm',
+                size: 'icon-xs',
                 title: 'Settings (⌘,)',
                 onClick: onSettings,
                 children: jsx(Codicon, { name: 'settings-gear' })
@@ -7176,24 +7183,18 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
             : jsx(Button, {
                 key: 'ai',
                 variant: aiOpen ? 'secondary' : 'ghost',
-                size: 'sm',
+                size: 'icon-xs',
                 title: 'Ask AI (read-only)',
                 onClick: () => {
                   setTab('data')
                   setAiOpen((open) => !open)
                 },
-                children: jsxs('span', {
-                  className: 'flex items-center gap-1',
-                  children: [
-                    jsx(Codicon, { key: 'i', name: 'sparkle' }),
-                    jsx('span', { key: 't', className: 'dbd-sm-inline', children: 'AI' })
-                  ]
-                })
+                children: jsx(Codicon, { key: 'i', name: 'sparkle' })
               }),
           jsx(Button, {
             key: 'refresh',
-            variant: 'secondary',
-            size: 'sm',
+            variant: 'ghost',
+            size: 'icon-xs',
             title: 'Refresh tree and the current view (⌘R)',
             onClick: () => {
               setTreeVersion((v) => v + 1)
@@ -7203,85 +7204,95 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
               else if (tab === 'site') setSiteVersion((v) => v + 1)
             },
             disabled: !activeId || treeLoading,
-            children: jsxs('span', {
-              className: 'flex items-center gap-1',
-              children: [
-                jsx(Codicon, { key: 'i', name: 'refresh' }),
-                jsx('span', {
-                  key: 't',
-                  className: 'dbd-sm-inline',
-                  children: treeLoading ? 'Loading…' : 'Refresh'
-                })
-              ]
+            children: jsx(Codicon, {
+              key: 'i',
+              name: 'refresh',
+              className: treeLoading ? 'animate-spin' : ''
             })
           }),
           jsx(Button, {
             key: 'approvals',
             variant: 'ghost',
-            size: 'sm',
+            size: 'icon-xs',
             title: 'Approvals',
             onClick: () => setApprovalsOpen(true),
             children: jsxs('span', {
-              className: 'flex items-center gap-1',
+              className: 'relative flex items-center',
               children: [
                 jsx(Codicon, { key: 'i', name: 'shield' }),
-                jsx('span', { key: 't', className: 'dbd-sm-inline', children: 'Approvals' }),
                 approvals.filter((entry) => entry.status === 'pending').length
                   ? jsx('span', {
                       key: 'n',
-                      className: 'tabular-nums',
+                      className:
+                        'absolute -top-1.5 -right-1.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] leading-none text-white',
                       children: approvals.filter((entry) => entry.status === 'pending').length
                     })
                   : null
               ]
             })
           }),
-          jsx(Button, {
-            key: 'audit',
-            variant: 'ghost',
-            size: 'sm',
-            title: 'Audit log',
-            onClick: () => setAuditOpen(true),
-            children: jsxs('span', {
-              className: 'flex items-center gap-1',
-              children: [
-                jsx(Codicon, { key: 'i', name: 'checklist' }),
-                jsx('span', { key: 't', className: 'dbd-sm-inline', children: 'Audit' })
-              ]
-            })
-          }),
-          jsx(Button, {
-            key: 'activity',
-            variant: 'ghost',
-            size: 'sm',
-            title: 'Activity',
-            disabled: !activeId,
-            onClick: () => setActivityOpen(true),
-            children: jsxs('span', {
-              className: 'flex items-center gap-1',
-              children: [
-                jsx(Codicon, { key: 'i', name: 'pulse' }),
-                jsx('span', { key: 't', className: 'dbd-sm-inline', children: 'Activity' })
-              ]
-            })
-          }),
-          jsx(Button, {
-            key: 'edit',
-            variant: 'secondary',
-            size: 'sm',
-            title: active ? 'Connection' : 'New connection',
-            onClick: editActive,
-            children: jsxs('span', {
-              className: 'flex items-center gap-1',
-              children: [
-                jsx(Codicon, { key: 'i', name: 'gear' }),
-                jsx('span', {
-                  key: 't',
-                  className: 'dbd-sm-inline',
-                  children: active ? 'Connection' : 'New connection'
-                })
-              ]
-            })
+          jsxs('div', {
+            key: 'more',
+            className: 'relative',
+            children: [
+              jsx(Button, {
+                variant: headerMenuOpen ? 'secondary' : 'ghost',
+                size: 'icon-xs',
+                title: 'More',
+                onClick: () => setHeaderMenuOpen((open) => !open),
+                children: jsx(Codicon, { name: 'ellipsis' })
+              }),
+              headerMenuOpen
+                ? jsx('button', {
+                    key: 'bg',
+                    type: 'button',
+                    'aria-label': 'Close menu',
+                    className: 'fixed inset-0 z-40 cursor-default',
+                    onClick: () => setHeaderMenuOpen(false)
+                  })
+                : null,
+              headerMenuOpen
+                ? jsxs('div', {
+                    key: 'panel',
+                    className:
+                      'absolute top-full right-0 z-50 mt-1 flex w-48 flex-col rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
+                    children: [
+                      jsx('button', {
+                        type: 'button',
+                        className:
+                          'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover)',
+                        onClick: () => {
+                          setHeaderMenuOpen(false)
+                          setAuditOpen(true)
+                        },
+                        children: 'Audit log'
+                      }),
+                      jsx('button', {
+                        type: 'button',
+                        disabled: !activeId,
+                        className:
+                          'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover) disabled:opacity-40',
+                        onClick: () => {
+                          setHeaderMenuOpen(false)
+                          setActivityOpen(true)
+                        },
+                        children: 'Activity'
+                      }),
+                      jsx('div', { className: 'my-1 h-px bg-(--ui-stroke-secondary)' }),
+                      jsx('button', {
+                        type: 'button',
+                        className:
+                          'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover)',
+                        onClick: () => {
+                          setHeaderMenuOpen(false)
+                          editActive()
+                        },
+                        children: active ? 'Edit connection' : 'New connection'
+                      })
+                    ]
+                  })
+                : null
+            ]
           })
         ]
       }),
