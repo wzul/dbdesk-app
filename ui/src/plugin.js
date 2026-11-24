@@ -70,7 +70,12 @@ const STYLES = `
 .dbd-grid-table { border-collapse: collapse; font-size: 12px; }
 .dbd-grid-table tbody tr { height: 26px; }
 .dbd-grid-table tbody td { height: 26px; }
-.dbd-grid-table thead th { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
+.dbd-grid-table thead th { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); position: relative; }
+.dbd-col-resize {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 5;
+  width: 7px; cursor: col-resize;
+}
+.dbd-col-resize:hover { background: color-mix(in srgb, var(--primary) 35%, transparent); }
 .dark .dbd-grid-table thead th { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
 .dbd-grid-table th, .dbd-grid-table td {
   padding: 3px 8px;
@@ -714,6 +719,33 @@ function Grid({
   const scrollRef = useRef(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(600)
+  const [colWidths, setColWidths] = useState({})
+  const colSignature = (columns || []).map((column) => column.name).join('\u0001')
+  useEffect(() => {
+    setColWidths({})
+  }, [colSignature])
+  const startColResize = (event, name) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const header = event.currentTarget.parentElement
+    if (!header) return
+    const startX = event.clientX
+    const startWidth = colWidths[name] || header.getBoundingClientRect().width
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (moveEvent) => {
+      const next = Math.max(56, startWidth + moveEvent.clientX - startX)
+      setColWidths((current) => ({ ...current, [name]: next }))
+    }
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
   useEffect(() => {
     const element = scrollRef.current
     if (!element || typeof ResizeObserver === 'undefined') return undefined
@@ -799,9 +831,17 @@ function Grid({
                     'th',
                     {
                       className: cn(TH, onSort && 'cursor-pointer select-none hover:text-(--ui-text-primary)'),
+                      style: colWidths[col.name]
+                        ? {
+                            width: colWidths[col.name],
+                            minWidth: colWidths[col.name],
+                            maxWidth: colWidths[col.name]
+                          }
+                        : undefined,
                       title: `${col.name} · ${col.type || 'unknown type'}`,
                       onClick: onSort ? () => onSort(col.name) : undefined,
-                      children: jsxs('span', {
+                      children: [jsxs('span', {
+                        className: 'block overflow-hidden text-ellipsis',
                         children: [
                           pkSet.has(col.name)
                             ? jsx(Codicon, {
@@ -819,7 +859,15 @@ function Grid({
                               })
                             : null
                         ]
+                      }),
+                      jsx('span', {
+                        key: 'resize',
+                        className: 'dbd-col-resize',
+                        title: 'Drag to resize column',
+                        onMouseDown: (event) => startColResize(event, col.name),
+                        onClick: (event) => event.stopPropagation()
                       })
+                    ]
                     },
                     `${col.name}:${i}`
                   )
@@ -891,6 +939,15 @@ function Grid({
                               inSel(ri, ci) && 'dbd-selected',
                               sel && sel.r0 === ri && sel.c0 === ci && 'dbd-selected-anchor'
                             ),
+                            style: columns[ci] && colWidths[columns[ci].name]
+                              ? {
+                                  width: colWidths[columns[ci].name],
+                                  minWidth: colWidths[columns[ci].name],
+                                  maxWidth: colWidths[columns[ci].name],
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }
+                              : undefined,
                             title: isNull ? 'NULL' : text,
                             onClick: onSelectCell
                               ? (event) => onSelectCell(ri, ci, event.shiftKey)
@@ -1709,6 +1766,14 @@ function RedisValueDrawer({ connectionId, database, redisKey, onClose }) {
 
 function ColumnsMenu({ columns, hidden, onToggle }) {
   const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return undefined
+    const onKey = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
   const hiddenSet = new Set(hidden || [])
   return jsxs('div', {
     className: 'relative',
@@ -1740,7 +1805,7 @@ function ColumnsMenu({ columns, hidden, onToggle }) {
               jsx('div', {
                 key: 'panel',
                 className:
-                  'absolute top-7 right-0 z-30 flex max-h-64 w-56 flex-col gap-0.5 overflow-auto rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
+                  'absolute bottom-7 right-0 z-30 flex max-h-64 w-56 flex-col gap-0.5 overflow-auto rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
                 children: columns.map((column) =>
                   jsxs(
                     'label',
@@ -6567,6 +6632,10 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
           setShortcutsOpen(false)
           return
         }
+        if (moreOpen) {
+          setMoreOpen(false)
+          return
+        }
         if (filterOpen) {
           setFilterOpen(false)
           return
@@ -6626,7 +6695,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tab, selected, offset, filterOpen, shortcutsOpen, loadRows, runQuery, sql, newSqlTab])
+  }, [tab, selected, offset, filterOpen, shortcutsOpen, moreOpen, loadRows, runQuery, sql, newSqlTab])
 
   const markTabDirty = () => {
     setTabs((current) =>
@@ -7960,7 +8029,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                       jsxs('div', {
                                         key: 'panel',
                                         className:
-                                          'absolute top-7 right-0 z-30 flex w-52 flex-col rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
+                                          'absolute bottom-7 right-0 z-30 flex w-52 flex-col rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
                                         children: [
                                           jsx('button', {
                                             key: 'csv',
