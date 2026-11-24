@@ -5377,6 +5377,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const active = connections.find((conn) => conn.id === activeId) || null
   const activeDb = (activeId && dbMap[activeId]) || (active && active.dbname) || ''
+  const railIds = openIds.filter((id) => connections.some((conn) => conn.id === id))
 
   const loadConnections = useCallback(async () => {
     try {
@@ -7313,23 +7314,25 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 onClick: () => setTreeOpen(false)
               })
             : null,
-          jsx(ConnectionRail, {
-            key: 'rail',
-            connections,
-            openIds,
-            activeId,
-            onSwitch: switchConnection,
-            onAdd: onHome,
-            onRemove: removeOpenConnection,
-            onOpenDatabase: activeId
-              ? () => {
-                  setOpenDbQuery('')
-                  setOpenDbSelected(activeDb)
-                  setOpenDbOpen(true)
-                  setDbVersion((value) => value + 1)
-                }
-              : null
-          }),
+          railIds.length > 1
+            ? jsx(ConnectionRail, {
+                key: 'rail',
+                connections,
+                openIds: railIds,
+                activeId,
+                onSwitch: switchConnection,
+                onAdd: onHome,
+                onRemove: removeOpenConnection,
+                onOpenDatabase: activeId
+                  ? () => {
+                      setOpenDbQuery('')
+                      setOpenDbSelected(activeDb)
+                      setOpenDbOpen(true)
+                      setDbVersion((value) => value + 1)
+                    }
+                  : null
+              })
+            : null,
           jsxs('aside', {
             key: 'side',
             'data-open': treeOpen ? 'true' : 'false',
