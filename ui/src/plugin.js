@@ -7865,7 +7865,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                       jsxs('div', {
                         key: 'bar',
                         className: cn(
-                          'shrink-0 items-center gap-2 overflow-visible border-t border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
+                          'shrink-0 flex-wrap items-center gap-2 gap-y-1 overflow-visible border-t border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
                           selected ? 'flex' : 'hidden'
                         ),
                         children: [
