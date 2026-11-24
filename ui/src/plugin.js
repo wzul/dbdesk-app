@@ -5272,22 +5272,22 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
       tab.id === activeTabId ? { ...tab, state: currentViewState() } : tab
     )
     const existing = next.find((tab) => tab.id === id)
+    const currentTab = next.find((tab) => tab.id === activeTabId)
     if (!existing) {
-      next = [
-        ...next,
-        {
-          id,
-          schema,
-          table,
-          state: state || {
-            filters: [],
-            order: { by: '', dir: 'asc' },
-            limit: DEFAULT_LIMIT,
-            offset: 0,
-            hidden: []
-          }
-        }
-      ]
+      const fresh = state || {
+        filters: [],
+        order: { by: '', dir: 'asc' },
+        limit: DEFAULT_LIMIT,
+        offset: 0,
+        hidden: []
+      }
+      if (currentTab && !currentTab.dirty && !state) {
+        next = next.map((tab) =>
+          tab.id === activeTabId ? { id, schema, table, state: fresh, dirty: false } : tab
+        )
+      } else {
+        next = [...next, { id, schema, table, state: fresh, dirty: Boolean(state) }]
+      }
     } else if (state) {
       next = next.map((tab) => (tab.id === id ? { ...tab, state } : tab))
     }
@@ -5519,6 +5519,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }, [tab, selected, activeId, activeDb, treeVersion, schemaVersion])
 
   const sortBy = (column) => {
+    markTabDirty()
     setOffset(0)
     setOrder((current) =>
       current.by === column
@@ -5844,11 +5845,18 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     )
   }
 
+  const markTabDirty = () => {
+    setTabs((current) =>
+      current.map((tab) => (tab.id === activeTabId ? { ...tab, dirty: true } : tab))
+    )
+  }
+
   const addFilter = () => {
     const column = filterDraft.column || (columnsMeta[0] && columnsMeta[0].name) || ''
     if (!column) return
     const nullable = ['isnull', 'notnull'].includes(filterDraft.op)
     if (!nullable && filterDraft.value === '') return
+    markTabDirty()
     setFilters((current) => [...current, { ...filterDraft, column, enabled: true }])
     setFilterDraft((current) => ({ ...current, column, value: '' }))
     setOffset(0)
@@ -5862,12 +5870,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }
 
   const updateFilter = (index, patch) => {
+    markTabDirty()
     setFilters((current) =>
       current.map((row, i) => (i === index ? { ...row, ...patch } : row))
     )
   }
 
   const toggleFilter = (index, enabled) => {
+    markTabDirty()
     setFilters((current) =>
       current.map((row, i) => (i === index ? { ...row, enabled } : row))
     )
@@ -5876,6 +5886,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }
 
   const applyFilter = (index) => {
+    markTabDirty()
     setFilters((current) =>
       current.map((row, i) => (i === index ? { ...row, enabled: true } : row))
     )
@@ -5884,12 +5895,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }
 
   const applyAllFilters = () => {
+    markTabDirty()
     setFilters((current) => current.map((row) => ({ ...row, enabled: true })))
     setOffset(0)
     setFilterRevision((value) => value + 1)
   }
 
   const clearFilters = () => {
+    markTabDirty()
     setFilters([])
     setOffset(0)
     setFilterRevision((value) => value + 1)
@@ -5959,6 +5972,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }
 
   const applyView = (view) => {
+    markTabDirty()
     setFilters(Array.isArray(view.filters) ? view.filters : [])
     setFilterRevision((value) => value + 1)
     setOrder({ by: view.order_by || '', dir: view.order_dir === 'desc' ? 'desc' : 'asc' })
@@ -6601,28 +6615,29 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 ? jsx('div', {
                     key: 'tables',
                     className:
-                      'flex shrink-0 items-center gap-1 overflow-x-auto border-b border-(--ui-stroke-secondary) px-2 py-1',
+                      'flex shrink-0 items-stretch overflow-x-auto border-b border-(--ui-stroke-secondary) px-1',
                     children: tabs.map((tab) =>
                       jsxs(
                         'div',
                         {
                           className: cn(
-                            'flex shrink-0 items-center gap-0.5 rounded-[3px] border px-1.5 py-0.5 text-[11px]',
+                            'group flex shrink-0 items-center gap-1 border-b-2 px-2.5',
                             tab.id === activeTabId
-                              ? 'border-primary/40 bg-(--ui-bg-quaternary) text-(--ui-text-primary)'
-                              : 'border-(--ui-stroke-secondary)/60 text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
+                              ? 'border-primary text-(--ui-text-primary)'
+                              : 'border-transparent text-(--ui-text-tertiary) hover:border-(--ui-stroke-secondary) hover:text-(--ui-text-secondary)'
                           ),
                           children: [
                             jsx('button', {
                               type: 'button',
-                              className: 'max-w-[150px] truncate',
+                              className: 'max-w-[150px] truncate py-1.5 text-[11.5px]',
                               title: tab.id,
                               onClick: () => switchTab(tab.id),
                               children: tab.table
                             }),
                             jsx('button', {
                               type: 'button',
-                              className: 'rounded-[2px] p-0.5 opacity-60 hover:opacity-100',
+                              className:
+                                'rounded-[2px] p-0.5 opacity-40 hover:bg-(--ui-bg-secondary) hover:opacity-100',
                               title: 'Close tab',
                               onClick: (event) => {
                                 event.stopPropagation()
@@ -6725,6 +6740,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                 className: 'h-7 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
                                 value: limit,
                                 onChange: (event) => {
+                                  markTabDirty()
                                   setOffset(0)
                                   setLimit(Number(event.target.value))
                                 },
