@@ -418,11 +418,22 @@ async def _query(args: dict[str, Any]) -> dict[str, Any]:
     sql = api._check_sql(str(args.get("sql") or ""))
     readonly = bool(conn.get("readonly", True))
     config = _load_config()
+    kind = api._kind(conn)
     if not readonly and not config.get("allow_writes", True):
         raise ToolError(
             "writes are disabled; enable 'Allow writes' in DB Desk → Settings → MCP server"
         )
-    if readonly and not api.READ_SQL.match(sql):
+    if kind == "redis":
+        command = (sql.split() or [""])[0].upper()
+        if readonly and command and command not in api.REDIS_READ_COMMANDS:
+            raise ToolError("this Redis connection is read-only: only read commands are allowed")
+        if command and command not in api.REDIS_READ_COMMANDS and conn.get("production"):
+            raise ToolError(
+                "production Redis writes need approval in the DB Desk app; run the command there"
+            )
+    elif kind == "mongodb":
+        pass  # the Mongo command runner only performs finds/aggregates
+    elif readonly and not api.READ_SQL.match(sql):
         raise ToolError("this connection is read-only: only SELECT/WITH/SHOW/EXPLAIN is allowed")
     started = time.monotonic()
     try:

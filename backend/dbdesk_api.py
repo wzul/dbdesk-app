@@ -32,6 +32,7 @@ import json
 import os
 import re
 import secrets as pysecrets
+import shlex
 import shutil
 import socket
 import sqlite3
@@ -682,11 +683,13 @@ try:  # MongoDB driver
     from bson import ObjectId
     from bson.binary import Binary
     from bson.decimal128 import Decimal128
+    from bson import json_util
 except Exception:  # pragma: no cover - Mongo connections show a clear error
     pymongo = None
     ObjectId = None
     Binary = None
     Decimal128 = None
+    json_util = None
 
 try:  # Redis / Valkey driver
     import redis as redis_driver
@@ -1156,6 +1159,10 @@ def _ddl(conn: dict[str, Any], schema: str, table: str) -> str:
         return _my_ddl(conn, schema, table)
     if kind == "clickhouse":
         return _ch_ddl(conn, schema, table)
+    if kind == "mongodb":
+        return _mongo_ddl(conn, schema, table)
+    if kind == "redis":
+        return _redis_ddl(conn, schema, table)
     return _pg_ddl(conn, schema, table)
 
 
@@ -3272,6 +3279,993 @@ def _http_ddl(conn: dict[str, Any], schema: str, table: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# MongoDB
+# --------------------------------------------------------------------------- #
+
+_MONGO_CLIENTS: dict[str, Any] = {}
+_MONGO_LOCK = threading.Lock()
+
+MONGO_SSL_MODES = ("disable", "allow", "prefer", "require", "verify-ca", "verify-full")
+
+
+def _mongo_ready() -> None:
+    if pymongo is None:
+        raise HTTPException(500, "pymongo is not installed in this build")
+
+
+def _mongo_secret(conn: dict[str, Any]) -> str:
+    token = str(conn.get("password_enc") or "")
+    return _decrypt(token) if token else ""
+
+
+def _mongo_uri(conn: dict[str, Any]) -> str:
+    host = str(conn.get("host") or "127.0.0.1").strip()
+    port = int(conn.get("port") or 27017)
+    user = str(conn.get("user") or "").strip()
+    password = _mongo_secret(conn)
+    params: list[str] = []
+    srv = bool(conn.get("mongo_srv"))
+    if srv:
+        host = host.replace("mongodb+srv://", "").replace("mongodb://", "").rstrip("/")
+        prefix = "mongodb+srv"
+    else:
+        host = host.replace("mongodb://", "").rstrip("/")
+        prefix = "mongodb"
+    credentials = ""
+    if user:
+        credentials = urllib.parse.quote_plus(user) + ":" + urllib.parse.quote_plus(password) + "@"
+        params.append("authSource=" + urllib.parse.quote_plus(str(conn.get("auth_source") or "admin")))
+    mode = str(conn.get("sslmode") or "prefer").lower()
+    if mode in ("require", "verify-ca", "verify-full"):
+        params.append("tls=true")
+        if mode == "verify-full":
+            params.append("tlsAllowInvalidCertificates=false")
+        elif mode == "verify-ca":
+            params.append("tlsAllowInvalidHostnames=true")
+    elif mode in ("allow", "disable"):
+        params.append("tls=false")
+    if not srv:
+        host = f"{host}:{port}"
+    suffix = ("?" + "&".join(params)) if params else ""
+    return f"{prefix}://{credentials}{host}/{suffix}"
+
+
+def _mongo_client(conn: dict[str, Any]):
+    _mongo_ready()
+    key = "|".join(
+        str(conn.get(name) or "")
+        for name in ("id", "host", "port", "user", "dbname", "mongo_srv", "auth_source", "sslmode")
+    )
+    with _MONGO_LOCK:
+        client = _MONGO_CLIENTS.get(key)
+        if client is None:
+            try:
+                client = pymongo.MongoClient(
+                    _mongo_uri(conn),
+                    serverSelectionTimeoutMS=6000,
+                    connectTimeoutMS=6000,
+                    socketTimeoutMS=20000,
+                    appname="DB Desk",
+                )
+            except Exception as exc:  # pragma: no cover - bad URI
+                raise HTTPException(400, f"MongoDB: {exc}") from exc
+            _MONGO_CLIENTS[key] = client
+    return client
+
+
+def _mongo_db(conn: dict[str, Any]):
+    name = str(conn.get("dbname") or "").strip()
+    if not name:
+        raise HTTPException(400, "MongoDB database name is required")
+    return _mongo_client(conn)[name]
+
+
+def _mongo_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "double"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, datetime.datetime):
+        return "date"
+    if ObjectId is not None and isinstance(value, ObjectId):
+        return "objectId"
+    if Binary is not None and isinstance(value, Binary):
+        return "binData"
+    if Decimal128 is not None and isinstance(value, Decimal128):
+        return "decimal"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, (list, tuple)):
+        return "array"
+    return type(value).__name__
+
+
+def _mongo_jsonable(value: Any) -> Any:
+    if ObjectId is not None and isinstance(value, ObjectId):
+        return str(value)
+    if Binary is not None and isinstance(value, Binary):
+        return _jsonable(bytes(value))
+    if Decimal128 is not None and isinstance(value, Decimal128):
+        return str(value)
+    if isinstance(value, dict):
+        return json.dumps(
+            {str(key): _mongo_jsonable(item) for key, item in value.items()},
+            default=str,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    if isinstance(value, (list, tuple)):
+        return json.dumps(
+            [_mongo_jsonable(item) for item in value],
+            default=str,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    return _jsonable(value)
+
+
+def _mongo_loose_value(value: Any) -> Any:
+    """Accept JSON text typed into a grid cell and store the parsed value."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text[:1] in ("{", "["):
+            try:
+                return _mongo_loads(text)
+            except HTTPException:
+                return value
+    return value
+
+
+def _mongo_loads(text: str) -> Any:
+    """Parse a JSON/Extended-JSON document."""
+    body = str(text or "").strip()
+    if not body:
+        raise HTTPException(400, "empty MongoDB document")
+    try:
+        if json_util is not None:
+            return json_util.loads(body)
+        return json.loads(body)
+    except Exception as exc:
+        raise HTTPException(400, f"invalid MongoDB JSON: {exc}") from exc
+
+
+def _mongo_id_value(value: Any) -> Any:
+    """Turn a 24-hex string into an ObjectId when it is used for _id."""
+    if isinstance(value, str) and ObjectId is not None and re.fullmatch(r"[0-9a-fA-F]{24}", value):
+        try:
+            return ObjectId(value)
+        except Exception:
+            return value
+    if isinstance(value, dict):
+        return {key: _mongo_id_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_mongo_id_value(item) for item in value]
+    return value
+
+
+def _mongo_coerce_ids(value: Any) -> Any:
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            result[key] = _mongo_id_value(item) if key == "_id" else _mongo_coerce_ids(item)
+        return result
+    if isinstance(value, list):
+        return [_mongo_coerce_ids(item) for item in value]
+    return value
+
+
+def _mongo_filter_doc(filters: Any) -> dict[str, Any]:
+    clauses: list[dict[str, Any]] = []
+    for item in filters or []:
+        if not isinstance(item, dict) or item.get("enabled") is False:
+            continue
+        mode = str(item.get("mode") or "column")
+        if mode == "raw":
+            raw = str(item.get("raw") or "").strip()
+            if not raw:
+                continue
+            clause = _mongo_loads(raw)
+            if not isinstance(clause, dict):
+                raise HTTPException(400, "a MongoDB filter must be a JSON object")
+            clauses.append(clause)
+            continue
+        name = str(item.get("column") or item.get("name") or "").strip()
+        if not name:
+            continue
+        op = str(item.get("op") or "contains")
+        value = item.get("value")
+        if op in ("isnull", "notnull"):
+            clauses.append({name: None if op == "isnull" else {"$ne": None}})
+            continue
+        if value is None or (isinstance(value, str) and value == ""):
+            continue
+        raw_value = str(value)
+        parsed: Any = raw_value
+        try:
+            parsed = json.loads(raw_value)
+        except Exception:
+            parsed = raw_value
+        if op == "contains":
+            clause = {name: {"$regex": re.escape(str(parsed))}}
+            if item.get("ci"):
+                clause[name]["$options"] = "i"
+        elif op == "startswith":
+            clause = {name: {"$regex": "^" + re.escape(str(parsed))}}
+            if item.get("ci"):
+                clause[name]["$options"] = "i"
+        elif op == "endswith":
+            clause = {name: {"$regex": re.escape(str(parsed)) + "$"}}
+            if item.get("ci"):
+                clause[name]["$options"] = "i"
+        elif op == "eq":
+            clause = {name: parsed}
+        elif op == "neq":
+            clause = {name: {"$ne": parsed}}
+        elif op == "gt":
+            clause = {name: {"$gt": parsed}}
+        elif op == "gte":
+            clause = {name: {"$gte": parsed}}
+        elif op == "lt":
+            clause = {name: {"$lt": parsed}}
+        elif op == "lte":
+            clause = {name: {"$lte": parsed}}
+        else:
+            clause = {name: parsed}
+        clauses.append(clause)
+    if not clauses:
+        return {}
+    if len(clauses) == 1:
+        return _mongo_coerce_ids(clauses[0])
+    return _mongo_coerce_ids({"$and": clauses})
+
+
+def _mongo_test(conn: dict[str, Any]) -> dict[str, Any]:
+    client = _mongo_client(conn)
+    try:
+        info = client.server_info()
+        db = _mongo_db(conn)
+        collections = len(db.list_collection_names())
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, f"MongoDB: {exc}") from exc
+    version = str(info.get("version") or "unknown")
+    return {
+        "version": f"MongoDB {version} · {collections} collection(s)",
+        "database": str(conn.get("dbname") or ""),
+        "user": str(conn.get("user") or "anonymous"),
+    }
+
+
+def _mongo_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
+    db = _mongo_db(conn)
+    schema = str(conn.get("dbname") or "")
+    try:
+        listing = list(db.list_collections())
+    except Exception:
+        # Some drivers/mocks only implement list_collection_names().
+        try:
+            listing = [{"name": name, "type": "collection"} for name in db.list_collection_names()]
+        except Exception as exc:
+            raise HTTPException(400, f"MongoDB: {exc}") from exc
+    result: list[dict[str, Any]] = []
+    for entry in listing:
+        name = str(entry.get("name") or "")
+        if not name or name.startswith("system."):
+            continue
+        is_view = str(entry.get("type") or "collection") == "view"
+        estimated = 0
+        if not is_view:
+            try:
+                estimated = int(db[name].estimated_document_count())
+            except Exception:
+                estimated = 0
+        result.append(
+            {
+                "schema": schema,
+                "name": name,
+                "kind": "view" if is_view else "collection",
+                "est_rows": estimated,
+            }
+        )
+    result.sort(key=lambda row: row["name"])
+    return result
+
+
+def _mongo_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
+    db = _mongo_db(conn)
+    collection = db[str(table)]
+    samples: list[dict[str, Any]] = []
+    try:
+        samples = list(collection.find().limit(200))
+    except Exception as exc:
+        raise HTTPException(400, f"MongoDB: {exc}") from exc
+    order: list[str] = []
+    seen: set[str] = set()
+    kinds: dict[str, set[str]] = {}
+    for document in samples:
+        if not isinstance(document, dict):
+            continue
+        for key, value in document.items():
+            if key not in seen:
+                seen.add(key)
+                order.append(key)
+            kinds.setdefault(key, set()).add(_mongo_type(value))
+    if "_id" not in seen:
+        order.insert(0, "_id")
+        kinds.setdefault("_id", set()).add("objectId")
+    elif order and order[0] != "_id":
+        order.remove("_id")
+        order.insert(0, "_id")
+    columns: list[dict[str, Any]] = []
+    for key in order:
+        types = sorted(kinds.get(key) or {"mixed"})
+        columns.append(
+            {
+                "name": key,
+                "type": "/".join(types) or "mixed",
+                "nullable": key != "_id",
+                "default": None,
+                "pk": key == "_id",
+                "fk": None,
+                "charset": None,
+                "collation": None,
+                "extra": "",
+                "comment": None,
+            }
+        )
+    return columns
+
+
+def _mongo_indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
+    db = _mongo_db(conn)
+    try:
+        info = db[str(table)].index_information()
+    except Exception as exc:
+        raise HTTPException(400, f"MongoDB: {exc}") from exc
+    rows: list[dict[str, Any]] = []
+    for name, spec in info.items():
+        keys = spec.get("key") or []
+        names = [str(pair[0]) for pair in keys if pair]
+        rows.append(
+            {
+                "name": str(name),
+                "unique": bool(spec.get("unique")),
+                "algorithm": "BTREE",
+                "columns": ", ".join(names),
+                "column_names": names,
+                "primary": str(name) == "_id_",
+            }
+        )
+    rows.sort(key=lambda row: (not row["primary"], row["name"]))
+    return rows
+
+
+def _mongo_rows(
+    conn, schema, table, limit, offset, order_by, direction, filters=None
+) -> dict[str, Any]:
+    started = time.monotonic()
+    db = _mongo_db(conn)
+    collection = db[str(table)]
+    query = _mongo_filter_doc(filters)
+    try:
+        cursor = collection.find(query)
+        if order_by:
+            cursor = cursor.sort(str(order_by), -1 if str(direction).lower() == "desc" else 1)
+        documents = list(cursor.skip(max(0, int(offset))).limit(int(limit) + 1))
+    except Exception as exc:
+        raise HTTPException(400, f"MongoDB: {exc}") from exc
+    meta = _columns(conn, schema, table)
+    names = [column["name"] for column in meta]
+    types = {column["name"]: column.get("type", "") for column in meta}
+    for document in documents[:limit]:
+        if isinstance(document, dict):
+            for key in document:
+                if key not in names:
+                    names.append(key)
+                    types.setdefault(key, "")
+    rows = [
+        [_mongo_jsonable(document.get(name)) for name in names]
+        for document in documents[:limit]
+        if isinstance(document, dict)
+    ]
+    return {
+        "columns": [{"name": name, "type": types.get(name, "")} for name in names],
+        "rows": rows,
+        "truncated": len(documents) > limit,
+        "offset": offset,
+        "limit": limit,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _mongo_query(conn, command: str, limit, readonly) -> dict[str, Any]:
+    started = time.monotonic()
+    payload = _mongo_loads(command)
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            400,
+            'MongoDB commands are JSON, e.g. {"collection": "users", "find": {}, "limit": 50}',
+        )
+    db = _mongo_db(conn)
+    name = str(payload.get("collection") or payload.get("name") or "")
+    if not name:
+        raise HTTPException(
+            400,
+            'add a "collection" key, e.g. {"collection": "users", "find": {"age": {"$gt": 18}}}',
+        )
+    collection = db[name]
+    cap = max(1, min(int(limit), MAX_ROWS))
+    try:
+        if "aggregate" in payload:
+            pipeline = payload.get("aggregate") or []
+            if not isinstance(pipeline, list):
+                raise HTTPException(400, "aggregate must be a list")
+            documents = list(collection.aggregate(pipeline).limit(cap + 1))
+            label = "aggregate"
+        else:
+            find = payload.get("find") or {}
+            if not isinstance(find, dict):
+                raise HTTPException(400, "find must be a JSON object")
+            cursor = collection.find(find)
+            projection = payload.get("projection")
+            if isinstance(projection, dict):
+                cursor = cursor.projection(projection)
+            sort = payload.get("sort")
+            if isinstance(sort, dict):
+                cursor = cursor.sort(list(sort.items()))
+            skip = int(payload.get("skip") or 0)
+            take = int(payload.get("limit") or cap)
+            documents = list(cursor.skip(max(0, skip)).limit(max(1, min(take, cap)) + 1))
+            label = "find"
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, f"MongoDB: {exc}") from exc
+    names: list[str] = []
+    for document in documents:
+        if not isinstance(document, dict):
+            continue
+        for key in document:
+            if key not in names:
+                names.append(key)
+    rows = [
+        [_mongo_jsonable(document.get(key)) for key in names]
+        for document in documents[:cap]
+        if isinstance(document, dict)
+    ]
+    return {
+        "columns": [{"name": key, "type": ""} for key in names],
+        "rows": rows,
+        "truncated": len(documents) > cap,
+        "command": label,
+        "readonly": readonly,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _mongo_write(
+    conn: dict[str, Any],
+    body: dict[str, Any],
+    action: str,
+    preview: str,
+    operation,
+) -> dict[str, Any]:
+    _writable(conn)
+    if body.get("preview"):
+        return {"ok": True, "preview": True, "sql": preview}
+    _require_approval(conn, body, action, preview)
+    try:
+        detail = operation()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _audit(conn, action, preview, ok=False, error=str(exc))
+        raise HTTPException(400, f"MongoDB: {exc}") from exc
+    _audit(conn, action, preview, ok=True)
+    return {"ok": True, "sql": preview, **detail}
+
+
+def _mongo_insert_documents(conn: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    name = str(body.get("collection") or body.get("table") or "")
+    if not name:
+        raise HTTPException(400, "collection is required")
+    raw = body.get("documents")
+    if raw is None:
+        raw = body.get("document")
+    if raw is None:
+        raise HTTPException(400, "document or documents is required")
+    if isinstance(raw, list):
+        documents = []
+        for item in raw:
+            parsed = _mongo_loads(item) if isinstance(item, str) else item
+            if not isinstance(parsed, dict):
+                raise HTTPException(400, "every document must be a JSON object")
+            documents.append(
+                _mongo_coerce_ids({key: _mongo_loose_value(value) for key, value in parsed.items()})
+            )
+    else:
+        parsed = _mongo_loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(parsed, dict):
+            raise HTTPException(400, "document must be a JSON object")
+        documents = [
+            _mongo_coerce_ids({key: _mongo_loose_value(value) for key, value in parsed.items()})
+        ]
+    if not documents:
+        raise HTTPException(400, "no documents to insert")
+    db = _mongo_db(conn)
+    preview = json.dumps(
+        {"action": "insert", "database": conn.get("dbname"), "collection": name, "documents": documents},
+        default=str,
+        ensure_ascii=False,
+    )
+
+    def operation():
+        result = db[name].insert_many(documents, ordered=True)
+        return {"inserted": len(result.inserted_ids)}
+
+    return _mongo_write(conn, body, "insert", preview, operation)
+
+
+def _mongo_update_documents(conn: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    name = str(body.get("collection") or body.get("table") or "")
+    if not name:
+        raise HTTPException(400, "collection is required")
+    raw_filter = body.get("filter")
+    if raw_filter is None:
+        raise HTTPException(400, "filter is required (use {} to match every document)")
+    query = _mongo_loads(raw_filter) if isinstance(raw_filter, str) else raw_filter
+    if not isinstance(query, dict):
+        raise HTTPException(400, "filter must be a JSON object")
+    query = _mongo_coerce_ids(query)
+    raw_changes = body.get("changes") or body.get("update")
+    if raw_changes is None:
+        raise HTTPException(400, "changes are required")
+    changes = _mongo_loads(raw_changes) if isinstance(raw_changes, str) else raw_changes
+    if not isinstance(changes, dict) or not changes:
+        raise HTTPException(400, "changes must be a JSON object")
+    if not any(str(key).startswith("$") for key in changes):
+        changes = {"$set": {key: _mongo_loose_value(value) for key, value in changes.items()}}
+    db = _mongo_db(conn)
+    many = bool(body.get("many"))
+    preview = json.dumps(
+        {
+            "action": "update_many" if many else "update_one",
+            "database": conn.get("dbname"),
+            "collection": name,
+            "filter": query,
+            "changes": changes,
+        },
+        default=str,
+        ensure_ascii=False,
+    )
+
+    def operation():
+        if many:
+            result = db[name].update_many(query, changes)
+        else:
+            result = db[name].update_one(query, changes)
+        return {"matched": result.matched_count, "modified": result.modified_count}
+
+    return _mongo_write(conn, body, "update", preview, operation)
+
+
+def _mongo_delete_documents(conn: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    name = str(body.get("collection") or body.get("table") or "")
+    if not name:
+        raise HTTPException(400, "collection is required")
+    raw_filter = body.get("filter")
+    if raw_filter is None:
+        raise HTTPException(400, "filter is required (use {} to match every document)")
+    query = _mongo_loads(raw_filter) if isinstance(raw_filter, str) else raw_filter
+    if not isinstance(query, dict):
+        raise HTTPException(400, "filter must be a JSON object")
+    query = _mongo_coerce_ids(query)
+    if not query:
+        raise HTTPException(400, "refusing to delete every document; add a filter")
+    db = _mongo_db(conn)
+    many = bool(body.get("many"))
+    preview = json.dumps(
+        {
+            "action": "delete_many" if many else "delete_one",
+            "database": conn.get("dbname"),
+            "collection": name,
+            "filter": query,
+        },
+        default=str,
+        ensure_ascii=False,
+    )
+
+    def operation():
+        if many:
+            result = db[name].delete_many(query)
+        else:
+            result = db[name].delete_one(query)
+        return {"deleted": result.deleted_count}
+
+    return _mongo_write(conn, body, "delete", preview, operation)
+
+
+def _mongo_ddl(conn: dict[str, Any], schema: str, table: str) -> str:
+    db = _mongo_db(conn)
+    columns = _mongo_columns(conn, schema, table)
+    body = ",\n".join(
+        f"  {column['name']}: {column['type']}" for column in columns
+    )
+    return (
+        f"// MongoDB · {conn.get('dbname')}.{table}\n"
+        f"// collections are schemaless; sampled field types:\n"
+        f"db.{table} = {{\n{body}\n}}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Redis / Valkey
+# --------------------------------------------------------------------------- #
+
+_REDIS_CLIENTS: dict[str, Any] = {}
+_REDIS_LOCK = threading.Lock()
+
+REDIS_READ_COMMANDS = {
+    "PING", "ECHO", "INFO", "DBSIZE", "TYPE", "TTL", "PTTL", "EXISTS", "STRLEN",
+    "GET", "MGET", "GETRANGE", "HGET", "HGETALL", "HKEYS", "HVALS", "HLEN", "HEXISTS",
+    "LRANGE", "LLEN", "LINDEX", "SMEMBERS", "SCARD", "SISMEMBER", "ZRANGE", "ZRANGEBYSCORE",
+    "ZCARD", "ZSCORE", "ZCOUNT", "SCAN", "HSCAN", "SSCAN", "ZSCAN", "KEYS", "RANDOMKEY",
+    "OBJECT", "MEMORY", "XRANGE", "XLEN", "XINFO", "PFCOUNT", "BITCOUNT", "DUMP",
+}
+
+
+def _redis_ready() -> None:
+    if redis_driver is None:
+        raise HTTPException(500, "redis is not installed in this build")
+
+
+def _redis_secret(conn: dict[str, Any]) -> str:
+    token = str(conn.get("password_enc") or "")
+    return _decrypt(token) if token else ""
+
+
+def _redis_db_index(conn: dict[str, Any], database: Any = None) -> int:
+    if isinstance(database, str) and database.lower().startswith("db"):
+        database = database[2:]
+    try:
+        index = int(database if database not in (None, "") else (conn.get("redis_db") or 0))
+    except (TypeError, ValueError):
+        index = int(conn.get("redis_db") or 0)
+    return max(0, min(index, 4095))
+
+
+def _redis_client(conn: dict[str, Any], database: Any = None):
+    _redis_ready()
+    index = _redis_db_index(conn, database)
+    key = "|".join(
+        str(conn.get(name) or "")
+        for name in ("id", "host", "port", "user", "sslmode")
+    ) + f"|{index}"
+    with _REDIS_LOCK:
+        client = _REDIS_CLIENTS.get(key)
+        if client is None:
+            mode = str(conn.get("sslmode") or "prefer").lower()
+            try:
+                client = redis_driver.Redis(
+                    host=str(conn.get("host") or "127.0.0.1"),
+                    port=int(conn.get("port") or 6379),
+                    db=index,
+                    username=str(conn.get("user") or "") or None,
+                    password=_redis_secret(conn) or None,
+                    ssl=mode in ("require", "verify-ca", "verify-full"),
+                    socket_connect_timeout=6,
+                    socket_timeout=20,
+                    decode_responses=False,
+                    health_check_interval=30,
+                )
+            except Exception as exc:  # pragma: no cover - bad options
+                raise HTTPException(400, f"Redis: {exc}") from exc
+            _REDIS_CLIENTS[key] = client
+    return client
+
+
+def _redis_text(value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return "0x" + raw.hex()
+    if isinstance(value, dict):
+        return {_redis_text(key): _redis_text(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redis_text(item) for item in value]
+    return value
+
+
+def _redis_test(conn: dict[str, Any]) -> dict[str, Any]:
+    client = _redis_client(conn)
+    try:
+        client.ping()
+        size = client.dbsize()
+    except Exception as exc:
+        raise HTTPException(400, f"Redis: {exc}") from exc
+    try:
+        info = client.info("server") or {}
+    except Exception:
+        info = {}
+    version = str(
+        info.get("redis_version")
+        or info.get("valkey_version")
+        or info.get("server_name")
+        or "unknown"
+    )
+    label = "Valkey" if info.get("valkey_version") else "Redis"
+    return {
+        "version": f"{label} {version} · db{_redis_db_index(conn)} · {size} key(s)",
+        "database": f"db{_redis_db_index(conn)}",
+        "user": str(conn.get("user") or "default"),
+    }
+
+
+def _redis_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
+    client = _redis_client(conn)
+    result: list[dict[str, Any]] = []
+    try:
+        keyspace = client.info("keyspace") or {}
+    except Exception:
+        keyspace = {}
+    if isinstance(keyspace, dict):
+        for name, meta in keyspace.items():
+            if not str(name).startswith("db"):
+                continue
+            count = 0
+            if isinstance(meta, dict):
+                count = int(meta.get("keys") or 0)
+            result.append({"schema": str(name), "name": "keys", "kind": "keyspace", "est_rows": count})
+    if not result:
+        index = _redis_db_index(conn)
+        try:
+            count = int(client.dbsize())
+        except Exception:
+            count = 0
+        result.append({"schema": f"db{index}", "name": "keys", "kind": "keyspace", "est_rows": count})
+    result.sort(key=lambda row: int(str(row["schema"])[2:] or 0))
+    return result
+
+
+def _redis_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "key",
+            "type": "string",
+            "nullable": False,
+            "default": None,
+            "pk": True,
+            "fk": None,
+            "charset": None,
+            "collation": None,
+            "extra": "",
+            "comment": None,
+        },
+        {
+            "name": "type",
+            "type": "string",
+            "nullable": False,
+            "default": None,
+            "pk": False,
+            "fk": None,
+            "charset": None,
+            "collation": None,
+            "extra": "",
+            "comment": None,
+        },
+        {
+            "name": "ttl",
+            "type": "integer",
+            "nullable": False,
+            "default": None,
+            "pk": False,
+            "fk": None,
+            "charset": None,
+            "collation": None,
+            "extra": "",
+            "comment": None,
+        },
+        {
+            "name": "size",
+            "type": "integer",
+            "nullable": False,
+            "default": None,
+            "pk": False,
+            "fk": None,
+            "charset": None,
+            "collation": None,
+            "extra": "",
+            "comment": None,
+        },
+    ]
+
+
+def _redis_key_pattern(filters: Any) -> str:
+    patterns: list[str] = []
+    for item in filters or []:
+        if not isinstance(item, dict) or item.get("enabled") is False:
+            continue
+        if str(item.get("mode") or "column") == "raw":
+            raw = str(item.get("raw") or "").strip()
+            if raw:
+                patterns.append(raw)
+            continue
+        name = str(item.get("column") or item.get("name") or "").strip()
+        value = item.get("value")
+        if name not in ("key", "*") or value in (None, ""):
+            continue
+        op = str(item.get("op") or "contains")
+        text = re.escape(str(value))
+        if op == "startswith":
+            patterns.append(text + "*")
+        elif op == "endswith":
+            patterns.append("*" + text)
+        elif op == "eq":
+            patterns.append(str(value))
+        else:
+            patterns.append("*" + text + "*")
+    return patterns[0] if patterns else "*"
+
+
+def _redis_rows(
+    conn, schema, table, limit, offset, order_by, direction, filters=None
+) -> dict[str, Any]:
+    started = time.monotonic()
+    index = _redis_db_index(conn, schema if schema else None)
+    client = _redis_client(conn, index)
+    pattern = _redis_key_pattern(filters)
+    wanted = max(1, int(limit)) + 1
+    skip = max(0, int(offset))
+    keys: list[bytes] = []
+    try:
+        cursor = 0
+        seen = 0
+        while True:
+            cursor, batch = client.scan(cursor=cursor, match=pattern, count=max(200, wanted * 4))
+            for key in batch:
+                if seen >= skip:
+                    keys.append(key)
+                    if len(keys) >= wanted:
+                        break
+                seen += 1
+            if cursor in (0, b"0") or len(keys) >= wanted:
+                break
+    except Exception as exc:
+        raise HTTPException(400, f"Redis: {exc}") from exc
+    rows: list[list[Any]] = []
+    for key in keys[: wanted - 1]:
+        try:
+            kind = _redis_text(client.type(key))
+            ttl = int(client.ttl(key))
+        except Exception:
+            kind, ttl = "", -1
+        size = 0
+        try:
+            if kind == "string":
+                size = int(client.strlen(key))
+            elif kind == "hash":
+                size = int(client.hlen(key))
+            elif kind == "list":
+                size = int(client.llen(key))
+            elif kind == "set":
+                size = int(client.scard(key))
+            elif kind == "zset":
+                size = int(client.zcard(key))
+            elif kind == "stream":
+                size = int(client.xlen(key))
+        except Exception:
+            size = 0
+        rows.append([_redis_text(key), kind, ttl, size])
+    if order_by in ("key", "type", "ttl", "size") and rows:
+        column = {"key": 0, "type": 1, "ttl": 2, "size": 3}[order_by]
+        rows.sort(key=lambda row: (row[column] is None, row[column]), reverse=str(direction).lower() == "desc")
+    return {
+        "columns": [
+            {"name": "key", "type": "string"},
+            {"name": "type", "type": "string"},
+            {"name": "ttl", "type": "integer"},
+            {"name": "size", "type": "integer"},
+        ],
+        "rows": rows,
+        "truncated": len(keys) > wanted - 1,
+        "offset": offset,
+        "limit": limit,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _redis_shape(value: Any) -> tuple[list[dict[str, Any]], list[list[Any]]]:
+    if isinstance(value, dict):
+        rows = [[_redis_text(key), _redis_text(item)] for key, item in value.items()]
+        return [{"name": "field", "type": "string"}, {"name": "value", "type": ""}], rows
+    if isinstance(value, (list, tuple)):
+        if value and all(isinstance(item, (list, tuple)) and len(item) == 2 for item in value):
+            rows = [[_redis_text(item[0]), _redis_text(item[1])] for item in value]
+            return [{"name": "field", "type": "string"}, {"name": "value", "type": ""}], rows
+        rows = [[_redis_text(item)] for item in value]
+        return [{"name": "value", "type": ""}], rows
+    if value is None:
+        return [{"name": "value", "type": ""}], []
+    return [{"name": "value", "type": ""}], [[_redis_text(value)]]
+
+
+def _redis_query(conn, command: str, limit, readonly) -> dict[str, Any]:
+    started = time.monotonic()
+    text = str(command or "").strip()
+    if not text:
+        raise HTTPException(400, "enter a Redis command, e.g. GET user:1")
+    try:
+        parts = shlex.split(text)
+    except ValueError as exc:
+        raise HTTPException(400, f"invalid command: {exc}") from exc
+    if not parts:
+        raise HTTPException(400, "enter a Redis command")
+    name = parts[0].upper()
+    if readonly and name not in REDIS_READ_COMMANDS:
+        raise HTTPException(403, f"read-only connection: {name} is not a read command")
+    client = _redis_client(conn)
+    try:
+        value = client.execute_command(name, *parts[1:])
+    except Exception as exc:
+        raise HTTPException(400, f"Redis: {exc}") from exc
+    columns, rows = _redis_shape(value)
+    cap = max(1, min(int(limit), MAX_ROWS))
+    return {
+        "columns": columns,
+        "rows": rows[:cap],
+        "truncated": len(rows) > cap,
+        "command": name,
+        "readonly": readonly,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _redis_command_write(conn: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    _writable(conn)
+    text = str(body.get("command") or "").strip()
+    if not text:
+        raise HTTPException(400, "command is required")
+    try:
+        parts = shlex.split(text)
+    except ValueError as exc:
+        raise HTTPException(400, f"invalid command: {exc}") from exc
+    if not parts:
+        raise HTTPException(400, "command is required")
+    preview = " ".join(parts)
+
+    def operation():
+        client = _redis_client(conn, body.get("database"))
+        value = client.execute_command(parts[0].upper(), *parts[1:])
+        columns, rows = _redis_shape(value)
+        return {"result": rows[:200], "columns": columns}
+
+    return _mongo_write(conn, body, "redis", preview, operation)
+
+
+def _redis_ddl(conn: dict[str, Any], schema: str, table: str) -> str:
+    client = _redis_client(conn, schema)
+    count = 0
+    try:
+        count = int(client.dbsize())
+    except Exception:
+        count = 0
+    return (
+        f"// Redis/Valkey · {schema}\n"
+        f"// {count} key(s). Use the key browser or the command console.\n"
+        f"SCAN 0 MATCH * COUNT 100"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # dispatch
 # --------------------------------------------------------------------------- #
 
@@ -3311,7 +4305,7 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
     if kind == "mongodb":
         return _mongo_tree(conn)
     if kind == "redis":
-        return []
+        return _redis_tree(conn)
     if kind == "mysql":
         return _my_tree(conn)
     if kind == "clickhouse":
@@ -3329,6 +4323,8 @@ def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[st
         return _sqlite_columns(conn, schema, table)
     if kind == "mongodb":
         return _mongo_columns(conn, schema, table)
+    if kind == "redis":
+        return _redis_columns(conn, schema, table)
     if kind == "mysql":
         return _my_columns(conn, schema, table)
     if kind == "clickhouse":
@@ -3399,6 +4395,10 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
         )
     if kind == "clickhouse":
         return _ch_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    if kind == "mongodb":
+        return _mongo_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    if kind == "redis":
+        return _redis_rows(conn, schema, table, limit, offset, order_by, direction, filters)
     return _pg_rows(conn, schema, table, limit, offset, order_by, direction, filters)
 
 
@@ -3416,6 +4416,10 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
         return _my_query(conn, sql, limit, readonly)
     if kind == "clickhouse":
         return _ch_query(conn, sql, limit, readonly)
+    if kind == "mongodb":
+        return _mongo_query(conn, sql, limit, readonly)
+    if kind == "redis":
+        return _redis_query(conn, sql, limit, readonly)
     _guard_readonly(conn, sql)
     return _pg_query(conn, sql, limit, readonly)
 
@@ -4904,6 +5908,23 @@ async def connection_databases(conn_id: str) -> dict[str, Any]:
             r[0] for r in rows
             if r and r[0] not in ("system", "INFORMATION_SCHEMA", "information_schema")
         ]
+    elif kind == "mongodb":
+        try:
+            names = sorted(_mongo_client(conn).list_database_names())
+        except Exception as exc:
+            raise HTTPException(400, f"MongoDB: {exc}") from exc
+        names = [name for name in names if name not in ("admin", "local", "config")]
+    elif kind == "redis":
+        client = _redis_client(conn)
+        try:
+            keyspace = client.info("keyspace") or {}
+        except Exception:
+            keyspace = {}
+        found = sorted(
+            (str(name) for name in keyspace if str(name).startswith("db")),
+            key=lambda name: int(name[2:] or 0),
+        )
+        names = found or [f"db{_redis_db_index(conn)}"]
     else:
         names = [
             row[0]
@@ -5275,6 +6296,12 @@ async def run_query(body: dict[str, Any]) -> dict[str, Any]:
     sql = _check_sql(str(body.get("sql") or ""))
     limit = max(1, min(int(body.get("limit") or 200), MAX_ROWS))
     readonly = bool(conn.get("readonly", True))
+    if _kind(conn) == "redis":
+        command = (sql.split() or [""])[0].upper()
+        if command and command not in REDIS_READ_COMMANDS:
+            _writable(conn)
+            _require_approval(conn, body, "redis", sql)
+            _audit(conn, "redis", sql, ok=True)
     try:
         result = _query(conn, sql, limit, readonly)
     except HTTPException as exc:
@@ -5911,3 +6938,60 @@ async def insert_row(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, "table and values are required")
     sql, is_async = _build_insert(conn, schema, table, values)
     return _mutation(conn, body, sql, is_async, "insert")
+
+
+# --------------------------------------------------------------------------- #
+# MongoDB document writes and Redis commands
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/mongo/docs/insert")
+async def mongo_insert(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    return _mongo_insert_documents(conn, body)
+
+
+@router.post("/mongo/docs/update")
+async def mongo_update(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    return _mongo_update_documents(conn, body)
+
+
+@router.post("/mongo/docs/delete")
+async def mongo_delete(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    return _mongo_delete_documents(conn, body)
+
+
+@router.post("/redis/command")
+async def redis_command(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    if body.get("readonly"):
+        return _redis_query(conn, str(body.get("command") or ""), int(body.get("limit") or 500), True)
+    return _redis_command_write(conn, body)
+
+
+@router.get("/connections/{conn_id}/redis/value")
+async def redis_value(conn_id: str, key: str, database: str = "") -> dict[str, Any]:
+    conn = _with_db(_connect(conn_id), database or None)
+    client = _redis_client(conn, database or None)
+    try:
+        kind = _redis_text(client.type(key))
+        ttl = int(client.ttl(key))
+        if kind == "string":
+            value = _redis_text(client.get(key))
+        elif kind == "hash":
+            value = _redis_text(client.hgetall(key))
+        elif kind == "list":
+            value = _redis_text(client.lrange(key, 0, 1000))
+        elif kind == "set":
+            value = _redis_text(client.smembers(key))
+        elif kind == "zset":
+            value = _redis_text(client.zrange(key, 0, 1000, withscores=True))
+        elif kind == "stream":
+            value = _redis_text(client.xrange(key, count=200))
+        else:
+            value = None
+    except Exception as exc:
+        raise HTTPException(400, f"Redis: {exc}") from exc
+    return {"key": key, "type": kind, "ttl": ttl, "value": value}

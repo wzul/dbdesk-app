@@ -9,6 +9,8 @@ const KINDS = {
   mysql: { label: 'MySQL', icon: 'database', tone: 'text-amber-600 dark:text-amber-400' },
   mariadb: { label: 'MariaDB', icon: 'database', tone: 'text-teal-600 dark:text-teal-400' },
   clickhouse: { label: 'ClickHouse', icon: 'graph', tone: 'text-yellow-600 dark:text-yellow-400' },
+  mongodb: { label: 'MongoDB', icon: 'database', tone: 'text-green-600 dark:text-green-400' },
+  redis: { label: 'Redis / Valkey', icon: 'database', tone: 'text-red-600 dark:text-red-400' },
   sqlite: { label: 'SQLite', icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
   mcp: { label: 'MCP', icon: 'plug', tone: 'text-purple-600 dark:text-purple-400' },
   http: { label: 'HTTP gateway', icon: 'cloud', tone: 'text-blue-600 dark:text-blue-400' }
@@ -482,7 +484,7 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, o
             <Codicon name="database" className="text-2xl text-(--ui-text-tertiary)" />
             <div className="text-[13px] font-medium">No connections yet</div>
             <div className="text-[11.5px] text-(--ui-text-tertiary)">
-              Add PostgreSQL, MySQL/MariaDB, ClickHouse or a local SQLite file.
+              Add PostgreSQL, MySQL/MariaDB, ClickHouse, MongoDB, Redis/Valkey or a local SQLite file.
             </div>
             <button
               type="button"

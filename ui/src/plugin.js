@@ -1590,6 +1590,104 @@ function RowDrawer({ columns, row, onClose }) {
   })
 }
 
+function RedisValueDrawer({ connectionId, database, redisKey, onClose }) {
+  const [state, setState] = useState({ loading: true, value: null, type: '', ttl: -1, error: '' })
+  useEffect(() => {
+    let alive = true
+    setState({ loading: true, value: null, type: '', ttl: -1, error: '' })
+    call(
+      `/connections/${connectionId}/redis/value?key=${encodeURIComponent(redisKey)}` +
+        `&database=${encodeURIComponent(database || '')}`
+    )
+      .then((data) => {
+        if (alive) setState({ loading: false, error: '', ...data })
+      })
+      .catch((error) => {
+        if (alive) {
+          setState({ loading: false, value: null, type: '', ttl: -1, error: errText(error) })
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [connectionId, database, redisKey])
+  const text =
+    state.value === null || state.value === undefined
+      ? '—'
+      : typeof state.value === 'object'
+        ? JSON.stringify(state.value, null, 2)
+        : String(state.value)
+  return jsxs('div', {
+    className: 'absolute inset-x-0 bottom-0 top-[44px] z-40 flex justify-end',
+    children: [
+      jsx('button', {
+        key: 'bg',
+        type: 'button',
+        'aria-label': 'Close',
+        className: 'flex-1 cursor-default',
+        onClick: onClose
+      }),
+      jsxs('div', {
+        key: 'panel',
+        className:
+          'dbd-drawer-panel flex shrink-0 flex-col gap-3 overflow-auto border-l border-(--ui-stroke-secondary) bg-background p-4 shadow-2xl',
+        children: [
+          jsxs('div', {
+            key: 'head',
+            className: 'flex items-center justify-between gap-2',
+            children: [
+              jsx('div', {
+                key: 't',
+                className: 'truncate font-mono text-[12px] font-semibold',
+                title: redisKey,
+                children: redisKey
+              }),
+              jsx(Button, {
+                key: 'close',
+                variant: 'ghost',
+                size: 'icon-xs',
+                title: 'Close',
+                onClick: onClose,
+                children: jsx(Codicon, { name: 'close' })
+              })
+            ]
+          }),
+          jsxs('div', {
+            key: 'meta',
+            className: 'flex flex-wrap items-center gap-2 text-[11px]',
+            children: [
+              jsx(Badge, { key: 'type', variant: 'outline', size: 'xs', children: state.type || '…' }),
+              jsx('span', {
+                key: 'ttl',
+                className: 'text-(--ui-text-tertiary)',
+                children: state.ttl > 0 ? `expires in ${state.ttl}s` : 'no expiry'
+              })
+            ]
+          }),
+          state.loading
+            ? jsx('div', {
+                key: 'loading',
+                className: 'text-[12px] text-(--ui-text-tertiary)',
+                children: 'Loading…'
+              })
+            : state.error
+              ? jsx('div', {
+                  key: 'error',
+                  className: 'text-[12px] text-red-600 dark:text-red-400',
+                  children: state.error
+                })
+              : jsx('pre', {
+                  key: 'value',
+                  className:
+                    'min-h-24 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-2 font-mono text-[11px] leading-5 break-words whitespace-pre-wrap',
+                  children: text
+                })
+        ]
+      })
+    ]
+  })
+}
+
 function ColumnsMenu({ columns, hidden, onToggle }) {
   const [open, setOpen] = useState(false)
   const hiddenSet = new Set(hidden || [])
@@ -3209,6 +3307,8 @@ const DB_KIND_CARDS = [
   { kind: 'mysql', flavor: 'mysql', label: 'MySQL', port: 3306 },
   { kind: 'mysql', flavor: 'mariadb', label: 'MariaDB', port: 3306 },
   { kind: 'clickhouse', label: 'ClickHouse', port: 8123 },
+  { kind: 'mongodb', label: 'MongoDB', port: 27017 },
+  { kind: 'redis', label: 'Redis', port: 6379 },
   { kind: 'sqlite', label: 'SQLite', port: 0 },
   { kind: 'mcp', label: 'MCP', port: 0 },
   { kind: 'http', label: 'HTTP', port: 0 }
@@ -3396,6 +3496,8 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                               postgres: 5432,
                               mysql: 3306,
                               clickhouse: 8123,
+                              mongodb: 27017,
+                              redis: 6379,
                               mcp: 0,
                               http: 0,
                               sqlite: 0
@@ -3405,7 +3507,7 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                             const nextPort =
                               !draft.port ||
                               current === oldDefault ||
-                              [5432, 3306, 8123].includes(current)
+                              [5432, 3306, 8123, 27017, 6379].includes(current)
                                 ? card.port
                                 : draft.port
                             onDraft({
@@ -3453,7 +3555,12 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                 label: 'Name',
                 children: jsx(Input, {
                   value: draft.name || '',
-                  placeholder: 'Local Postgres',
+                  placeholder:
+                    (draft.kind || 'postgres') === 'mongodb'
+                      ? 'Local MongoDB'
+                      : (draft.kind || 'postgres') === 'redis'
+                        ? 'Local Redis'
+                        : 'Local Postgres',
                   onChange: set('name')
                 })
               }),
@@ -3702,7 +3809,11 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                       placeholder:
                         (draft.kind || 'postgres') === 'sqlite'
                           ? '/root/data/app.db'
-                          : undefined,
+                          : (draft.kind || 'postgres') === 'mongodb'
+                            ? 'mydb'
+                            : (draft.kind || 'postgres') === 'redis'
+                              ? '0'
+                              : undefined,
                       onChange: set('dbname')
                     })
                   }),
@@ -3721,6 +3832,56 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                       'rounded-[3px] border border-primary/20 bg-primary/5 px-2 py-1.5 text-[11px] text-(--ui-text-secondary)',
                     children:
                       'Drafted by the agent. Type the password here — it is never sent to the AI provider.'
+                  })
+                : null,
+              (draft.kind || 'postgres') === 'mongodb'
+                ? jsxs('div', {
+                    key: 'mongo',
+                    className: 'flex flex-col gap-2 rounded-[3px] border border-(--ui-stroke-secondary)/60 p-2',
+                    children: [
+                      jsx('div', {
+                        key: 't',
+                        className: 'text-[11px] font-medium text-(--ui-text-tertiary)',
+                        children: 'MongoDB options'
+                      }),
+                      jsxs('label', {
+                        key: 'srv',
+                        className: 'flex items-center gap-2 text-[11px]',
+                        children: [
+                          jsx('input', {
+                            type: 'checkbox',
+                            checked: Boolean(draft.mongo_srv),
+                            onChange: (event) =>
+                              onDraft({ ...draft, mongo_srv: event.target.checked }),
+                          }),
+                          jsx('span', {
+                            children: 'SRV record (mongodb+srv:// host, no port)'
+                          })
+                        ]
+                      }),
+                      jsx(Field, {
+                        key: 'auth',
+                        label: 'Auth source',
+                        hint: 'Database that holds the user (admin by default).',
+                        children: jsx(Input, {
+                          value: draft.auth_source || 'admin',
+                          placeholder: 'admin',
+                          onChange: set('auth_source')
+                        })
+                      })
+                    ]
+                  })
+                : null,
+              (draft.kind || 'postgres') === 'redis'
+                ? jsx(Field, {
+                    key: 'redisdb',
+                    label: 'Redis database',
+                    hint: 'Logical database index, 0–15 by default.',
+                    children: jsx(Input, {
+                      type: 'number',
+                      value: draft.redis_db || 0,
+                      onChange: set('redis_db')
+                    })
                   })
                 : null,
               !['mcp', 'http', 'sqlite'].includes(draft.kind || 'postgres')
@@ -4939,6 +5100,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [siteLoading, setSiteLoading] = useState(false)
   const [siteVersion, setSiteVersion] = useState(0)
   const [rowDetail, setRowDetail] = useState(null)
+  const [redisView, setRedisView] = useState(null)
   const [hiddenColumns, setHiddenColumns] = useState([])
   const [selectedRows, setSelectedRows] = useState([])
   const [chartOpen, setChartOpen] = useState(false)
@@ -5246,12 +5408,26 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     if (!activeId) return
     setQueryLoading(true)
     setErr('')
+    const body = { connection_id: activeId, database: activeDb, sql, limit: 500 }
     try {
-      const result = await call('/query', {
-        method: 'POST',
-        body: { connection_id: activeId, database: activeDb, sql, limit: 500 }
-      })
-      setQuery(result)
+      try {
+        const result = await call('/query', { method: 'POST', body })
+        setQuery(result)
+      } catch (error) {
+        const message = errText(error)
+        if (!message.includes('approval_required')) throw error
+        const approvalId = await ensureApproval(
+          'redis',
+          body,
+          sql,
+          active && active.kind === 'redis' ? `Redis: ${sql}` : 'Production query'
+        )
+        const result = await call('/query', {
+          method: 'POST',
+          body: approvalId ? { ...body, approval_id: approvalId } : body
+        })
+        setQuery(result)
+      }
     } catch (error) {
       setQuery(null)
       setErr(errText(error))
@@ -5650,8 +5826,21 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     () => Object.fromEntries(columnsMeta.filter((column) => column.fk).map((column) => [column.name, column.fk])),
     [columnsMeta]
   )
-  const rowsEditable = Boolean(active && !active.readonly && selected && data && pkColumns.length > 0)
-  const canInsert = Boolean(active && !active.readonly && selected && columnsMeta.length > 0)
+  const rowsEditable = Boolean(
+    active &&
+      !active.readonly &&
+      active.kind !== 'redis' &&
+      selected &&
+      data &&
+      pkColumns.length > 0
+  )
+  const canInsert = Boolean(
+    active &&
+      !active.readonly &&
+      active.kind !== 'redis' &&
+      selected &&
+      columnsMeta.length > 0
+  )
 
   const pkValuesFor = (rowIndex) => {
     const values = {}
@@ -5664,6 +5853,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }
 
   const editCell = (rowIndex, columnIndex, value, rect) => {
+    if (active && active.kind === 'redis') {
+      const key = data && data.rows[rowIndex] ? data.rows[rowIndex][0] : ''
+      if (key) setRedisView(String(key))
+      return
+    }
     const source = data && data.columns[columnIndex]
     const meta = columnsMeta.find((column) => column.name === (source && source.name))
     if (!meta) return
@@ -5767,6 +5961,25 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     if (Object.keys(pk).length === 0) {
       throw new Error('This table has no primary key — edit it from the SQL tab.')
     }
+    if (active && active.kind === 'mongodb') {
+      const body = {
+        connection_id: activeId,
+        database: activeDb,
+        collection: selected.table,
+        filter: pk,
+        changes: { [editor.column.name]: nextValue }
+      }
+      const preview = await previewMutation('/mongo/docs/update', body)
+      setEditor(null)
+      armMutation('/mongo/docs/update', body, preview, {
+        title: `Update ${selected.table}`,
+        action: 'update',
+        table: selected.table,
+        done: `Saved ${editor.column.name}`,
+        after: () => loadRows(offset)
+      })
+      return
+    }
     const body = {
       connection_id: activeId,
       database: activeDb,
@@ -5788,9 +6001,34 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const deleteRow = async (rowIndex) => {
     if (!selected || !data) return
+    if (active && active.kind === 'redis') {
+      host.notify({ kind: 'info', message: 'Delete Redis keys with DEL from the command console.' })
+      return
+    }
     const pk = pkValuesFor(rowIndex)
     if (Object.keys(pk).length === 0) {
       host.notify({ kind: 'error', message: 'This table has no primary key — delete rows from SQL.' })
+      return
+    }
+    if (active && active.kind === 'mongodb') {
+      const body = {
+        connection_id: activeId,
+        database: activeDb,
+        collection: selected.table,
+        filter: pk
+      }
+      try {
+        const preview = await previewMutation('/mongo/docs/delete', body)
+        armMutation('/mongo/docs/delete', body, preview, {
+          title: `Delete from ${selected.table}`,
+          action: 'delete',
+          table: selected.table,
+          done: 'Document deleted',
+          after: () => loadRows(offset)
+        })
+      } catch (error) {
+        setErr(errText(error))
+      }
       return
     }
     const body = {
@@ -5816,6 +6054,33 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const insertRow = async (values) => {
     if (!selected) return
+    if (active && active.kind === 'redis') {
+      host.notify({ kind: 'info', message: 'Add Redis keys from the command console (SET, HSET, ...).' })
+      return
+    }
+    if (active && active.kind === 'mongodb') {
+      const document = { ...values }
+      if (document._id === '' || document._id === null) delete document._id
+      const body = {
+        connection_id: activeId,
+        database: activeDb,
+        collection: selected.table,
+        document
+      }
+      const preview = await previewMutation('/mongo/docs/insert', body)
+      armMutation('/mongo/docs/insert', body, preview, {
+        title: `Insert into ${selected.table}`,
+        action: 'insert',
+        table: selected.table,
+        done: 'Document inserted',
+        close: () => setInsertOpen(false),
+        after: async () => {
+          setOffset(0)
+          await loadRows(0)
+        }
+      })
+      return
+    }
     const body = {
       connection_id: activeId,
       database: activeDb,
@@ -5838,6 +6103,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }
 
   const selectCell = (rowIndex, columnIndex, extend) => {
+    if (active && active.kind === 'redis') {
+      const key = data && data.rows[rowIndex] ? data.rows[rowIndex][0] : ''
+      if (key) setRedisView(String(key))
+      return
+    }
     setSelection((current) =>
       extend && current
         ? { ...current, r1: rowIndex, c1: columnIndex }
@@ -6458,6 +6728,8 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         postgres: 'PG',
                         mysql: active.flavor === 'mariadb' ? 'MariaDB' : 'MySQL',
                         clickhouse: 'CH',
+                        mongodb: 'Mongo',
+                        redis: 'Redis',
                         sqlite: 'SQLite',
                         mcp: 'MCP',
                         http: 'HTTP'
@@ -6518,23 +6790,25 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 children: jsx(Codicon, { name: 'settings-gear' })
               })
             : null,
-          jsx(Button, {
-            key: 'ai',
-            variant: aiOpen ? 'secondary' : 'ghost',
-            size: 'sm',
-            title: 'Ask AI (read-only)',
-            onClick: () => {
-              setTab('data')
-              setAiOpen((open) => !open)
-            },
-            children: jsxs('span', {
-              className: 'flex items-center gap-1',
-              children: [
-                jsx(Codicon, { key: 'i', name: 'sparkle' }),
-                jsx('span', { key: 't', className: 'dbd-sm-inline', children: 'AI' })
-              ]
-            })
-          }),
+          active && ['mongodb', 'redis'].includes(active.kind || '')
+            ? null
+            : jsx(Button, {
+                key: 'ai',
+                variant: aiOpen ? 'secondary' : 'ghost',
+                size: 'sm',
+                title: 'Ask AI (read-only)',
+                onClick: () => {
+                  setTab('data')
+                  setAiOpen((open) => !open)
+                },
+                children: jsxs('span', {
+                  className: 'flex items-center gap-1',
+                  children: [
+                    jsx(Codicon, { key: 'i', name: 'sparkle' }),
+                    jsx('span', { key: 't', className: 'dbd-sm-inline', children: 'AI' })
+                  ]
+                })
+              }),
           jsx(Button, {
             key: 'refresh',
             variant: 'secondary',
@@ -6892,30 +7166,39 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         : 'border-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
                     ),
                     onClick: () => setTab('sql'),
-                    children: 'SQL'
+                    children:
+                      active && active.kind === 'redis'
+                        ? 'Console'
+                        : active && active.kind === 'mongodb'
+                          ? 'Query'
+                          : 'SQL'
                   }),
-                  jsx('button', {
-                    type: 'button',
-                    className: cn(
-                      '-mb-px border-b-2 px-2 py-1.5 text-[11.5px]',
-                      tab === 'schema'
-                        ? 'border-primary text-(--ui-text-primary)'
-                        : 'border-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
-                    ),
-                    onClick: () => setTab('schema'),
-                    children: 'Schema'
-                  }),
-                  jsx('button', {
-                    type: 'button',
-                    className: cn(
-                      '-mb-px border-2 border-transparent border-b-2 px-2 py-1.5 text-[11.5px]',
-                      tab === 'site'
-                        ? 'border-b-primary text-(--ui-text-primary)'
-                        : 'text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
-                    ),
-                    onClick: () => setTab('site'),
-                    children: 'Site'
-                  }),
+                  active && active.kind === 'redis'
+                    ? null
+                    : jsx('button', {
+                        type: 'button',
+                        className: cn(
+                          '-mb-px border-b-2 px-2 py-1.5 text-[11.5px]',
+                          tab === 'schema'
+                            ? 'border-primary text-(--ui-text-primary)'
+                            : 'border-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
+                        ),
+                        onClick: () => setTab('schema'),
+                        children: 'Schema'
+                      }),
+                  (active && (active.kind || 'postgres') === 'mysql')
+                    ? jsx('button', {
+                        type: 'button',
+                        className: cn(
+                          '-mb-px border-2 border-transparent border-b-2 px-2 py-1.5 text-[11.5px]',
+                          tab === 'site'
+                            ? 'border-b-primary text-(--ui-text-primary)'
+                            : 'text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
+                        ),
+                        onClick: () => setTab('site'),
+                        children: 'Site'
+                      })
+                    : null,
                   jsx('div', { className: 'flex-1' }),
                   selected
                     ? jsx('span', {
@@ -6933,7 +7216,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                       aiOpen && 'relative pr-[400px]'
                     ),
                     children: [
-                      aiOpen
+                      aiOpen && !['mongodb', 'redis'].includes((active && active.kind) || '')
                         ? jsx(AiPanel, {
                             key: 'ai',
                             connectionId: activeId,
@@ -7005,7 +7288,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                           className: 'h-7 min-w-0 flex-1 font-mono',
                                           value: filter.raw || '',
                                           placeholder:
-                                            "Pattern, e.g. post_author = 1 AND post_date > '2024-01-01'",
+                                            active && active.kind === 'mongodb'
+                                              ? 'MongoDB filter JSON, e.g. {"age": {"$gt": 18}, "name": {"$regex": "ali", "$options": "i"}}'
+                                              : active && active.kind === 'redis'
+                                                ? 'Key pattern, e.g. user:* or session:*'
+                                                : "Pattern, e.g. post_author = 1 AND post_date > '2024-01-01'",
                                           onChange: (event) =>
                                             updateFilter(index, { raw: event.target.value }),
                                           onKeyDown: (event) => {
@@ -7557,7 +7844,12 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             spellCheck: false,
                             className:
                               'h-32 w-full resize-y rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-2 font-mono text-[12px] leading-5 outline-none focus:border-primary/60',
-                            placeholder: 'select * from public.users limit 50;',
+                            placeholder:
+                              active && active.kind === 'mongodb'
+                                ? '{"collection": "users", "find": {"age": {"$gt": 18}}, "limit": 50}'
+                                : active && active.kind === 'redis'
+                                  ? 'GET user:1   ·   HGETALL user:2   ·   KEYS *   ·   SCAN 0 MATCH user:* COUNT 100'
+                                  : 'select * from public.users limit 50;',
                             onChange: (event) => {
                               setSql(event.target.value)
                               updateSuggestions(event.target.value, event.target.selectionStart)
@@ -7730,20 +8022,24 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                               ]
                             })
                           }),
-                          jsx(Button, {
-                            key: 'format',
-                            variant: 'ghost',
-                            size: 'sm',
-                            title: 'Format SQL',
-                            onClick: () => setSql(formatSqlText(sql)),
-                            children: 'Format'
-                          }),
-                          jsx(Button, {
-                            key: 'chart',
-                            variant: chartOpen ? 'secondary' : 'ghost',
-                            size: 'sm',
-                            title: 'Chart results',
-                            onClick: () => setChartOpen((open) => !open),
+                          active && ['mongodb', 'redis'].includes(active.kind || '')
+                            ? null
+                            : jsx(Button, {
+                                key: 'format',
+                                variant: 'ghost',
+                                size: 'sm',
+                                title: 'Format SQL',
+                                onClick: () => setSql(formatSqlText(sql)),
+                                children: 'Format'
+                              }),
+                          (active && active.kind === 'redis')
+                            ? null
+                            : jsx(Button, {
+                                key: 'chart',
+                                variant: chartOpen ? 'secondary' : 'ghost',
+                                size: 'sm',
+                                title: 'Chart results',
+                                onClick: () => setChartOpen((open) => !open),
                             children: jsxs('span', {
                               className: 'flex items-center gap-1',
                               children: [
@@ -8797,6 +9093,15 @@ jsxs('div', {
             tables: allTables,
             connections,
             onClose: () => setDiffOpen(false)
+          })
+        : null,
+      redisView != null
+        ? jsx(RedisValueDrawer, {
+            key: 'redis-value',
+            connectionId: activeId,
+            database: activeDb,
+            redisKey: redisView,
+            onClose: () => setRedisView(null)
           })
         : null,
       rowDetail != null && data

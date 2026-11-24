@@ -1,7 +1,7 @@
 # DB Desk — standalone
 
-A TablePlus-style database browser for **PostgreSQL, MySQL/MariaDB, ClickHouse
-and SQLite** that runs on your Mac without Hermes.
+A TablePlus-style database browser for **PostgreSQL, MySQL/MariaDB, ClickHouse,
+SQLite, MongoDB and Redis/Valkey** that runs on your Mac without Hermes.
 
 ![DB Desk standalone](docs/img/standalone.png)
 
@@ -183,8 +183,24 @@ Set `DBDESK_HOME` to override. The directory contains:
   covering the grid; clicking a row number opens a TablePlus-style **Record**
   panel on the right with each column name, type and value.
 - **New connection type cards** — the connection form shows real logos for
-  PostgreSQL, MySQL, MariaDB, ClickHouse, SQLite, MCP and HTTP; choosing a card
-  sets the default port. MariaDB is stored as MySQL with a `mariadb` flavor.
+  PostgreSQL, MySQL, MariaDB, ClickHouse, MongoDB, Redis, SQLite, MCP and HTTP;
+  choosing a card sets the default port. MariaDB is stored as MySQL with a
+  `mariadb` flavor. MongoDB has SRV and auth-source options; Redis has a
+  database index.
+- **MongoDB document browser** — collections appear in the tree; the data grid
+  pages documents, the filter panel accepts column filters or a raw Mongo
+  filter object (`{"age": {"$gt": 18}}`), and the Query tab runs JSON commands
+  (`{"collection": "users", "find": {...}, "sort": {...}, "limit": 50}` or
+  `aggregate`). Double-click a cell to edit a field, **+ Row** inserts a
+  document, and row actions delete. Nested objects/arrays show as compact JSON.
+  Reads use the sampled field list; production writes go through the approval
+  drawer.
+- **Redis / Valkey browser** — the tree lists the logical databases, the grid
+  scans keys (`key`, `type`, `ttl`, `size`) with a `MATCH` pattern filter, and
+  clicking a key opens a value drawer for strings, hashes, lists, sets, sorted
+  sets and streams. The **Console** tab runs any command (`GET`, `HGETALL`,
+  `SCAN`, ...); read-only connections refuse writes, and production writes ask
+  for approval first.
 - **Connection picker** — the app opens on a TablePlus-style list: search,
   groups, type icons, read-only/PROD badges; pick a connection, then the full
   browser opens. Right-click a connection for **Open / Edit / Clone / Test /
@@ -220,8 +236,9 @@ Set `DBDESK_HOME` to override. The directory contains:
   MCP agent through `queries_list` / `query_save` / `query_delete`.
 - Everything the plugin page does:
 
-- connections (Postgres, MySQL/MariaDB, ClickHouse, SQLite) with SSH tunnels,
-  custom tunnel commands, MCP query tools and HTTP gateways
+- connections (Postgres, MySQL/MariaDB, ClickHouse, SQLite, MongoDB,
+  Redis/Valkey) with SSH tunnels, custom tunnel commands, MCP query tools and
+  HTTP gateways
 - schema tree, typed data grid, inline editing, filters, tabs, saved views
 - SQL runner, autocomplete, formatter, history, saved queries, charts
 - structure grid (columns + indexes) with on-demand DDL, cross-connection diff,
