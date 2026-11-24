@@ -70,7 +70,7 @@ const STYLES = `
 .dbd-grid-table { border-collapse: collapse; font-size: 12px; }
 .dbd-grid-table tbody tr { height: 26px; }
 .dbd-grid-table tbody td { height: 26px; }
-.dbd-grid-table thead th { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); position: relative; }
+.dbd-grid-table thead th { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
 .dbd-col-resize {
   position: absolute; top: 0; right: 0; bottom: 0; z-index: 5;
   width: 7px; cursor: col-resize;
@@ -693,6 +693,7 @@ function Grid({
   columns,
   rows,
   emptyText,
+  showTypes = false,
   onSort,
   pk,
   editable,
@@ -851,7 +852,7 @@ function Grid({
                               })
                             : null,
                           jsx('span', { key: 'n', children: col.name }),
-                          col.type
+                          showTypes && col.type
                             ? jsx('span', {
                                 key: 't',
                                 className: 'ml-1.5 font-normal text-(--ui-text-tertiary)',
@@ -1764,7 +1765,7 @@ function RedisValueDrawer({ connectionId, database, redisKey, onClose }) {
   })
 }
 
-function ColumnsMenu({ columns, hidden, onToggle }) {
+function ColumnsMenu({ columns, hidden, onToggle, showTypes = false, onToggleTypes }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     if (!open) return undefined
@@ -1806,7 +1807,25 @@ function ColumnsMenu({ columns, hidden, onToggle }) {
                 key: 'panel',
                 className:
                   'absolute bottom-7 right-0 z-30 flex max-h-64 w-56 flex-col gap-0.5 overflow-auto rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
-                children: columns.map((column) =>
+                children: [
+                  jsxs('label', {
+                    key: 'types',
+                    className:
+                      'flex items-center gap-2 rounded-[3px] px-2 py-1 text-[11px] text-(--ui-text-secondary)',
+                    children: [
+                      jsx('input', {
+                        type: 'checkbox',
+                        checked: Boolean(showTypes),
+                        onChange: () => onToggleTypes && onToggleTypes()
+                      }),
+                      jsx('span', { children: 'Show data types' })
+                    ]
+                  }),
+                  jsx('div', {
+                    key: 'sep',
+                    className: 'mx-1 my-0.5 h-px bg-(--ui-stroke-secondary)'
+                  }),
+                  ...columns.map((column) =>
                   jsxs(
                     'label',
                     {
@@ -1823,6 +1842,7 @@ function ColumnsMenu({ columns, hidden, onToggle }) {
                     column.name
                   )
                 )
+                ]
               })
             ]
           })
@@ -5315,6 +5335,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [exporting, setExporting] = useState(false)
   const [tabs, setTabs] = useState([])
   const [activeTabId, setActiveTabId] = useState(null)
+  const [showColumnTypes, setShowColumnTypes] = useState(() => {
+    try {
+      return localStorage.getItem('dbdesk.showColumnTypes') === '1'
+    } catch {
+      return false
+    }
+  })
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const value = Number(localStorage.getItem('dbdesk.sidebarWidth'))
@@ -5493,6 +5520,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
       /* private mode */
     }
   }, [sidebarWidth])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('dbdesk.showColumnTypes', showColumnTypes ? '1' : '0')
+    } catch {
+      /* private mode */
+    }
+  }, [showColumnTypes])
 
   const startSidebarResize = (event) => {
     event.preventDefault()
@@ -7841,6 +7876,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                       selected
                         ? jsx(Grid, {
                             key: 'grid',
+                            showTypes: showColumnTypes,
                             columns: data ? data.columns : null,
                             rows: displayRows,
                             emptyText: dataLoading ? 'Loading…' : 'No rows.',
@@ -8016,7 +8052,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             key: 'columns',
                             columns: columnsMeta,
                             hidden: hiddenColumns,
-                            onToggle: toggleColumn
+                            onToggle: toggleColumn,
+                            showTypes: showColumnTypes,
+                            onToggleTypes: () => setShowColumnTypes((value) => !value)
                           }),
                           jsxs('div', {
                             key: 'more',
@@ -8467,6 +8505,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         : null,
                       jsx(Grid, {
                         key: 'grid',
+                        showTypes: showColumnTypes,
                         columns: query ? query.columns : null,
                         rows: query ? query.rows : [],
                         emptyText: queryLoading ? 'Running…' : 'Run a query to see results.',
