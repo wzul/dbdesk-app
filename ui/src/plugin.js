@@ -7051,8 +7051,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
             key: 'refresh',
             variant: 'secondary',
             size: 'sm',
-            title: 'Refresh',
-            onClick: () => setTreeVersion((v) => v + 1),
+            title: 'Refresh tree and the current view (⌘R)',
+            onClick: () => {
+              setTreeVersion((v) => v + 1)
+              if (!selected) return
+              if (tab === 'data') void loadRows(offset)
+              else if (tab === 'schema') setSchemaVersion((v) => v + 1)
+              else if (tab === 'site') setSiteVersion((v) => v + 1)
+            },
             disabled: !activeId || treeLoading,
             children: jsxs('span', {
               className: 'flex items-center gap-1',
@@ -7782,28 +7788,6 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                           selected ? 'flex' : 'hidden'
                         ),
                         children: [
-                          jsx(Button, {
-                            variant: 'ghost',
-                            size: 'sm',
-                            title: 'Reload rows from the database (⌘R)',
-                            onClick: () => void loadRows(offset),
-                            disabled: !selected || dataLoading,
-                            children: jsxs('span', {
-                              className: 'flex items-center gap-1',
-                              children: [
-                                jsx(Codicon, {
-                                  key: 'i',
-                                  name: 'refresh',
-                                  className: dataLoading ? 'animate-spin' : ''
-                                }),
-                                jsx('span', {
-                                  key: 't',
-                                  className: 'dbd-sm-inline',
-                                  children: dataLoading ? 'Loading…' : 'Reload'
-                                })
-                              ]
-                            })
-                          }),
                           jsxs('label', {
                             className: 'flex items-center gap-1 text-[11px] text-(--ui-text-tertiary)',
                             children: [
