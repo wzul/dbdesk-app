@@ -6201,7 +6201,12 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 key: 'a',
                 className: 'flex min-w-0 flex-1 items-center gap-2 text-[11px] text-(--ui-text-tertiary)',
                 children: [
-                  jsx('span', { key: 'n', className: 'min-w-0 truncate', children: active.name }),
+                  jsx('span', {
+                    key: 'n',
+                    className:
+                      'min-w-0 flex-1 truncate font-medium text-(--ui-text-secondary)',
+                    children: active.name
+                  }),
                   jsx(Button, {
                     key: 'open-db',
                     variant: 'ghost',
@@ -6232,7 +6237,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                   }),
                   jsx('span', {
                     key: 'h',
-                    className: 'hidden min-w-0 truncate font-mono opacity-80 lg:inline',
+                    className: 'hidden min-w-0 truncate font-mono opacity-80 2xl:inline',
                     children:
                       (active.kind || 'postgres') === 'sqlite'
                         ? active.dbname
@@ -6274,7 +6279,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 ]
               })
             : null,
-          jsx('div', { key: 'sp', className: 'flex-1' }),
+          active ? null : jsx('div', { key: 'sp', className: 'flex-1' }),
           onSettings
             ? jsx(Button, {
                 key: 'settings',
