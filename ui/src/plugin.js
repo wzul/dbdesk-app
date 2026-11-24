@@ -4739,6 +4739,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [hiddenColumns, setHiddenColumns] = useState([])
   const [selectedRows, setSelectedRows] = useState([])
   const [chartOpen, setChartOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [chartType, setChartType] = useState('bar')
   const [appended, setAppended] = useState(false)
   const [cellMenu, setCellMenu] = useState(null)
@@ -6636,7 +6637,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                       jsxs('div', {
                         key: 'bar',
                         className: cn(
-                          'shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
+                          'shrink-0 items-center gap-2 overflow-x-auto border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
                           selected ? 'flex' : 'hidden'
                         ),
                         children: [
@@ -6710,39 +6711,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                 children: '+ Row'
                               })
                             : null,
-                          canInsert
-                            ? jsx(Button, {
-                                key: 'import',
-                                variant: 'ghost',
-                                size: 'sm',
-                                title: 'Import CSV',
-                                onClick: () => {
-                                  if (importFileRef.current) importFileRef.current.click()
-                                },
-                                children: jsxs('span', {
-                                  className: 'flex items-center gap-1',
-                                  children: [
-                                    jsx(Codicon, { key: 'i', name: 'cloud-upload' }),
-                                    jsx('span', {
-                                      key: 't',
-                                      className: 'dbd-sm-inline',
-                                      children: 'Import'
-                                    })
-                                  ]
-                                })
-                              })
-                            : null,
-                          selected
-                            ? jsx(Button, {
-                                key: 'csv',
-                                variant: 'ghost',
-                                size: 'sm',
-                                title: 'Export the whole table as CSV (up to 50k rows)',
-                                onClick: () => void exportTable(),
-                                disabled: exporting,
-                                children: exporting ? 'Exporting…' : 'Export CSV'
-                              })
-                            : null,
+
                           jsx('span', {
                             key: 'sep-tools',
                             className:
@@ -6758,11 +6727,6 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                               className: 'flex items-center gap-1',
                               children: [
                                 jsx(Codicon, { key: 'i', name: 'bookmark' }),
-                                jsx('span', {
-                                  key: 't',
-                                  className: 'dbd-sm-inline',
-                                  children: 'Views'
-                                }),
                                 tableViews.length
                                   ? jsx('span', {
                                       key: 'n',
@@ -6773,12 +6737,6 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                               ]
                             })
                           }),
-                          jsx(CopyMenu, {
-                            key: 'copy',
-                            disabled: !selection && selectedRows.length === 0,
-                            canInsert: true,
-                            onCopy: copySelection
-                          }),
                           jsx(Button, {
                             key: 'table-sql',
                             variant: 'ghost',
@@ -6786,41 +6744,117 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             title: 'Generate SQL from the current table, filters, order and limit',
                             disabled: !selected,
                             onClick: () => void generateSql(),
-                            children: jsxs('span', {
-                              className: 'flex items-center gap-1',
-                              children: [
-                                jsx(Codicon, { key: 'i', name: 'code' }),
-                                jsx('span', {
-                                  key: 't',
-                                  className: 'dbd-sm-inline',
-                                  children: 'SQL'
-                                })
-                              ]
-                            })
-                          }),
-                          jsx(Button, {
-                            key: 'chart',
-                            variant: chartOpen ? 'secondary' : 'ghost',
-                            size: 'sm',
-                            title: 'Chart results',
-                            onClick: () => setChartOpen((open) => !open),
-                            children: jsxs('span', {
-                              className: 'flex items-center gap-1',
-                              children: [
-                                jsx(Codicon, { key: 'i', name: 'graph' }),
-                                jsx('span', {
-                                  key: 't',
-                                  className: 'dbd-sm-inline',
-                                  children: 'Chart'
-                                })
-                              ]
-                            })
+                            children: jsx(Codicon, { name: 'code' })
                           }),
                           jsx(ColumnsMenu, {
                             key: 'columns',
                             columns: columnsMeta,
                             hidden: hiddenColumns,
                             onToggle: toggleColumn
+                          }),
+                          jsxs('div', {
+                            key: 'more',
+                            className: 'relative',
+                            children: [
+                              jsx(Button, {
+                                variant: 'ghost',
+                                size: 'sm',
+                                title: 'More actions',
+                                onClick: () => setMoreOpen((open) => !open),
+                                children: jsx(Codicon, { name: 'ellipsis' })
+                              }),
+                              moreOpen
+                                ? jsxs('div', {
+                                    key: 'menu',
+                                    children: [
+                                      jsx('button', {
+                                        key: 'bg',
+                                        type: 'button',
+                                        'aria-label': 'Close actions menu',
+                                        className: 'fixed inset-0 z-20 cursor-default',
+                                        onClick: () => setMoreOpen(false)
+                                      }),
+                                      jsxs('div', {
+                                        key: 'panel',
+                                        className:
+                                          'absolute top-7 right-0 z-30 flex w-52 flex-col rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
+                                        children: [
+                                          jsx('button', {
+                                            key: 'csv',
+                                            type: 'button',
+                                            disabled: !selected || exporting,
+                                            className:
+                                              'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover) disabled:opacity-40',
+                                            onClick: () => {
+                                              setMoreOpen(false)
+                                              void exportTable()
+                                            },
+                                            children: exporting ? 'Exporting…' : 'Export table as CSV'
+                                          }),
+                                          jsx('div', {
+                                            key: 'sep1',
+                                            className: 'my-1 h-px bg-(--ui-stroke-secondary)'
+                                          }),
+                                          ...[
+                                            ['tsv', 'Copy cells (TSV)'],
+                                            ['csv', 'Copy CSV'],
+                                            ['json', 'Copy rows (JSON)'],
+                                            ['insert', 'Copy rows (INSERT)']
+                                          ].map(([format, label]) =>
+                                            jsx(
+                                              'button',
+                                              {
+                                                key: `copy-${format}`,
+                                                type: 'button',
+                                                disabled:
+                                                  !selection && selectedRows.length === 0,
+                                                className:
+                                                  'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover) disabled:opacity-40',
+                                                onClick: () => {
+                                                  setMoreOpen(false)
+                                                  copySelection(format)
+                                                },
+                                                children: label
+                                              },
+                                              format
+                                            )
+                                          ),
+                                          jsx('div', {
+                                            key: 'sep2',
+                                            className: 'my-1 h-px bg-(--ui-stroke-secondary)'
+                                          }),
+                                          jsx('button', {
+                                            key: 'chart',
+                                            type: 'button',
+                                            className:
+                                              'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover)',
+                                            onClick: () => {
+                                              setMoreOpen(false)
+                                              setChartOpen((open) => !open)
+                                            },
+                                            children: chartOpen ? 'Hide chart' : 'Show chart'
+                                          }),
+                                          canInsert
+                                            ? jsx('button', {
+                                                key: 'import',
+                                                type: 'button',
+                                                className:
+                                                  'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover)',
+                                                onClick: () => {
+                                                  setMoreOpen(false)
+                                                  if (importFileRef.current) {
+                                                    importFileRef.current.click()
+                                                  }
+                                                },
+                                                children: 'Import CSV…'
+                                              })
+                                            : null
+                                        ]
+                                      })
+                                    ]
+                                  })
+                                : null
+                            ]
                           }),
                           selectedRows.length > 0
                             ? jsx('span', {
