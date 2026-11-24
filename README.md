@@ -575,6 +575,31 @@ the AI base URL/key or read the MCP token.
 - Production writes use the existing audit + native notification path.
 - Every MCP statement is written to the audit log with action `mcp_query`.
 
+### Connection access model
+
+The connection picker is **not** an access gate. MCP clients talk to the local
+service directly, so when the server is enabled, **every saved connection is
+reachable** — even one you never opened in the picker. A tunnel or pool is
+opened on demand by the backend when a tool first uses that connection. Opening
+a table in the UI and exposing a connection to MCP are separate things.
+
+To restrict what an agent can touch:
+
+- turn the **MCP server** off when you are not using it;
+- keep connections **read-only**, or give their database user limited grants;
+- turn **Allow writes** off for an agent that should only read;
+- delete connections you do not want exposed;
+- quit DB Desk — both stdio and HTTP transports stop immediately.
+
+### Writes
+
+- A **read-only** connection only accepts `SELECT`/`WITH`/`SHOW`/`EXPLAIN`.
+- A writable connection can run writes when **Allow writes** is on.
+- Production writes are written to the audit log and send the native
+  notification. They do **not** raise the approval drawer — keep the MCP token
+  private and prefer read-only connections for agents.
+- Every MCP statement is written to the audit log with action `mcp_query`.
+
 ### Security
 
 - The HTTP endpoint binds to the app's loopback socket only.

@@ -596,7 +596,7 @@ export default function SettingsDialog({ open, onClose, version }) {
 
                 <Row
                   label="Allow writes"
-                  hint="Writable connections may run INSERT/UPDATE/DELETE; PROD writes notify."
+                  hint="Writable connections may run INSERT/UPDATE/DELETE. PROD writes are audited and notify, not approval-gated over MCP."
                 >
                   <label className="flex items-center gap-2 text-[11.5px]">
                     <input
@@ -610,6 +610,12 @@ export default function SettingsDialog({ open, onClose, version }) {
                     Enabled
                   </label>
                 </Row>
+
+                <div className="rounded-[4px] border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 text-[10.5px] leading-4 text-(--ui-text-secondary)">
+                  MCP clients can reach <strong>every saved connection</strong>, even
+                  ones you have not opened in the picker. Tunnels open on demand.
+                  Turn the server off (or quit DB Desk) to cut access.
+                </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
