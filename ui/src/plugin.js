@@ -5939,13 +5939,15 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     )
   }
 
-  const filterValid = (filter) =>
+  const filterHasValue = (filter) =>
     Boolean(filter) &&
-    filter.enabled !== false &&
     (filter.mode === 'raw'
       ? String(filter.raw || '').trim() !== ''
       : ['isnull', 'notnull'].includes(filter.op) ||
         String(filter.value === null || filter.value === undefined ? '' : filter.value) !== '')
+
+  const filterValid = (filter) =>
+    filterHasValue(filter) && filter.enabled !== false
 
   const addFilterRow = () => {
     markTabDirty()
@@ -6089,7 +6091,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const clearFilters = () => {
     markTabDirty()
-    setFilters([])
+    setFilters((current) =>
+      current.map((row) => ({ ...row, enabled: false }))
+    )
     setOffset(0)
     setFilterRevision((value) => value + 1)
   }
@@ -6905,10 +6909,300 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                       aiOpen && 'relative pr-[400px]'
                     ),
                     children: [
+                      aiOpen
+                        ? jsx(AiPanel, {
+                            key: 'ai',
+                            connectionId: activeId,
+                            database: activeDb,
+                            schema: selected ? selected.schema : '',
+                            table: selected ? selected.table : '',
+                            onClose: () => setAiOpen(false),
+                            onUseSql: (sql) => {
+                              setAiOpen(false)
+                              setTab('sql')
+                              setSql(sql)
+                            }
+                          })
+                        : null,
+                      selected && filterOpen
+                        ? jsxs('div', {
+                            key: 'filter-panel',
+                            className:
+                              'flex max-h-[240px] shrink-0 flex-col gap-1 overflow-auto border-b border-(--ui-stroke-secondary) px-2 py-1.5',
+                            children: [
+                              ...filters.map((filter, index) =>
+                                jsxs(
+                                  'div',
+                                  {
+                                    key: `filter-row-${index}`,
+                                    className: 'flex items-center gap-1.5',
+                                    children: [
+                                    jsx('input', {
+                                      key: 'on',
+                                      type: 'checkbox',
+                                      title: 'Include this filter in WHERE',
+                                      checked: filter.enabled !== false,
+                                      onChange: (event) =>
+                                        toggleFilter(index, event.target.checked)
+                                    }),
+                                    jsx('select', {
+                                      key: 'mode',
+                                      title: 'Filter column or raw SQL',
+                                      className:
+                                        'h-7 max-w-[190px] shrink-0 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
+                                      value:
+                                        filter.mode === 'raw'
+                                          ? 'raw'
+                                          : `col:${filter.column || (columnsMeta[0] && columnsMeta[0].name) || ''}`,
+                                      onChange: (event) =>
+                                        setFilterMode(index, event.target.value),
+                                      children: [
+                                        jsx(
+                                          'option',
+                                          { value: 'raw', children: 'Raw SQL' },
+                                          'raw'
+                                        ),
+                                        ...columnsMeta.map((column) =>
+                                          jsx(
+                                            'option',
+                                            {
+                                              value: `col:${column.name}`,
+                                              children: `${column.name} (${shortenType(column.type)})`
+                                            },
+                                            `col:${column.name}`
+                                          )
+                                        )
+                                      ]
+                                    }),
+                                    filter.mode === 'raw'
+                                      ? jsx(Input, {
+                                          key: 'raw',
+                                          'data-filter-input': 'true',
+                                          className: 'h-7 min-w-0 flex-1 font-mono',
+                                          value: filter.raw || '',
+                                          placeholder:
+                                            "Pattern, e.g. post_author = 1 AND post_date > '2024-01-01'",
+                                          onChange: (event) =>
+                                            updateFilter(index, { raw: event.target.value }),
+                                          onKeyDown: (event) => {
+                                            if (event.key === 'Enter') {
+                                              event.preventDefault()
+                                              applyFilter(index)
+                                            }
+                                          }
+                                        })
+                                      : [
+                                          jsx(
+                                            'select',
+                                            {
+                                              key: 'op',
+                                              title: 'Operator',
+                                              className:
+                                                'h-7 shrink-0 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
+                                              value: filter.op,
+                                              onChange: (event) =>
+                                                updateFilter(index, {
+                                                  op: event.target.value
+                                                }),
+                                              children: [
+                                                ['contains', 'contains'],
+                                                ['eq', '='],
+                                                ['neq', '≠'],
+                                                ['gt', '>'],
+                                                ['lt', '<'],
+                                                ['gte', '≥'],
+                                                ['lte', '≤'],
+                                                ['isnull', 'is null'],
+                                                ['notnull', 'is not null']
+                                              ].map(([value, label]) =>
+                                                jsx(
+                                                  'option',
+                                                  { value, children: label },
+                                                  value
+                                                )
+                                              )
+                                            }
+                                          ),
+                                          jsx(Input, {
+                                            key: 'value',
+                                            'data-filter-input': 'true',
+                                            className: 'h-7 min-w-0 flex-1',
+                                            value: filter.value || '',
+                                            disabled: ['isnull', 'notnull'].includes(
+                                              filter.op
+                                            ),
+                                            placeholder: 'value',
+                                            onChange: (event) =>
+                                              updateFilter(index, {
+                                                value: event.target.value
+                                              }),
+                                            onKeyDown: (event) => {
+                                              if (event.key === 'Enter') {
+                                                event.preventDefault()
+                                                applyFilter(index)
+                                              }
+                                            }
+                                          }),
+                                          ['contains', 'startswith'].includes(filter.op)
+                                            ? jsxs(
+                                                'label',
+                                                {
+                                                  key: 'ci',
+                                                  className:
+                                                    'flex shrink-0 items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
+                                                  children: [
+                                                    jsx('input', {
+                                                      type: 'checkbox',
+                                                      checked:
+                                                        filter.insensitive !== false,
+                                                      onChange: (event) =>
+                                                        updateFilter(index, {
+                                                          insensitive:
+                                                            event.target.checked
+                                                        })
+                                                    }),
+                                                    jsx('span', { children: 'ci' })
+                                                  ]
+                                                }
+                                              )
+                                            : null
+                                        ],
+                                    jsx(Button, {
+                                      key: 'apply',
+                                      variant: 'secondary',
+                                      size: 'xs',
+                                      disabled: !filterHasValue(filter),
+                                      onClick: () => applyFilter(index),
+                                      children: 'Apply'
+                                    }),
+                                    jsx(Button, {
+                                      key: 'rm',
+                                      variant: 'ghost',
+                                      size: 'icon-xs',
+                                      title: 'Remove filter',
+                                      onClick: () => removeFilter(index),
+                                      children: jsx(Codicon, { name: 'dash' })
+                                    }),
+                                    jsx(Button, {
+                                      key: 'add',
+                                      variant: 'ghost',
+                                      size: 'icon-xs',
+                                      title: 'Add filter',
+                                      onClick: addFilterRow,
+                                      children: jsx(Codicon, { name: 'add' })
+                                    })
+                                  ].flat()
+                                })
+                              ),
+                              !filters.length
+                                ? jsx(Button, {
+                                    key: 'empty-add',
+                                    variant: 'secondary',
+                                    size: 'sm',
+                                    className: 'self-start',
+                                    onClick: addFilterRow,
+                                    children: '+ Add filter'
+                                  })
+                                : null,
+                              jsxs(
+                                'div',
+                                {
+                                  key: 'filter-actions',
+                                  className: 'flex flex-wrap items-center gap-2 pt-0.5',
+                                  children: [
+                                  jsx(Codicon, {
+                                    key: 'i',
+                                    name: 'filter',
+                                    className: 'text-(--ui-text-tertiary)'
+                                  }),
+                                  jsx('span', {
+                                    key: 'n',
+                                    className: 'text-[10px] text-(--ui-text-tertiary)',
+                                    children: `${filters.filter(filterValid).length} active`
+                                  }),
+                                  jsx('span', { key: 'sp', className: 'flex-1' }),
+                                  jsx(Button, {
+                                    key: 'sql',
+                                    variant: 'secondary',
+                                    size: 'xs',
+                                    disabled: !filters.filter(filterValid).length,
+                                    title: 'Generate SQL from these filters',
+                                    onClick: () => void generateSql(),
+                                    children: 'SQL'
+                                  }),
+                                  jsx(Button, {
+                                    key: 'clear',
+                                    variant: 'ghost',
+                                    size: 'xs',
+                                    disabled: !filters.length,
+                                    title: 'Unapply filters and keep their values',
+                                    onClick: clearFilters,
+                                    children: 'Clear'
+                                  }),
+                                  jsx(Button, {
+                                    key: 'all',
+                                    variant: 'secondary',
+                                    size: 'xs',
+                                    disabled: !filters.some(filterHasValue),
+                                    onClick: applyAllFilters,
+                                    children: 'Apply all'
+                                  })
+                                ]
+                              })
+                            ]
+                          })
+                        : null,
+                      chartOpen && data && data.columns.length > 0
+                        ? jsx(ResultChart, {
+                            key: `chart-${data.columns.map((column) => column.name).join(',')}`,
+                            columns: data.columns,
+                            rows: data.rows,
+                            type: chartType,
+                            onType: setChartType
+                          })
+                        : null,
+                      selected
+                        ? jsx(Grid, {
+                            key: 'grid',
+                            columns: data ? data.columns : null,
+                            rows: data ? data.rows : [],
+                            emptyText: dataLoading ? 'Loading…' : 'No rows.',
+                            onSort: sortBy,
+                            pk: pkColumns.map((column) => column.name),
+                            editable: rowsEditable,
+                            onEditCell: editCell,
+                            onDeleteRow: rowsEditable ? deleteRow : undefined,
+                            selection,
+                            onSelectCell: selectCell,
+                            onSelectRow: selectRow,
+                        onOpenRow: (rowIndex) => setRowDetail(rowIndex),
+                            onOpenRow: (rowIndex) => setRowDetail(rowIndex),
+                            fkMap,
+                            onFollowFk: followFk,
+                            onLongPress: openCellMenu,
+                            hiddenColumns,
+                            selectable: true,
+                            selectedRows,
+                            onToggleRow: toggleRow,
+                            onToggleAll: toggleAllRows
+                          })
+                        : jsx('div', {
+                            key: 'none',
+                            className: 'flex flex-1 flex-col items-center justify-center gap-2 text-xs text-(--ui-text-tertiary)',
+                            children: [
+                              jsx(Codicon, { key: 'i', name: 'database', className: 'text-3xl opacity-40' }),
+                              jsx('div', {
+                                key: 't',
+                                children: active
+                                  ? 'Pick a table on the left, or switch to SQL.'
+                                  : 'Add a connection to get started.'
+                              })
+                            ]
+                          }),
                       jsxs('div', {
                         key: 'bar',
                         className: cn(
-                          'shrink-0 items-center gap-2 overflow-visible border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
+                          'shrink-0 items-center gap-2 overflow-visible border-t border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
                           selected ? 'flex' : 'hidden'
                         ),
                         children: [
@@ -7221,295 +7515,6 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                           })
                         ]
                       }),
-                      aiOpen
-                        ? jsx(AiPanel, {
-                            key: 'ai',
-                            connectionId: activeId,
-                            database: activeDb,
-                            schema: selected ? selected.schema : '',
-                            table: selected ? selected.table : '',
-                            onClose: () => setAiOpen(false),
-                            onUseSql: (sql) => {
-                              setAiOpen(false)
-                              setTab('sql')
-                              setSql(sql)
-                            }
-                          })
-                        : null,
-                      selected && filterOpen
-                        ? jsxs('div', {
-                            key: 'filter-panel',
-                            className:
-                              'flex max-h-[240px] shrink-0 flex-col gap-1 overflow-auto border-b border-(--ui-stroke-secondary) px-2 py-1.5',
-                            children: [
-                              ...filters.map((filter, index) =>
-                                jsxs(
-                                  'div',
-                                  {
-                                    key: `filter-row-${index}`,
-                                    className: 'flex items-center gap-1.5',
-                                    children: [
-                                    jsx('input', {
-                                      key: 'on',
-                                      type: 'checkbox',
-                                      title: 'Include this filter in WHERE',
-                                      checked: filter.enabled !== false,
-                                      onChange: (event) =>
-                                        toggleFilter(index, event.target.checked)
-                                    }),
-                                    jsx('select', {
-                                      key: 'mode',
-                                      title: 'Filter column or raw SQL',
-                                      className:
-                                        'h-7 max-w-[190px] shrink-0 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
-                                      value:
-                                        filter.mode === 'raw'
-                                          ? 'raw'
-                                          : `col:${filter.column || (columnsMeta[0] && columnsMeta[0].name) || ''}`,
-                                      onChange: (event) =>
-                                        setFilterMode(index, event.target.value),
-                                      children: [
-                                        jsx(
-                                          'option',
-                                          { value: 'raw', children: 'Raw SQL' },
-                                          'raw'
-                                        ),
-                                        ...columnsMeta.map((column) =>
-                                          jsx(
-                                            'option',
-                                            {
-                                              value: `col:${column.name}`,
-                                              children: `${column.name} (${shortenType(column.type)})`
-                                            },
-                                            `col:${column.name}`
-                                          )
-                                        )
-                                      ]
-                                    }),
-                                    filter.mode === 'raw'
-                                      ? jsx(Input, {
-                                          key: 'raw',
-                                          'data-filter-input': 'true',
-                                          className: 'h-7 min-w-0 flex-1 font-mono',
-                                          value: filter.raw || '',
-                                          placeholder:
-                                            "Pattern, e.g. post_author = 1 AND post_date > '2024-01-01'",
-                                          onChange: (event) =>
-                                            updateFilter(index, { raw: event.target.value }),
-                                          onKeyDown: (event) => {
-                                            if (event.key === 'Enter') {
-                                              event.preventDefault()
-                                              applyFilter(index)
-                                            }
-                                          }
-                                        })
-                                      : [
-                                          jsx(
-                                            'select',
-                                            {
-                                              key: 'op',
-                                              title: 'Operator',
-                                              className:
-                                                'h-7 shrink-0 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-1.5 text-[11px]',
-                                              value: filter.op,
-                                              onChange: (event) =>
-                                                updateFilter(index, {
-                                                  op: event.target.value
-                                                }),
-                                              children: [
-                                                ['contains', 'contains'],
-                                                ['eq', '='],
-                                                ['neq', '≠'],
-                                                ['gt', '>'],
-                                                ['lt', '<'],
-                                                ['gte', '≥'],
-                                                ['lte', '≤'],
-                                                ['isnull', 'is null'],
-                                                ['notnull', 'is not null']
-                                              ].map(([value, label]) =>
-                                                jsx(
-                                                  'option',
-                                                  { value, children: label },
-                                                  value
-                                                )
-                                              )
-                                            }
-                                          ),
-                                          jsx(Input, {
-                                            key: 'value',
-                                            'data-filter-input': 'true',
-                                            className: 'h-7 min-w-0 flex-1',
-                                            value: filter.value || '',
-                                            disabled: ['isnull', 'notnull'].includes(
-                                              filter.op
-                                            ),
-                                            placeholder: 'value',
-                                            onChange: (event) =>
-                                              updateFilter(index, {
-                                                value: event.target.value
-                                              }),
-                                            onKeyDown: (event) => {
-                                              if (event.key === 'Enter') {
-                                                event.preventDefault()
-                                                applyFilter(index)
-                                              }
-                                            }
-                                          }),
-                                          ['contains', 'startswith'].includes(filter.op)
-                                            ? jsxs(
-                                                'label',
-                                                {
-                                                  key: 'ci',
-                                                  className:
-                                                    'flex shrink-0 items-center gap-1 text-[10px] text-(--ui-text-tertiary)',
-                                                  children: [
-                                                    jsx('input', {
-                                                      type: 'checkbox',
-                                                      checked:
-                                                        filter.insensitive !== false,
-                                                      onChange: (event) =>
-                                                        updateFilter(index, {
-                                                          insensitive:
-                                                            event.target.checked
-                                                        })
-                                                    }),
-                                                    jsx('span', { children: 'ci' })
-                                                  ]
-                                                }
-                                              )
-                                            : null
-                                        ],
-                                    jsx(Button, {
-                                      key: 'apply',
-                                      variant: 'secondary',
-                                      size: 'xs',
-                                      disabled: !filterValid(filter),
-                                      onClick: () => applyFilter(index),
-                                      children: 'Apply'
-                                    }),
-                                    jsx(Button, {
-                                      key: 'rm',
-                                      variant: 'ghost',
-                                      size: 'icon-xs',
-                                      title: 'Remove filter',
-                                      onClick: () => removeFilter(index),
-                                      children: jsx(Codicon, { name: 'dash' })
-                                    }),
-                                    jsx(Button, {
-                                      key: 'add',
-                                      variant: 'ghost',
-                                      size: 'icon-xs',
-                                      title: 'Add filter',
-                                      onClick: addFilterRow,
-                                      children: jsx(Codicon, { name: 'add' })
-                                    })
-                                  ].flat()
-                                })
-                              ),
-                              !filters.length
-                                ? jsx(Button, {
-                                    key: 'empty-add',
-                                    variant: 'secondary',
-                                    size: 'sm',
-                                    className: 'self-start',
-                                    onClick: addFilterRow,
-                                    children: '+ Add filter'
-                                  })
-                                : null,
-                              jsxs(
-                                'div',
-                                {
-                                  key: 'filter-actions',
-                                  className: 'flex flex-wrap items-center gap-2 pt-0.5',
-                                  children: [
-                                  jsx(Codicon, {
-                                    key: 'i',
-                                    name: 'filter',
-                                    className: 'text-(--ui-text-tertiary)'
-                                  }),
-                                  jsx('span', {
-                                    key: 'n',
-                                    className: 'text-[10px] text-(--ui-text-tertiary)',
-                                    children: `${filters.filter(filterValid).length} active`
-                                  }),
-                                  jsx('span', { key: 'sp', className: 'flex-1' }),
-                                  jsx(Button, {
-                                    key: 'sql',
-                                    variant: 'secondary',
-                                    size: 'xs',
-                                    disabled: !filters.filter(filterValid).length,
-                                    title: 'Generate SQL from these filters',
-                                    onClick: () => void generateSql(),
-                                    children: 'SQL'
-                                  }),
-                                  jsx(Button, {
-                                    key: 'clear',
-                                    variant: 'ghost',
-                                    size: 'xs',
-                                    disabled: !filters.length,
-                                    onClick: clearFilters,
-                                    children: 'Clear'
-                                  }),
-                                  jsx(Button, {
-                                    key: 'all',
-                                    variant: 'secondary',
-                                    size: 'xs',
-                                    disabled: !filters.filter(filterValid).length,
-                                    onClick: applyAllFilters,
-                                    children: 'Apply all'
-                                  })
-                                ]
-                              })
-                            ]
-                          })
-                        : null,
-                      chartOpen && data && data.columns.length > 0
-                        ? jsx(ResultChart, {
-                            key: `chart-${data.columns.map((column) => column.name).join(',')}`,
-                            columns: data.columns,
-                            rows: data.rows,
-                            type: chartType,
-                            onType: setChartType
-                          })
-                        : null,
-                      selected
-                        ? jsx(Grid, {
-                            key: 'grid',
-                            columns: data ? data.columns : null,
-                            rows: data ? data.rows : [],
-                            emptyText: dataLoading ? 'Loading…' : 'No rows.',
-                            onSort: sortBy,
-                            pk: pkColumns.map((column) => column.name),
-                            editable: rowsEditable,
-                            onEditCell: editCell,
-                            onDeleteRow: rowsEditable ? deleteRow : undefined,
-                            selection,
-                            onSelectCell: selectCell,
-                            onSelectRow: selectRow,
-                        onOpenRow: (rowIndex) => setRowDetail(rowIndex),
-                            onOpenRow: (rowIndex) => setRowDetail(rowIndex),
-                            fkMap,
-                            onFollowFk: followFk,
-                            onLongPress: openCellMenu,
-                            hiddenColumns,
-                            selectable: true,
-                            selectedRows,
-                            onToggleRow: toggleRow,
-                            onToggleAll: toggleAllRows
-                          })
-                        : jsx('div', {
-                            key: 'none',
-                            className: 'flex flex-1 flex-col items-center justify-center gap-2 text-xs text-(--ui-text-tertiary)',
-                            children: [
-                              jsx(Codicon, { key: 'i', name: 'database', className: 'text-3xl opacity-40' }),
-                              jsx('div', {
-                                key: 't',
-                                children: active
-                                  ? 'Pick a table on the left, or switch to SQL.'
-                                  : 'Add a connection to get started.'
-                              })
-                            ]
-                          })
                     ]
                   })
                 : tab === 'sql'

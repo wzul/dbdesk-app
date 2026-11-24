@@ -207,11 +207,14 @@ Set `DBDESK_HOME` to override. The directory contains:
   extra (auto-increment/identity), foreign key and comment, plus an index grid
   (`index_name`, algorithm, unique, column). DDL is still available from the
   **DDL** button but no longer the default view.
+- **Bottom data toolbar** — Run, Limit, Filter, row metadata, view/SQL/column
+  actions, More menu and pagination sit under the grid, like TablePlus.
 - **TablePlus-style filters** — each row has a checkbox, a **Raw SQL / column**
   picker, a full-width pattern, **Apply**, **−** and **+**. Raw SQL rows append
   a WHERE expression; column rows keep the operator/value controls. **Apply
-  all** enables every valid row, **Clear** removes them, and **SQL** turns the
-  active filters into a SELECT. Saved views keep the flags.
+  all** enables every valid row, **Clear** unapplies the filters but keeps
+  their values (press Apply to re-enable), and **SQL** turns the active filters
+  into a SELECT. Saved views keep the flags.
 - **Saved query buttons** — the SQL toolbar has **Save** (name + current SQL)
   and **Saved** (opens the snippet list); the same snippets are available to the
   MCP agent through `queries_list` / `query_save` / `query_delete`.
