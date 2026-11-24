@@ -42,6 +42,30 @@ function errText(error) {
 const STYLES = `
 .dbd-app { font-size: 12px; }
 .dbd-app input, .dbd-app select, .dbd-app textarea { border-radius: 3px; }
+/* Flat, high-contrast selects: the native macOS popup button draws a glossy
+ * gradient that is hard to read against our toolbar backgrounds. */
+.dbd-app select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--background, #fff);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 3.25L4 5.75L6.5 3.25' fill='none' stroke='%2364748b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 8px 8px;
+  padding-right: 20px;
+  color: var(--ui-text-primary, #0f172a);
+  border-color: var(--ui-stroke-secondary, #e2e8f0);
+  cursor: pointer;
+  transition: border-color .12s ease, background-color .12s ease;
+}
+.dbd-app select:hover { border-color: var(--ui-stroke-strong, #cbd5e1); background-color: var(--ui-bg-secondary, #f8fafc); }
+.dbd-app select:focus { outline: none; border-color: var(--primary, #2563eb); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #2563eb) 22%, transparent); }
+.dark .dbd-app select {
+  background-color: var(--ui-bg-chrome, #0f1115);
+  color: var(--ui-text-primary, #e8ecf3);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 3.25L4 5.75L6.5 3.25' fill='none' stroke='%2394a3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.dark .dbd-app select:hover { background-color: var(--ui-bg-quaternary, #1a1f2b); }
 .dbd-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .dbd-grid-table { border-collapse: collapse; font-size: 12px; }
 .dbd-grid-table tbody tr { height: 26px; }
