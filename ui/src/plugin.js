@@ -4663,6 +4663,85 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
 }
 
 
+
+const CONNECTION_META = {
+  postgres: { icon: 'database', tone: 'text-sky-600 dark:text-sky-400' },
+  mysql: { icon: 'database', tone: 'text-amber-600 dark:text-amber-400' },
+  clickhouse: { icon: 'graph', tone: 'text-yellow-600 dark:text-yellow-400' },
+  sqlite: { icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
+  mongodb: { icon: 'database', tone: 'text-green-600 dark:text-green-400' },
+  redis: { icon: 'key', tone: 'text-rose-600 dark:text-rose-400' },
+  mcp: { icon: 'plug', tone: 'text-purple-600 dark:text-purple-400' },
+  http: { icon: 'cloud', tone: 'text-blue-600 dark:text-blue-400' }
+}
+
+function ConnectionRail({ connections, openIds, activeId, onSwitch, onAdd, onRemove, onOpenDatabase }) {
+  const items = openIds
+    .map((id) => connections.find((connection) => connection.id === id))
+    .filter(Boolean)
+  return jsxs('div', {
+    className:
+      'flex w-[64px] shrink-0 flex-col overflow-y-auto border-r border-(--ui-stroke-secondary) bg-(--ui-bg-sidebar) py-1',
+    children: [
+      onOpenDatabase
+        ? jsx('button', {
+            type: 'button',
+            title: 'Open database…',
+            onClick: onOpenDatabase,
+            className:
+              'mx-auto mb-1 flex size-8 items-center justify-center rounded-[6px] border border-(--ui-stroke-secondary) bg-background text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary) hover:text-(--ui-text-primary)',
+            children: jsx(Codicon, { name: 'database' })
+          })
+        : null,
+      ...items.map((connection) => {
+        const meta = CONNECTION_META[connection.kind] || CONNECTION_META.postgres
+        return jsxs(
+          'button',
+          {
+            type: 'button',
+            title: `${connection.name}\n${connection.kind} · ${connection.dbname || ''}\nRight-click to remove from the rail`,
+            onClick: () => onSwitch(connection.id),
+            onContextMenu: (event) => {
+              event.preventDefault()
+              onRemove(connection.id)
+            },
+            className: cn(
+              'flex w-full flex-col items-center gap-1 border-l-2 px-1 py-2 text-center',
+              connection.id === activeId
+                ? 'border-primary bg-background text-(--ui-text-primary)'
+                : 'border-transparent text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)'
+            ),
+            children: [
+              jsx('span', {
+                className:
+                  'flex size-8 items-center justify-center rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary)',
+                children: jsx(Codicon, {
+                  name: meta.icon,
+                  className: cn('text-base', meta.tone)
+                })
+              }),
+              jsx('span', {
+                className: 'line-clamp-2 w-full text-[9px] leading-3 break-words',
+                children: connection.name
+              })
+            ]
+          },
+          connection.id
+        )
+      }),
+      jsx('span', { className: 'flex-1' }),
+      jsx('button', {
+        type: 'button',
+        title: 'Open another connection',
+        onClick: onAdd,
+        className:
+          'mx-auto mb-1 flex size-8 items-center justify-center rounded-[6px] border border-dashed border-(--ui-stroke-secondary) text-(--ui-text-tertiary) hover:bg-(--ui-bg-secondary) hover:text-(--ui-text-primary)',
+        children: jsx(Codicon, { name: 'add' })
+      })
+    ]
+  })
+}
+
 export function DbDesk({ onHome, startNew = false, editConnectionId = '', initialDraft = null, onSettings } = {}) {
   const [connections, setConnections] = useState([])
   const [loaded, setLoaded] = useState(false)
@@ -4696,6 +4775,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [treeOpen, setTreeOpen] = useState(false)
   const [pending, setPending] = useState(null)
   const [aiOpen, setAiOpen] = useState(false)
+  const [openIds, setOpenIds] = useState(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem('dbdesk.openConnections') || '[]')
+      return Array.isArray(value) ? value : []
+    } catch {
+      return []
+    }
+  })
   const editHandled = useRef(false)
 
   useEffect(() => {
@@ -4768,6 +4855,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [saveQueryName, setSaveQueryName] = useState('')
   const [generatedSql, setGeneratedSql] = useState('')
   const [sqlGenOpen, setSqlGenOpen] = useState(false)
+  const [openDbOpen, setOpenDbOpen] = useState(false)
+  const [openDbQuery, setOpenDbQuery] = useState('')
+  const [openDbSelected, setOpenDbSelected] = useState('')
   const [editor, setEditor] = useState(null)
   const [insertOpen, setInsertOpen] = useState(false)
 
@@ -4820,7 +4910,19 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   useEffect(() => {
     writeActive(activeId)
+    if (!activeId) return
+    setOpenIds((current) =>
+      current.includes(activeId) ? current : [...current, activeId]
+    )
   }, [activeId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('dbdesk.openConnections', JSON.stringify(openIds))
+    } catch {
+      /* private mode */
+    }
+  }, [openIds])
 
   useEffect(() => {
     setDatabases([])
@@ -5982,6 +6084,27 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
   }
 
+  const switchConnection = (id) => {
+    setActiveId(id)
+    setSelected(null)
+    setData(null)
+    setEditor(null)
+    setInsertOpen(false)
+    setTreeOpen(false)
+    setTabs([])
+    setActiveTabId(null)
+    setSelection(null)
+  }
+
+  const removeOpenConnection = (id) => {
+    const remaining = openIds.filter((value) => value !== id)
+    setOpenIds(remaining)
+    if (id === activeId) {
+      if (remaining.length) switchConnection(remaining[0])
+      else onHome()
+    }
+  }
+
   const groupedConnections = useMemo(() => {
     const map = new Map()
     for (const conn of connections) {
@@ -6079,6 +6202,19 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 className: 'flex min-w-0 flex-1 items-center gap-2 text-[11px] text-(--ui-text-tertiary)',
                 children: [
                   jsx('span', { key: 'n', className: 'min-w-0 truncate', children: active.name }),
+                  jsx(Button, {
+                    key: 'open-db',
+                    variant: 'ghost',
+                    size: 'icon-xs',
+                    title: 'Open database…',
+                    onClick: () => {
+                      setOpenDbQuery('')
+                      setOpenDbSelected(activeDb)
+                      setOpenDbOpen(true)
+                      setDbVersion((value) => value + 1)
+                    },
+                    children: jsx(Codicon, { name: 'database' })
+                  }),
                   jsx(Badge, {
                     key: 'kind',
                     variant: 'muted',
@@ -6284,101 +6420,29 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 onClick: () => setTreeOpen(false)
               })
             : null,
+          jsx(ConnectionRail, {
+            key: 'rail',
+            connections,
+            openIds,
+            activeId,
+            onSwitch: switchConnection,
+            onAdd: onHome,
+            onRemove: removeOpenConnection,
+            onOpenDatabase: activeId
+              ? () => {
+                  setOpenDbQuery('')
+                  setOpenDbSelected(activeDb)
+                  setOpenDbOpen(true)
+                  setDbVersion((value) => value + 1)
+                }
+              : null
+          }),
           jsxs('aside', {
             key: 'side',
             'data-open': treeOpen ? 'true' : 'false',
             className:
               'dbd-sidebar flex shrink-0 flex-col border-r border-(--ui-stroke-secondary) bg-(--ui-bg-sidebar) shadow-xl',
             children: [
-              jsxs('div', {
-                key: 'conns',
-                className: 'flex flex-col gap-0.5 border-b border-(--ui-stroke-secondary) p-1.5',
-                children: [
-                  jsxs('div', {
-                    key: 'h',
-                    className: 'flex items-center justify-between px-1 py-0.5',
-                    children: [
-                      jsx('span', {
-                        className: 'text-[10px] font-semibold tracking-wide text-(--ui-text-tertiary) uppercase',
-                        children: 'Connections'
-                      }),
-                      jsx('button', {
-                        type: 'button',
-                        className: 'text-(--ui-text-tertiary) hover:text-(--ui-text-primary)',
-                        title: 'New connection',
-                        onClick: () => setDraft(emptyDraft()),
-                        children: jsx(Codicon, { name: 'add' })
-                      })
-                    ]
-                  }),
-                  ...(connections.length === 0 && loaded
-                    ? [
-                        jsx('div', {
-                          key: 'none',
-                          className: 'px-1 py-1 text-[11px] text-(--ui-text-tertiary)',
-                          children: 'No connections yet.'
-                        })
-                      ]
-                    : []),
-                  ...groupedConnections.flatMap(([group, list]) => [
-                    groupedConnections.length > 1 || group !== 'Ungrouped'
-                      ? jsx(
-                          'div',
-                          {
-                            className:
-                              'px-1 pt-1 text-[9.5px] font-semibold tracking-wide text-(--ui-text-tertiary) uppercase',
-                            children: group
-                          },
-                          `g:${group}`
-                        )
-                      : null,
-                    ...list.map((conn) =>
-                      jsx(
-                        'button',
-                        {
-                          type: 'button',
-                          className: cn(
-                            'flex w-full items-center gap-1.5 rounded-[3px] border-l-2 border-transparent px-1.5 py-1 text-left text-[11.5px]',
-                            conn.id === activeId
-                              ? 'border-primary bg-(--ui-bg-quaternary) text-(--ui-text-primary)'
-                              : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)'
-                          ),
-                          onClick: () => {
-                            setActiveId(conn.id)
-                            setSelected(null)
-                            setData(null)
-                            setEditor(null)
-                            setInsertOpen(false)
-                            setTreeOpen(false)
-                            setTabs([])
-                            setActiveTabId(null)
-                            setSelection(null)
-                          },
-                          children: [
-                            jsx(Codicon, {
-                              key: 'd',
-                              name: 'database',
-                              className: 'shrink-0 opacity-70'
-                            }),
-                            jsxs('span', {
-                              key: 'n',
-                              className: 'flex min-w-0 flex-1 flex-col',
-                              children: [
-                                jsx('span', { className: 'truncate', children: conn.name }),
-                                jsx('span', {
-                                  className: 'truncate font-mono text-[10px] text-(--ui-text-tertiary)',
-                                  children: conn.dbname
-                                })
-                              ]
-                            })
-                          ]
-                        },
-                        conn.id
-                      )
-                    )
-                  ]),
-                ]
-              }),
               databases.length > 1
                 ? jsxs('div', {
                     key: 'db',
@@ -8182,6 +8246,125 @@ jsxs('div', {
                     className:
                       'min-h-0 flex-1 overflow-auto p-3 font-mono text-[12px] leading-6 whitespace-pre',
                     children: generatedSql
+                  })
+                ]
+              })
+            ]
+          })
+        : null,
+      openDbOpen
+        ? jsxs('div', {
+            key: 'open-db',
+            className: 'fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4',
+            children: [
+              jsxs('div', {
+                key: 'panel',
+                className:
+                  'flex h-[min(560px,82vh)] w-full max-w-[480px] flex-col overflow-hidden rounded-[8px] border border-(--ui-stroke-secondary) bg-background shadow-2xl',
+                children: [
+                  jsxs('div', {
+                    key: 'head',
+                    className:
+                      'flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2.5',
+                    children: [
+                      jsx(Codicon, { key: 'i', name: 'database', className: 'text-primary' }),
+                      jsx('span', {
+                        key: 't',
+                        className: 'text-[13px] font-semibold',
+                        children: 'Open database'
+                      }),
+                      jsx('span', { key: 'sp', className: 'flex-1' }),
+                      jsx(Button, {
+                        key: 'close',
+                        variant: 'ghost',
+                        size: 'sm',
+                        title: 'Close',
+                        onClick: () => setOpenDbOpen(false),
+                        children: jsx(Codicon, { name: 'close' })
+                      })
+                    ]
+                  }),
+                  jsx('div', {
+                    key: 'search',
+                    className: 'shrink-0 p-3 pb-2',
+                    children: jsx('input', {
+                      autoFocus: true,
+                      value: openDbQuery,
+                      placeholder: 'Search for database…',
+                      onChange: (event) => setOpenDbQuery(event.target.value),
+                      className:
+                        'h-9 w-full rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2.5 text-[12px] outline-none focus:border-primary/60'
+                    })
+                  }),
+                  jsx('div', {
+                    key: 'list',
+                    className: 'min-h-0 flex-1 overflow-auto px-2 pb-2',
+                    children: databases.filter((db) =>
+                      `${db.name} ${db.label || ''}`
+                        .toLowerCase()
+                        .includes(openDbQuery.trim().toLowerCase())
+                    ).map((db) =>
+                      jsxs(
+                        'button',
+                        {
+                          type: 'button',
+                          onClick: () => setOpenDbSelected(db.name),
+                          onDoubleClick: () => {
+                            pickDb(db.name)
+                            setOpenDbOpen(false)
+                          },
+                          className: cn(
+                            'flex w-full items-center gap-2 rounded-[4px] px-2 py-2 text-left text-[12px]',
+                            openDbSelected === db.name
+                              ? 'bg-primary/10 text-(--ui-text-primary)'
+                              : 'text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)'
+                          ),
+                          children: [
+                            jsx(Codicon, { key: 'i', name: 'database', className: 'shrink-0 opacity-60' }),
+                            jsx('span', { key: 'n', className: 'min-w-0 flex-1 truncate font-mono', children: db.name }),
+                            db.label
+                              ? jsx('span', { key: 'l', className: 'truncate text-[10.5px] text-(--ui-text-tertiary)', children: db.label })
+                              : null
+                          ]
+                        },
+                        db.name
+                      )
+                    )
+                  }),
+                  jsxs('div', {
+                    key: 'actions',
+                    className:
+                      'flex shrink-0 items-center gap-2 border-t border-(--ui-stroke-secondary) px-4 py-2.5',
+                    children: [
+                      jsx(Button, {
+                        key: 'cancel',
+                        variant: 'ghost',
+                        size: 'sm',
+                        onClick: () => setOpenDbOpen(false),
+                        children: 'Cancel'
+                      }),
+                      jsx('span', { key: 'sp', className: 'flex-1' }),
+                      jsx(Button, {
+                        key: 'new',
+                        variant: 'secondary',
+                        size: 'sm',
+                        onClick: () => {
+                          setOpenDbOpen(false)
+                          setDraft(emptyDraft())
+                        },
+                        children: 'New…'
+                      }),
+                      jsx(Button, {
+                        key: 'open',
+                        size: 'sm',
+                        disabled: !openDbSelected,
+                        onClick: () => {
+                          pickDb(openDbSelected)
+                          setOpenDbOpen(false)
+                        },
+                        children: 'Open'
+                      })
+                    ]
                   })
                 ]
               })

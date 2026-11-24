@@ -68,7 +68,7 @@ MYSQL = shutil.which("mysql") or shutil.which("mariadb") or "/usr/bin/mysql"
 NULL_SENTINEL = "\u2400"
 QUERY_TIMEOUT = 30
 MAX_ROWS = 1000
-KINDS = {"postgres", "mysql", "clickhouse", "mcp", "http", "sqlite"}
+KINDS = {"postgres", "mysql", "clickhouse", "mongodb", "redis", "mcp", "http", "sqlite"}
 _SSH_TUNNELS: dict[str, dict[str, Any]] = {}
 
 
@@ -665,6 +665,22 @@ try:  # pure Python, works everywhere
     import pymysql
 except Exception:  # pragma: no cover - the mysql CLI path still works
     pymysql = None
+
+try:  # MongoDB driver
+    import pymongo
+    from bson import ObjectId
+    from bson.binary import Binary
+    from bson.decimal128 import Decimal128
+except Exception:  # pragma: no cover - Mongo connections show a clear error
+    pymongo = None
+    ObjectId = None
+    Binary = None
+    Decimal128 = None
+
+try:  # Redis / Valkey driver
+    import redis as redis_driver
+except Exception:  # pragma: no cover
+    redis_driver = None
 
 try:  # bundled CA store (PyInstaller builds have no system OpenSSL paths)
     import certifi
@@ -2127,6 +2143,8 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
         return []
     if kind == "sqlite":
         return _sqlite_indexes(conn, schema, table)
+    if kind == "mongodb":
+        return _mongo_indexes(conn, schema, table)
     if kind == "mysql":
         rows = _my_rows_sql(
             conn,
@@ -2184,7 +2202,7 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
 
 def _activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
     kind = _kind(conn)
-    if kind in ("mcp", "http", "sqlite"):
+    if kind in ("mcp", "http", "sqlite", "mongodb", "redis"):
         return []
     if kind == "mysql":
         out = _my_run(
@@ -3260,6 +3278,10 @@ def _test(conn: dict[str, Any]) -> dict[str, Any]:
         return _http_test(conn)
     if kind == "sqlite":
         return _sqlite_test(conn)
+    if kind == "mongodb":
+        return _mongo_test(conn)
+    if kind == "redis":
+        return _redis_test(conn)
     if kind == "mysql":
         return _my_test(conn)
     if kind == "clickhouse":
@@ -3275,6 +3297,10 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
         return _http_tree(conn)
     if kind == "sqlite":
         return _sqlite_tree(conn)
+    if kind == "mongodb":
+        return _mongo_tree(conn)
+    if kind == "redis":
+        return []
     if kind == "mysql":
         return _my_tree(conn)
     if kind == "clickhouse":
@@ -3290,6 +3316,8 @@ def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[st
         return _http_columns(conn, schema, table)
     if kind == "sqlite":
         return _sqlite_columns(conn, schema, table)
+    if kind == "mongodb":
+        return _mongo_columns(conn, schema, table)
     if kind == "mysql":
         return _my_columns(conn, schema, table)
     if kind == "clickhouse":
@@ -4146,6 +4174,13 @@ def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
             "ssh_host", "ssh_user", "ssh_port", "ssh_key",
             "tunnel_command", "tunnel_env", "tunnel_timeout",
         ]
+    if kind in ("mongodb", "redis"):
+        fields += ["host", "port", "user", "sslmode"]
+        fields += ["ssh_host", "ssh_user", "ssh_port", "ssh_key", "tunnel_command", "tunnel_env", "tunnel_timeout"]
+        if kind == "mongodb":
+            fields += ["mongo_srv", "auth_source"]
+        else:
+            fields += ["redis_db"]
     if kind == "mcp":
         fields += [
             "mcp_url", "mcp_server", "mcp_tool", "mcp_sql_arg",
@@ -4328,6 +4363,9 @@ def _record_from_bundle(item: dict[str, Any], record_id: str) -> dict[str, Any]:
         "tunnel_command": str(item.get("tunnel_command") or ""),
         "tunnel_env": str(item.get("tunnel_env") or ""),
         "tunnel_timeout": int(item.get("tunnel_timeout") or 25),
+        "mongo_srv": bool(item.get("mongo_srv", False)),
+        "auth_source": str(item.get("auth_source") or "admin"),
+        "redis_db": int(item.get("redis_db") or 0),
         "db_labels": {
             str(key)[:128]: str(value)[:80]
             for key, value in (item.get("db_labels") or {}).items()
@@ -4372,7 +4410,10 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     port = (
         0
         if kind in ("mcp", "http", "sqlite")
-        else int(pick("port", {"postgres": 5432, "mysql": 3306, "clickhouse": 8123}[kind]))
+        else int(pick("port", {
+            "postgres": 5432, "mysql": 3306, "clickhouse": 8123,
+            "mongodb": 27017, "redis": 6379,
+        }[kind]))
     )
     dbname = (body.get("dbname") or (existing or {}).get("dbname") or "").strip()
     user = (body.get("user") or (existing or {}).get("user") or "").strip()
@@ -4383,6 +4424,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     if not user:
         user = {
             "postgres": "postgres", "mysql": "root", "clickhouse": "default",
+            "mongodb": "", "redis": "",
             "mcp": "mcp", "http": "http", "sqlite": "sqlite",
         }[kind]
     mcp_url = str(pick("mcp_url", "")).strip()
@@ -4488,6 +4530,9 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "tunnel_command": "" if kind == "sqlite" else str(pick("tunnel_command", "")).strip(),
         "tunnel_env": "" if kind == "sqlite" else str(pick("tunnel_env", "")),
         "tunnel_timeout": max(5, min(int(pick("tunnel_timeout", 25)), 120)),
+        "mongo_srv": bool(pick("mongo_srv", False)),
+        "auth_source": str(pick("auth_source", "admin")).strip() or "admin",
+        "redis_db": max(0, min(int(pick("redis_db", 0)), 4095)),
         "db_labels": {
             str(k)[:128]: str(v)[:80] for k, v in (labels or {}).items() if str(v).strip()
         },
