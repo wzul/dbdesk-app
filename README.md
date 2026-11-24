@@ -170,7 +170,7 @@ Set `DBDESK_HOME` to override. The directory contains:
   rows, CSV, SQL and the AI agent. Disabled by default; one toggle generates a
   bearer token.
 - **Keyboard shortcuts** — **⌘F** filter/search, **⌘R** refresh, **⌘⏎** run,
-  **⌘S** save SQL, **⌘2 / ⌘T** new SQL tab, **⌘1 / 3 / 4** Data/Schema/Site,
+  **⌘S** save SQL, **⌘2 / ⌘T** new SQL tab, **⌘1 / 3 / 4** Data/Structure/Site,
   **⌘+ / ⌘− / ⌘0** zoom,
   **⌘/** shortcut list, **⌘,** settings.
 - **Remembers window size and position** across launches (saved to
@@ -246,7 +246,7 @@ Set `DBDESK_HOME` to override. The directory contains:
   encrypted (scrypt + AES-GCM). On the new Mac, **Restore** previews the file,
   creates the connections, remaps views/queries to the new ids and leaves
   passwords blank when they were not included.
-- **Schema structure grid** — the Schema tab shows a TablePlus-style structure
+- **Structure grid** — the Structure tab (bottom switcher) shows a TablePlus-style structure
   grid: `#`, column, data type, character set, collation, nullable, default,
   extra (auto-increment/identity), foreign key and comment, plus an index grid
   (`index_name`, algorithm, unique, column). DDL is still available from the

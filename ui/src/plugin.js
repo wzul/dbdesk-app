@@ -91,6 +91,14 @@ const STYLES = `
   background-image: linear-gradient(var(--ui-bg-sidebar, transparent), var(--ui-bg-sidebar, transparent));
 }
 .dbd-sidebar[data-open="true"] { transform: translateX(0); }
+.dbd-sidebar-resize {
+  position: absolute; top: 0; bottom: 0; right: -3px; z-index: 30;
+  width: 6px; cursor: col-resize; touch-action: none;
+}
+.dbd-sidebar-resize:hover, .dbd-sidebar-resize[data-active="true"] {
+  background: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+@media (max-width: 767px) { .dbd-sidebar-resize { display: none; } }
 .dbd-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.3); z-index: 10; }
 .dbd-approval-wait { z-index: 60; }
 .dbd-meta { display: none; }
@@ -104,7 +112,10 @@ const STYLES = `
   .dbd-sm-inline { display: inline; }
 }
 @media (min-width: 768px) {
-  .dbd-sidebar { position: static; width: 16rem; transform: none; z-index: auto; box-shadow: none; }
+  .dbd-sidebar {
+    position: relative; width: var(--dbd-sidebar-width, 16rem);
+    transform: none; z-index: auto; box-shadow: none;
+  }
   .dbd-backdrop, .dbd-tree-toggle { display: none; }
 }
 @media (min-width: 1280px) {
@@ -5136,6 +5147,33 @@ function ConnectionRail({ connections, openIds, activeId, onSwitch, onAdd, onRem
   })
 }
 
+function ViewSwitcher({ tab, onTab, kind }) {
+  const items = [['data', 'Data']]
+  if (kind !== 'redis') items.push(['schema', 'Structure'])
+  if (kind === 'mysql') items.push(['site', 'Site'])
+  return jsxs('div', {
+    className:
+      'flex shrink-0 items-center gap-0.5 rounded-[4px] border border-(--ui-stroke-secondary) p-0.5',
+    children: items.map(([key, label]) =>
+      jsx(
+        'button',
+        {
+          type: 'button',
+          onClick: () => onTab(key),
+          className: cn(
+            'rounded-[3px] px-2 py-0.5 text-[11px]',
+            tab === key
+              ? 'bg-(--ui-bg-quaternary) text-(--ui-text-primary)'
+              : 'text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
+          ),
+          children: label
+        },
+        key
+      )
+    )
+  })
+}
+
 export function DbDesk({ onHome, startNew = false, editConnectionId = '', initialDraft = null, onSettings } = {}) {
   const [connections, setConnections] = useState([])
   const [loaded, setLoaded] = useState(false)
@@ -5212,6 +5250,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [exporting, setExporting] = useState(false)
   const [tabs, setTabs] = useState([])
   const [activeTabId, setActiveTabId] = useState(null)
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const value = Number(localStorage.getItem('dbdesk.sidebarWidth'))
+      return Number.isFinite(value) && value >= 180 && value <= 560 ? value : 256
+    } catch {
+      return 256
+    }
+  })
   const activeTabRecord = tabs.find((entry) => entry.id === activeTabId) || null
   const [importOpen, setImportOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
@@ -5372,6 +5418,33 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   useEffect(() => {
     setDecryptOn(false)
   }, [activeId, activeDb, selected ? selected.table : ''])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('dbdesk.sidebarWidth', String(sidebarWidth))
+    } catch {
+      /* private mode */
+    }
+  }, [sidebarWidth])
+
+  const startSidebarResize = (event) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (moveEvent) => {
+      setSidebarWidth(Math.max(180, Math.min(560, startWidth + moveEvent.clientX - startX)))
+    }
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   useEffect(() => {
     if (tab !== 'sql' || !activeId) return undefined
@@ -7193,6 +7266,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
             'data-open': treeOpen ? 'true' : 'false',
             className:
               'dbd-sidebar flex shrink-0 flex-col border-r border-(--ui-stroke-secondary) bg-(--ui-bg-sidebar) shadow-xl',
+            style: { '--dbd-sidebar-width': `${sidebarWidth}px` },
             children: [
               databases.length > 1
                 ? jsxs('div', {
@@ -7337,6 +7411,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                     )
                   })
                 ]
+              }),
+              jsx('div', {
+                key: 'resize',
+                className: 'dbd-sidebar-resize',
+                title: 'Drag to resize · double-click to reset',
+                onMouseDown: startSidebarResize,
+                onDoubleClick: () => setSidebarWidth(256)
               })
             ]
           }),
@@ -7411,75 +7492,6 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                     ]
                   })
                 : null,
-              activeTabRecord && activeTabRecord.type === 'sql'
-                ? null
-                : jsxs('div', {
-                key: 'tabs',
-                className:
-                  'flex shrink-0 items-center gap-1 overflow-x-auto border-b border-(--ui-stroke-secondary) px-2',
-                children: [
-                  jsx('button', {
-                    type: 'button',
-                    className: cn(
-                      '-mb-px border-b-2 px-2 py-1.5 text-[11.5px]',
-                      tab === 'data'
-                        ? 'border-primary text-(--ui-text-primary)'
-                        : 'border-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
-                    ),
-                    onClick: () => setTab('data'),
-                    children: 'Data'
-                  }),
-                  jsx('button', {
-                    type: 'button',
-                    className: cn(
-                      '-mb-px border-b-2 px-2 py-1.5 text-[11.5px]',
-                      tab === 'sql'
-                        ? 'border-primary text-(--ui-text-primary)'
-                        : 'border-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
-                    ),
-                    onClick: () => newSqlTab(),
-                    children:
-                      active && active.kind === 'redis'
-                        ? 'Console'
-                        : active && active.kind === 'mongodb'
-                          ? 'Query'
-                          : 'SQL'
-                  }),
-                  active && active.kind === 'redis'
-                    ? null
-                    : jsx('button', {
-                        type: 'button',
-                        className: cn(
-                          '-mb-px border-b-2 px-2 py-1.5 text-[11.5px]',
-                          tab === 'schema'
-                            ? 'border-primary text-(--ui-text-primary)'
-                            : 'border-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
-                        ),
-                        onClick: () => setTab('schema'),
-                        children: 'Schema'
-                      }),
-                  (active && (active.kind || 'postgres') === 'mysql')
-                    ? jsx('button', {
-                        type: 'button',
-                        className: cn(
-                          '-mb-px border-2 border-transparent border-b-2 px-2 py-1.5 text-[11.5px]',
-                          tab === 'site'
-                            ? 'border-b-primary text-(--ui-text-primary)'
-                            : 'text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
-                        ),
-                        onClick: () => setTab('site'),
-                        children: 'Site'
-                      })
-                    : null,
-                  jsx('div', { className: 'flex-1' }),
-                  selected
-                    ? jsx('span', {
-                        className: 'truncate pr-1 font-mono text-[11px] text-(--ui-text-tertiary)',
-                        children: `${selected.schema}.${selected.table}`
-                      })
-                    : null
-                ]
-              }),
               tab === 'data'
                 ? jsxs('div', {
                     key: 'data',
@@ -7788,6 +7800,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                           selected ? 'flex' : 'hidden'
                         ),
                         children: [
+                          jsx(ViewSwitcher, {
+                            tab,
+                            onTab: setTab,
+                            kind: (active && active.kind) || 'postgres'
+                          }),
                           jsxs('label', {
                             className: 'flex items-center gap-1 text-[11px] text-(--ui-text-tertiary)',
                             children: [
@@ -8391,6 +8408,12 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             className: 'text-sm font-semibold',
                             children: 'WordPress site'
                           }),
+                          jsx(ViewSwitcher, {
+                            key: 'switcher',
+                            tab,
+                            onTab: setTab,
+                            kind: (active && active.kind) || 'postgres'
+                          }),
                           jsx('div', { key: 's', className: 'flex-1' }),
                           jsx(Button, {
                             key: 'r',
@@ -8941,6 +8964,16 @@ jsxs('div', {
                                     })
                               })
                             ]
+                          }),
+                          jsx('div', {
+                            key: 'switcher',
+                            className:
+                              'flex shrink-0 items-center border-t border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-1.5',
+                            children: jsx(ViewSwitcher, {
+                              tab,
+                              onTab: setTab,
+                              kind: (active && active.kind) || 'postgres'
+                            })
                           })
                         ]
                       })
@@ -9191,7 +9224,7 @@ jsxs('div', {
                     ['⌘ R', 'Refresh the current view'],
                     ['⌘ ⏎', 'Run the query / reload rows'],
                     ['⌘ S', 'Save the current SQL'],
-                    ['⌘ 1 / 3 / 4', 'Data / Schema / Site'],
+                    ['⌘ 1 / 3 / 4', 'Data / Structure / Site'],
                     ['⌘ 2 / ⌘ T', 'New SQL query tab'],
                     ['⌘ + / − / 0', 'Zoom in / out / reset'],
                     ['⌘ ,', 'Settings'],
