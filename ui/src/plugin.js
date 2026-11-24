@@ -4950,6 +4950,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [openDbOpen, setOpenDbOpen] = useState(false)
   const [openDbQuery, setOpenDbQuery] = useState('')
   const [openDbSelected, setOpenDbSelected] = useState('')
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [editor, setEditor] = useState(null)
   const [insertOpen, setInsertOpen] = useState(false)
 
@@ -5967,6 +5968,69 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
   }
 
+  useEffect(() => {
+    const onKey = (event) => {
+      const mod = event.metaKey || event.ctrlKey
+      if (event.key === 'Escape') {
+        if (shortcutsOpen) {
+          setShortcutsOpen(false)
+          return
+        }
+        if (filterOpen) {
+          setFilterOpen(false)
+          return
+        }
+      }
+      if (!mod) return
+      const key = event.key
+      if (key === 'f' || key === 'F') {
+        event.preventDefault()
+        if (tab === 'data' && selected) {
+          setFilterOpen(true)
+          setTimeout(() => {
+            const input = document.querySelector('[data-filter-input]')
+            if (input) input.focus()
+          }, 80)
+        } else if (tab === 'sql' && sqlRef.current) {
+          sqlRef.current.focus()
+        } else {
+          document.getElementById('dbdesk-table-filter')?.focus()
+        }
+        return
+      }
+      if (key === 'r' || key === 'R') {
+        event.preventDefault()
+        if (tab === 'sql') void runQuery()
+        else if (tab === 'data') void loadRows(offset)
+        else if (tab === 'schema') setTreeVersion((value) => value + 1)
+        else if (tab === 'site') setSiteVersion((value) => value + 1)
+        return
+      }
+      if (key === 'Enter') {
+        event.preventDefault()
+        if (tab === 'sql') void runQuery()
+        else if (tab === 'data') void loadRows(offset)
+        return
+      }
+      if ((key === 's' || key === 'S') && tab === 'sql' && sql.trim()) {
+        event.preventDefault()
+        setSaveQueryOpen(true)
+        return
+      }
+      if (key === '1' || key === '2' || key === '3' || key === '4') {
+        event.preventDefault()
+        setTab({ '1': 'data', '2': 'sql', '3': 'schema', '4': 'site' }[key])
+        return
+      }
+      if (key === '/') {
+        event.preventDefault()
+        setShortcutsOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tab, selected, offset, filterOpen, shortcutsOpen, loadRows, runQuery, sql])
+
   const markTabDirty = () => {
     setTabs((current) =>
       current.map((tab) => (tab.id === activeTabId ? { ...tab, dirty: true } : tab))
@@ -6626,6 +6690,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 key: 'search',
                 className: 'p-1.5',
                 children: jsx(Input, {
+                  id: 'dbdesk-table-filter',
                   value: filter,
                   placeholder: 'Filter tables…',
                   onChange: (event) => setFilter(event.target.value)
@@ -6843,7 +6908,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                       jsxs('div', {
                         key: 'bar',
                         className: cn(
-                          'shrink-0 items-center gap-2 overflow-x-auto border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
+                          'shrink-0 items-center gap-2 overflow-visible border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-2',
                           selected ? 'flex' : 'hidden'
                         ),
                         children: [
@@ -7224,6 +7289,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                     filter.mode === 'raw'
                                       ? jsx(Input, {
                                           key: 'raw',
+                                          'data-filter-input': 'true',
                                           className: 'h-7 min-w-0 flex-1 font-mono',
                                           value: filter.raw || '',
                                           placeholder:
@@ -7271,6 +7337,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                           ),
                                           jsx(Input, {
                                             key: 'value',
+                                            'data-filter-input': 'true',
                                             className: 'h-7 min-w-0 flex-1',
                                             value: filter.value || '',
                                             disabled: ['isnull', 'notnull'].includes(
@@ -8470,6 +8537,75 @@ jsxs('div', {
                       })
                     ]
                   })
+                ]
+              })
+            ]
+          })
+        : null,
+      shortcutsOpen
+        ? jsxs('div', {
+            key: 'shortcuts',
+            className: 'fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4',
+            children: [
+              jsxs('div', {
+                key: 'panel',
+                className:
+                  'flex w-full max-w-[420px] flex-col gap-2 rounded-[8px] border border-(--ui-stroke-secondary) bg-background p-4 shadow-2xl',
+                children: [
+                  jsxs('div', {
+                    key: 'head',
+                    className: 'flex items-center gap-2',
+                    children: [
+                      jsx(Codicon, { key: 'i', name: 'keyboard', className: 'text-primary' }),
+                      jsx('span', {
+                        key: 't',
+                        className: 'text-[13px] font-semibold',
+                        children: 'Keyboard shortcuts'
+                      }),
+                      jsx('span', { key: 'sp', className: 'flex-1' }),
+                      jsx(Button, {
+                        key: 'close',
+                        variant: 'ghost',
+                        size: 'sm',
+                        title: 'Close',
+                        onClick: () => setShortcutsOpen(false),
+                        children: jsx(Codicon, { name: 'close' })
+                      })
+                    ]
+                  }),
+                  ...[
+                    ['⌘ F', 'Filter the current table / search tables'],
+                    ['⌘ R', 'Refresh the current view'],
+                    ['⌘ ⏎', 'Run the query / reload rows'],
+                    ['⌘ S', 'Save the current SQL'],
+                    ['⌘ 1–4', 'Data / SQL / Schema / Site'],
+                    ['⌘ + / − / 0', 'Zoom in / out / reset'],
+                    ['⌘ ,', 'Settings'],
+                    ['⌘ /', 'This list'],
+                    ['Esc', 'Close the filter panel or this list']
+                  ].map(([keys, label]) =>
+                    jsxs(
+                      'div',
+                      {
+                        key: keys,
+                        className:
+                          'flex items-center gap-3 rounded-[3px] px-1 py-1 text-[11.5px]'
+                      },
+                      [
+                        jsx('kbd', {
+                          key: 'k',
+                          className:
+                            'min-w-[74px] rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-1.5 py-0.5 text-center font-mono text-[10.5px]',
+                          children: keys
+                        }),
+                        jsx('span', {
+                          key: 'l',
+                          className: 'text-(--ui-text-secondary)',
+                          children: label
+                        })
+                      ]
+                    )
+                  )
                 ]
               })
             ]

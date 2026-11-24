@@ -14,7 +14,48 @@ import { isMacOS, sendNativeNotification } from './notify.js'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.11.4'
+const APP_VERSION = '0.11.5'
+const ZOOM_KEY = 'dbdesk.zoom'
+const ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
+
+function readZoom() {
+  try {
+    const value = Number(localStorage.getItem(ZOOM_KEY))
+    return ZOOM_STEPS.includes(value) ? value : 1
+  } catch {
+    return 1
+  }
+}
+
+async function applyZoom(scale) {
+  const value = ZOOM_STEPS.includes(scale) ? scale : 1
+  try {
+    localStorage.setItem(ZOOM_KEY, String(value))
+  } catch {
+    /* private mode */
+  }
+  if (window.__TAURI_INTERNALS__) {
+    try {
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      await getCurrentWebviewWindow().setZoom(value)
+      return
+    } catch {
+      /* fall through to CSS zoom */
+    }
+  }
+  document.documentElement.style.zoom = String(value)
+}
+
+function stepZoom(direction) {
+  const current = readZoom()
+  if (direction === 0) return 1
+  const next =
+    direction > 0
+      ? ZOOM_STEPS.find((step) => step > current + 0.001) || ZOOM_STEPS[ZOOM_STEPS.length - 1]
+      : [...ZOOM_STEPS].reverse().find((step) => step < current - 0.001) || ZOOM_STEPS[0]
+  return next
+}
+
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
@@ -260,10 +301,21 @@ function Shell() {
   }
 
   useEffect(() => {
+    void applyZoom(readZoom())
+  }, [])
+
+  useEffect(() => {
     const handler = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (event.key === ',') {
         event.preventDefault()
         setSettingsOpen((open) => !open)
+        return
+      }
+      if (['+', '=', '-', '_', '0'].includes(event.key)) {
+        event.preventDefault()
+        const direction = event.key === '0' ? 0 : event.key === '+' || event.key === '=' ? 1 : -1
+        void applyZoom(stepZoom(direction))
       }
     }
     window.addEventListener('keydown', handler)

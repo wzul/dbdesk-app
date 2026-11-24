@@ -142,6 +142,9 @@ Set `DBDESK_HOME` to override. The directory contains:
   HTTP. Tools cover connections, databases, tables, columns, indexes, DDL,
   rows, CSV, SQL and the AI agent. Disabled by default; one toggle generates a
   bearer token.
+- **Keyboard shortcuts** — **⌘F** filter/search, **⌘R** refresh, **⌘⏎** run,
+  **⌘S** save SQL, **⌘1–4** Data/SQL/Schema/Site, **⌘+ / ⌘− / ⌘0** zoom,
+  **⌘/** shortcut list, **⌘,** settings.
 - **Remembers window size and position** across launches (saved to
   `window.json` in the app data folder); if the monitor is gone, the app falls
   back to the default size instead of opening off-screen.
