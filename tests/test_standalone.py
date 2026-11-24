@@ -495,6 +495,42 @@ class McpServer(unittest.TestCase):
         ).json()
         self.assertTrue(preview["preview"])
 
+    def test_raw_filter_and_generated_sql(self) -> None:
+        cid = self.add_connection(readonly=True)
+        rows = self.client.post(
+            "/api/table/rows",
+            json={
+                "connection_id": cid,
+                "schema": "main",
+                "table": "people",
+                "filters": [{"mode": "raw", "raw": "name = 'Ali'", "enabled": True}],
+            },
+        )
+        self.assertEqual(rows.status_code, 200, rows.text)
+        self.assertEqual([row[1] for row in rows.json()["rows"]], ["Ali"])
+
+        generated = self.client.post(
+            "/api/table/sql",
+            json={
+                "connection_id": cid,
+                "schema": "main",
+                "table": "people",
+                "filters": [{"mode": "raw", "raw": "name = 'Ali'", "enabled": True}],
+            },
+        ).json()["sql"]
+        self.assertIn("(name = 'Ali')", generated)
+
+        refused = self.client.post(
+            "/api/table/rows",
+            json={
+                "connection_id": cid,
+                "schema": "main",
+                "table": "people",
+                "filters": [{"mode": "raw", "raw": "name = 'Ali'; drop table people", "enabled": True}],
+            },
+        )
+        self.assertEqual(refused.status_code, 400)
+
     def test_generate_sql_from_filters(self) -> None:
         cid = self.add_connection(readonly=True)
         result = self.client.post(

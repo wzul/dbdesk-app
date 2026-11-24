@@ -6,7 +6,8 @@ import SetupDialog from './setup-dialog.jsx'
 
 const KINDS = {
   postgres: { label: 'PostgreSQL', icon: 'database', tone: 'text-sky-600 dark:text-sky-400' },
-  mysql: { label: 'MySQL / MariaDB', icon: 'database', tone: 'text-amber-600 dark:text-amber-400' },
+  mysql: { label: 'MySQL', icon: 'database', tone: 'text-amber-600 dark:text-amber-400' },
+  mariadb: { label: 'MariaDB', icon: 'database', tone: 'text-teal-600 dark:text-teal-400' },
   clickhouse: { label: 'ClickHouse', icon: 'graph', tone: 'text-yellow-600 dark:text-yellow-400' },
   sqlite: { label: 'SQLite', icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
   mcp: { label: 'MCP', icon: 'plug', tone: 'text-purple-600 dark:text-purple-400' },
@@ -14,7 +15,11 @@ const KINDS = {
 }
 
 function kindOf(connection) {
-  return KINDS[connection.kind] || KINDS.postgres
+  const key =
+    connection.flavor === 'mariadb'
+      ? 'mariadb'
+      : connection.kind || 'postgres'
+  return KINDS[key] || KINDS.postgres
 }
 
 function targetOf(connection) {

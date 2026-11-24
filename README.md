@@ -179,6 +179,9 @@ Set `DBDESK_HOME` to override. The directory contains:
 - **Docked AI and record panels** — the AI chat opens on the right without
   covering the grid; clicking a row number opens a TablePlus-style **Record**
   panel on the right with each column name, type and value.
+- **New connection type cards** — the connection form shows real logos for
+  PostgreSQL, MySQL, MariaDB, ClickHouse, SQLite, MCP and HTTP; choosing a card
+  sets the default port. MariaDB is stored as MySQL with a `mariadb` flavor.
 - **Connection picker** — the app opens on a TablePlus-style list: search,
   groups, type icons, read-only/PROD badges; pick a connection, then the full
   browser opens. Right-click a connection for **Open / Edit / Clone / Test /
@@ -201,10 +204,11 @@ Set `DBDESK_HOME` to override. The directory contains:
   extra (auto-increment/identity), foreign key and comment, plus an index grid
   (`index_name`, algorithm, unique, column). DDL is still available from the
   **DDL** button but no longer the default view.
-- **Multi-row filters** — the Filter panel is a list of filters. Each row has a
-  checkbox, column/operator/value, **Apply**, and remove; **Apply all** enables
-  every row, and **Enter** in a row applies the enabled set. Only checked rows
-  are sent in the WHERE clause. Saved views keep the enabled flags.
+- **TablePlus-style filters** — each row has a checkbox, a **Raw SQL / column**
+  picker, a full-width pattern, **Apply**, **−** and **+**. Raw SQL rows append
+  a WHERE expression; column rows keep the operator/value controls. **Apply
+  all** enables every valid row, **Clear** removes them, and **SQL** turns the
+  active filters into a SELECT. Saved views keep the flags.
 - **Saved query buttons** — the SQL toolbar has **Save** (name + current SQL)
   and **Saved** (opens the snippet list); the same snippets are available to the
   MCP agent through `queries_list` / `query_save` / `query_delete`.

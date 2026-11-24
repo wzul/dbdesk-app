@@ -549,10 +549,21 @@ def _where_clause(kind: str, filters: Any) -> str:
     for item in filters[:8]:
         if not isinstance(item, dict) or item.get("enabled") is False:
             continue
+        raw = str(item.get("raw") or "").strip()
+        if item.get("mode") == "raw" or (raw and not str(item.get("column") or "").strip()):
+            fragment = raw.rstrip(";").strip()
+            if not fragment:
+                continue
+            if ";" in fragment or "\x00" in fragment:
+                raise HTTPException(400, "a raw filter must be one SQL expression")
+            clauses.append(f"({fragment})")
+            continue
         column = str(item.get("column") or "").strip()
         op = str(item.get("op") or "eq").strip().lower()
         value = item.get("value")
         if not column:
+            continue
+        if op not in ("isnull", "notnull") and str(value or "") == "":
             continue
         target = quote(column)
         if op == "isnull":
@@ -4208,6 +4219,8 @@ def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
         "http_timeout": 30,
     }
     item: dict[str, Any] = {"kind": kind}
+    if conn.get("flavor"):
+        item["flavor"] = conn["flavor"]
     for key in fields:
         value = conn.get(key)
         if value in (None, "", [], {}):
@@ -4329,6 +4342,7 @@ def _record_from_bundle(item: dict[str, Any], record_id: str) -> dict[str, Any]:
     record = {
         "id": record_id,
         "kind": kind,
+        "flavor": str(item.get("flavor") or "").strip().lower()[:20],
         "name": str(item.get("name") or item.get("dbname") or "Imported")[:120],
         "group": str(item.get("group") or "")[:80],
         "host": str(item.get("host") or ""),
@@ -4496,6 +4510,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     record = {
         "id": conn_id,
         "kind": kind,
+        "flavor": str(pick("flavor", "")).strip().lower()[:20],
         "name": name,
         "group": str(pick("group", "")).strip()[:80],
         "host": host,
@@ -5217,7 +5232,8 @@ async def table_sql(body: dict[str, Any]) -> dict[str, Any]:
         for item in filters
         if item.get("enabled") is not False
         and (
-            str(item.get("op") or "").lower() in ("isnull", "notnull")
+            str(item.get("raw") or "").strip() != ""
+            or str(item.get("op") or "").lower() in ("isnull", "notnull")
             or str(item.get("value") or "") != ""
         )
     ]

@@ -14,11 +14,12 @@ import { isMacOS, sendNativeNotification } from './notify.js'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.11.3'
+const APP_VERSION = '0.11.4'
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
   mysql: 'MySQL / MariaDB',
+  mariadb: 'MariaDB',
   clickhouse: 'ClickHouse',
   sqlite: 'SQLite',
   mcp: 'MCP',
@@ -41,7 +42,10 @@ function StatusBar({ connection }) {
       </span>
       {connection ? <span className="truncate">{connection.name}</span> : null}
       {connection ? (
-        <span className="truncate">{KIND_LABELS[connection.kind] || connection.kind}</span>
+        <span className="truncate">
+          {KIND_LABELS[connection.flavor === 'mariadb' ? 'mariadb' : connection.kind] ||
+            connection.kind}
+        </span>
       ) : null}
       {connection ? (
         <span>{connection.readonly ? 'read-only' : 'writes allowed'}</span>
