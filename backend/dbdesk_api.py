@@ -4784,6 +4784,22 @@ async def backup_import(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@router.post("/connections/{conn_id}/clone")
+async def clone_connection(conn_id: str) -> dict[str, Any]:
+    conns = _load()
+    source = next((conn for conn in conns if conn["id"] == conn_id), None)
+    if source is None:
+        raise HTTPException(404, f"connection {conn_id!r} not found")
+    clone = dict(source)
+    clone["id"] = uuid.uuid4().hex[:12]
+    clone["name"] = f'{source.get("name") or "Connection"} (copy)'[:120]
+    conns.append(clone)
+    _save(conns)
+    _close_pools()
+    _invalidate_columns()
+    return {"connection": _public(clone)}
+
+
 @router.delete("/connections/{conn_id}")
 async def delete_connection(conn_id: str) -> dict[str, Any]:
     conns = _load()

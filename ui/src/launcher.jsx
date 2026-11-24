@@ -92,10 +92,10 @@ function ConnectionRow({ connection, onOpen, onExport, onMenu }) {
   )
 }
 
-function ContextMenu({ menu, onClose, onOpen, onEdit, onTest, onExport, onDelete }) {
+function ContextMenu({ menu, onClose, onOpen, onEdit, onClone, onTest, onExport, onDelete }) {
   const width = 210
   const left = Math.min(menu.x, window.innerWidth - width - 8)
-  const top = Math.min(menu.y, window.innerHeight - 190)
+  const top = Math.min(menu.y, window.innerHeight - 230)
   const item =
     'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-(--ui-bg-secondary)'
   return (
@@ -119,6 +119,10 @@ function ContextMenu({ menu, onClose, onOpen, onEdit, onTest, onExport, onDelete
         <button type="button" className={item} onClick={() => onEdit(menu.connection)}>
           <Codicon name="edit" className="text-(--ui-text-tertiary)" />
           Edit connection
+        </button>
+        <button type="button" className={item} onClick={() => onClone(menu.connection)}>
+          <Codicon name="copy" className="text-(--ui-text-tertiary)" />
+          Clone connection
         </button>
         <button type="button" className={item} onClick={() => onTest(menu.connection)}>
           <Codicon name="debug-alt" className="text-(--ui-text-tertiary)" />
@@ -281,6 +285,21 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, o
       })
     } catch (error) {
       host.notify({ kind: 'error', message: String(error.message || error) })
+    }
+  }
+
+  const cloneConnection = async (connection) => {
+    setMenu(null)
+    setError('')
+    try {
+      const result = await rest(`/connections/${connection.id}/clone`, {
+        method: 'POST'
+      })
+      setReloadKey((value) => value + 1)
+      host.notify({ kind: 'info', message: `Cloned “${connection.name}”` })
+      return result
+    } catch (reason) {
+      setError(String(reason.message || reason))
     }
   }
 
@@ -549,6 +568,7 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, o
             setMenu(null)
             onEdit(connection.id)
           }}
+          onClone={cloneConnection}
           onTest={testConnection}
           onExport={(connection) => {
             setMenu(null)

@@ -181,8 +181,8 @@ Set `DBDESK_HOME` to override. The directory contains:
   panel on the right with each column name, type and value.
 - **Connection picker** — the app opens on a TablePlus-style list: search,
   groups, type icons, read-only/PROD badges; pick a connection, then the full
-  browser opens. Right-click a connection for **Open / Edit / Test / Export /
-  Delete**. **New connection** goes straight to the form, and the chevron
+  browser opens. Right-click a connection for **Open / Edit / Clone / Test /
+  Export / Delete**; Clone duplicates the encrypted credentials too. **New connection** goes straight to the form, and the chevron
   in the header returns to the list.
 - **Import / export & QR** — export one connection from the share icon or all of
   them from the picker as a `.dbdesk` bundle. Passwords are left out by default;
