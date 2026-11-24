@@ -7783,11 +7783,26 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         ),
                         children: [
                           jsx(Button, {
-                            variant: 'secondary',
+                            variant: 'ghost',
                             size: 'sm',
+                            title: 'Reload rows from the database (⌘R)',
                             onClick: () => void loadRows(offset),
                             disabled: !selected || dataLoading,
-                            children: dataLoading ? 'Loading…' : 'Run'
+                            children: jsxs('span', {
+                              className: 'flex items-center gap-1',
+                              children: [
+                                jsx(Codicon, {
+                                  key: 'i',
+                                  name: 'refresh',
+                                  className: dataLoading ? 'animate-spin' : ''
+                                }),
+                                jsx('span', {
+                                  key: 't',
+                                  className: 'dbd-sm-inline',
+                                  children: dataLoading ? 'Loading…' : 'Reload'
+                                })
+                              ]
+                            })
                           }),
                           jsxs('label', {
                             className: 'flex items-center gap-1 text-[11px] text-(--ui-text-tertiary)',
@@ -9192,7 +9207,8 @@ jsxs('div', {
                     ['⌘ R', 'Refresh the current view'],
                     ['⌘ ⏎', 'Run the query / reload rows'],
                     ['⌘ S', 'Save the current SQL'],
-                    ['⌘ 1–4', 'Data / SQL / Schema / Site'],
+                    ['⌘ 1 / 3 / 4', 'Data / Schema / Site'],
+                    ['⌘ 2 / ⌘ T', 'New SQL query tab'],
                     ['⌘ + / − / 0', 'Zoom in / out / reset'],
                     ['⌘ ,', 'Settings'],
                     ['⌘ /', 'This list'],
