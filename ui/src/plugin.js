@@ -5825,6 +5825,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   }, [selection, copySelection])
 
   const toggleColumn = (name) => {
+    markTabDirty()
     setHiddenColumns((current) =>
       current.includes(name) ? current.filter((item) => item !== name) : [...current, name]
     )
