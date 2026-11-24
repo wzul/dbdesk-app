@@ -350,6 +350,14 @@ function downloadCsv(filename, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+function isEqualityType(type) {
+  const text = String(type || '').toLowerCase()
+  if (!text) return false
+  return /(^|[^a-z])(tinyint|smallint|mediumint|bigint|integer|int|int2|int4|int8|serial|smallserial|bigserial|numeric|decimal|double|float|real|money|number|bool|boolean|bit|date|time|timestamp|datetime)([^a-z]|$)/.test(
+    text
+  )
+}
+
 function shortenType(type) {
   if (!type) return ''
   return type
@@ -4049,6 +4057,120 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                   })
                 ]
               }),
+              !['mcp', 'http', 'redis'].includes(draft.kind || 'postgres')
+                ? jsxs('div', {
+                    key: 'decrypt',
+                    className:
+                      'flex flex-col gap-2 rounded-[3px] border border-(--ui-stroke-secondary)/60 p-2',
+                    children: [
+                      jsx('div', {
+                        key: 't',
+                        className: 'text-[11px] font-medium text-(--ui-text-tertiary)',
+                        children: 'Encrypted columns (optional)'
+                      }),
+                      jsx(Field, {
+                        key: 'columns',
+                        label: 'Columns',
+                        hint: 'Comma-separated names, or * for every text column.',
+                        children: jsx(Input, {
+                          value: draft.decrypt_columns || '',
+                          placeholder: 'account_number, card_no',
+                          onChange: set('decrypt_columns')
+                        })
+                      }),
+                      jsxs('div', {
+                        key: 'keyrow',
+                        className: 'dbd-grid-2',
+                        children: [
+                          jsx(Field, {
+                            key: 'key',
+                            label: 'Key',
+                            hint: draft.decrypt_key_set
+                              ? 'A key is saved. Leave blank to keep it.'
+                              : 'Raw 32-byte key, base64: Laravel APP_KEY, or passphrase.',
+                            children: jsx(Input, {
+                              type: 'password',
+                              value: draft.decrypt_key || '',
+                              placeholder: draft.decrypt_key_set ? '••••••••' : '',
+                              onChange: set('decrypt_key')
+                            })
+                          }),
+                          jsx(Field, {
+                            key: 'algo',
+                            label: 'Algorithm',
+                            children: jsxs('select', {
+                              className:
+                                'h-8 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-2 text-xs outline-none',
+                              value: draft.decrypt_algo || 'auto',
+                              onChange: set('decrypt_algo'),
+                              children: [
+                                jsx('option', { value: 'auto', children: 'Auto' }, 'auto'),
+                                jsx('option', { value: 'aes-256-gcm', children: 'AES-256-GCM' }, 'aes-256-gcm'),
+                                jsx('option', { value: 'aes-256-cbc', children: 'AES-256-CBC' }, 'aes-256-cbc')
+                              ]
+                            })
+                          })
+                        ]
+                      }),
+                      draft.decrypt_key_set
+                        ? jsxs('label', {
+                            key: 'clear',
+                            className:
+                              'flex items-center gap-2 text-[10.5px] text-(--ui-text-tertiary)',
+                            children: [
+                              jsx('input', {
+                                type: 'checkbox',
+                                checked: Boolean(draft.decrypt_key_clear),
+                                onChange: (event) =>
+                                  onDraft({ ...draft, decrypt_key_clear: event.target.checked })
+                              }),
+                              jsx('span', { children: 'Remove the saved decryption key' })
+                            ]
+                          })
+                        : null
+                    ]
+                  })
+                : null,
+              !['mcp', 'http', 'redis'].includes(draft.kind || 'postgres')
+                ? jsxs('div', {
+                    key: 'timezone',
+                    className:
+                      'flex flex-col gap-2 rounded-[3px] border border-(--ui-stroke-secondary)/60 p-2',
+                    children: [
+                      jsx('div', {
+                        key: 't',
+                        className: 'text-[11px] font-medium text-(--ui-text-tertiary)',
+                        children: 'Timezone'
+                      }),
+                      jsxs('div', {
+                        key: 'zones',
+                        className: 'dbd-grid-2',
+                        children: [
+                          jsx(Field, {
+                            key: 'display',
+                            label: 'Display timezone',
+                            hint: 'IANA name. Empty shows raw database values.',
+                            children: jsx(Input, {
+                              value: draft.display_tz || '',
+                              placeholder: 'Asia/Kuala_Lumpur',
+                              onChange: set('display_tz')
+                            })
+                          }),
+                          jsx(Field, {
+                            key: 'storage',
+                            label: 'Naive timestamps stored in',
+                            hint: 'UTC by default.',
+                            children: jsx(Input, {
+                              value: draft.storage_tz || '',
+                              placeholder: 'UTC',
+                              onChange: set('storage_tz')
+                            })
+                          })
+                        ]
+                      })
+                    ]
+                  })
+                : null,
               ['mcp', 'http'].includes(draft.kind || 'postgres')
                 ? jsx('div', {
                     className: 'text-[11px] text-(--ui-text-tertiary)',
@@ -5090,6 +5212,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [exporting, setExporting] = useState(false)
   const [tabs, setTabs] = useState([])
   const [activeTabId, setActiveTabId] = useState(null)
+  const activeTabRecord = tabs.find((entry) => entry.id === activeTabId) || null
   const [importOpen, setImportOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
@@ -5101,6 +5224,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [siteVersion, setSiteVersion] = useState(0)
   const [rowDetail, setRowDetail] = useState(null)
   const [redisView, setRedisView] = useState(null)
+  const [decryptOn, setDecryptOn] = useState(false)
   const [hiddenColumns, setHiddenColumns] = useState([])
   const [selectedRows, setSelectedRows] = useState([])
   const [chartOpen, setChartOpen] = useState(false)
@@ -5244,6 +5368,10 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     columnCacheRef.current = {}
     setColumnCacheVersion((version) => version + 1)
   }, [activeId, activeDb])
+
+  useEffect(() => {
+    setDecryptOn(false)
+  }, [activeId, activeDb, selected ? selected.table : ''])
 
   useEffect(() => {
     if (tab !== 'sql' || !activeId) return undefined
@@ -5413,6 +5541,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
       try {
         const result = await call('/query', { method: 'POST', body })
         setQuery(result)
+        setTabs((current) =>
+          current.map((entry) =>
+            entry.id === activeTabId && entry.type === 'sql'
+              ? { ...entry, query: result, sql }
+              : entry
+          )
+        )
       } catch (error) {
         const message = errText(error)
         if (!message.includes('approval_required')) throw error
@@ -5427,6 +5562,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
           body: approvalId ? { ...body, approval_id: approvalId } : body
         })
         setQuery(result)
+        setTabs((current) =>
+          current.map((entry) =>
+            entry.id === activeTabId && entry.type === 'sql'
+              ? { ...entry, query: result, sql }
+              : entry
+          )
+        )
       }
     } catch (error) {
       setQuery(null)
@@ -5434,7 +5576,18 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     } finally {
       setQueryLoading(false)
     }
-  }, [activeId, activeDb, sql])
+  }, [activeId, activeDb, sql, activeTabId])
+
+  useEffect(() => {
+    if (!activeTabId) return
+    setTabs((current) =>
+      current.map((entry) =>
+        entry.id === activeTabId && entry.type === 'sql' && entry.sql !== sql
+          ? { ...entry, sql }
+          : entry
+      )
+    )
+  }, [sql, activeTabId])
 
   const currentViewState = () => ({ filters, order, limit, offset, hidden: hiddenColumns })
 
@@ -5552,7 +5705,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const menuCopyRow = async () => {
     if (!cellMenu || !data) return
-    const row = data.rows[cellMenu.rowIndex] || []
+    const row = displayRows[cellMenu.rowIndex] || []
     await writeClipboardText(
       data.columns.map((column, index) => `${column.name}=${row[index] === null ? '' : row[index]}`).join('\t')
     )
@@ -5561,9 +5714,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const openTab = (schema, table, state) => {
     const id = `${schema}.${table}`
-    let next = tabs.map((tab) =>
-      tab.id === activeTabId ? { ...tab, state: currentViewState() } : tab
-    )
+    let next = tabs.map((tab) => {
+      if (tab.id !== activeTabId) return tab
+      if (tab.type === 'sql') return { ...tab, sql, query }
+      return { ...tab, state: currentViewState() }
+    })
     const existing = next.find((tab) => tab.id === id)
     const currentTab = next.find((tab) => tab.id === activeTabId)
     if (!existing) {
@@ -5574,12 +5729,12 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
         offset: 0,
         hidden: []
       }
-      if (currentTab && !currentTab.dirty && !state) {
+      if (currentTab && currentTab.type !== 'sql' && !currentTab.dirty && !state) {
         next = next.map((tab) =>
-          tab.id === activeTabId ? { id, schema, table, state: fresh, dirty: false } : tab
+          tab.id === activeTabId ? { id, type: 'table', schema, table, state: fresh, dirty: false } : tab
         )
       } else {
-        next = [...next, { id, schema, table, state: fresh, dirty: Boolean(state) }]
+        next = [...next, { id, type: 'table', schema, table, state: fresh, dirty: Boolean(state) }]
       }
     } else if (state) {
       next = next.map((tab) => (tab.id === id ? { ...tab, state } : tab))
@@ -5599,19 +5754,56 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const switchTab = (id) => {
     if (id === activeTabId) return
-    const next = tabs.map((tab) =>
-      tab.id === activeTabId ? { ...tab, state: currentViewState() } : tab
-    )
+    const next = tabs.map((tab) => {
+      if (tab.id !== activeTabId) return tab
+      if (tab.type === 'sql') return { ...tab, sql, query }
+      return { ...tab, state: currentViewState() }
+    })
     const target = next.find((tab) => tab.id === id)
     if (!target) return
     setTabs(next)
     setActiveTabId(id)
-    setSelected({ schema: target.schema, table: target.table })
-    applyViewState(target.state)
     setSelection(null)
     setEditor(null)
     setInsertOpen(false)
+    if (target.type === 'sql') {
+      setSelected(null)
+      setSql(target.sql || '')
+      setQuery(target.query || null)
+      setTab('sql')
+      return
+    }
+    setSelected({ schema: target.schema, table: target.table })
+    applyViewState(target.state)
     setTab('data')
+  }
+
+  const newSqlTab = (initialSql = '') => {
+    const id = `sql:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 6)}`
+    const next = tabs.map((tab) => {
+      if (tab.id !== activeTabId) return tab
+      if (tab.type === 'sql') return { ...tab, sql, query }
+      return { ...tab, state: currentViewState() }
+    })
+    setTabs([
+      ...next,
+      {
+        id,
+        type: 'sql',
+        title: 'SQL Query',
+        sql: initialSql,
+        query: null,
+        dirty: false
+      }
+    ])
+    setActiveTabId(id)
+    setSelected(null)
+    setSql(initialSql)
+    setQuery(null)
+    setSelection(null)
+    setEditor(null)
+    setInsertOpen(false)
+    setTab('sql')
   }
 
   const closeTab = (id) => {
@@ -5620,16 +5812,26 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     const closingActive = id === activeTabId
     let next = tabs
       .filter((tab) => tab.id !== id)
-      .map((tab) =>
-        tab.id === activeTabId && !closingActive ? { ...tab, state: currentViewState() } : tab
-      )
+      .map((tab) => {
+        if (tab.id !== activeTabId || closingActive) return tab
+        if (tab.type === 'sql') return { ...tab, sql, query }
+        return { ...tab, state: currentViewState() }
+      })
     setTabs(next)
     if (!closingActive) return
     const fallback = next[Math.max(0, index - 1)]
     if (fallback) {
       setActiveTabId(fallback.id)
-      setSelected({ schema: fallback.schema, table: fallback.table })
-      applyViewState(fallback.state)
+      if (fallback.type === 'sql') {
+        setSelected(null)
+        setSql(fallback.sql || '')
+        setQuery(fallback.query || null)
+        setTab('sql')
+      } else {
+        setSelected({ schema: fallback.schema, table: fallback.table })
+        applyViewState(fallback.state)
+        setTab('data')
+      }
     } else {
       setActiveTabId(null)
       setSelected(null)
@@ -5841,6 +6043,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
       selected &&
       columnsMeta.length > 0
   )
+  const displayRows = data
+    ? decryptOn && data.decrypted_rows
+      ? data.decrypted_rows
+      : data.rows
+    : []
 
   const pkValuesFor = (rowIndex) => {
     const values = {}
@@ -6128,7 +6335,12 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const copySelection = useCallback(
     async (format) => {
       if (!selection && selectedRows.length === 0) return
-      const grid = tab === 'data' ? data : query
+      const grid =
+        tab === 'data'
+          ? data && decryptOn && data.decrypted_rows
+            ? { ...data, rows: data.decrypted_rows }
+            : data
+          : query
       if (!grid || !grid.columns.length) return
       const useChecked = selectedRows.length > 0
       const r0 = selection ? Math.min(selection.r0, selection.r1) : 0
@@ -6194,7 +6406,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
         }`
       })
     },
-    [selection, selectedRows, tab, data, query, active, selected]
+    [selection, selectedRows, tab, data, query, active, selected, decryptOn]
   )
 
   useEffect(() => {
@@ -6254,10 +6466,20 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     if (value === 'raw') {
       updateFilter(index, { mode: 'raw', raw: filter.raw || '' })
     } else {
+      const column = value.replace(/^col:/, '')
+      const meta = columnsMeta.find((item) => item.name === column)
+      const previous = columnsMeta.find((item) => item.name === filter.column)
+      const textOps = ['contains', 'startswith', 'endswith']
+      let op = filter.op || 'contains'
+      if (isEqualityType(meta && meta.type) && textOps.includes(op)) {
+        op = 'eq'
+      } else if (!isEqualityType(meta && meta.type) && isEqualityType(previous && previous.type) && op === 'eq') {
+        op = 'contains'
+      }
       updateFilter(index, {
         mode: 'column',
-        column: value.replace(/^col:/, ''),
-        op: filter.op || 'contains',
+        column,
+        op,
         value: filter.value || '',
         insensitive: filter.insensitive !== false
       })
@@ -6315,7 +6537,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
       }
       if (key === '1' || key === '2' || key === '3' || key === '4') {
         event.preventDefault()
-        setTab({ '1': 'data', '2': 'sql', '3': 'schema', '4': 'site' }[key])
+        if (key === '2') newSqlTab()
+        else setTab({ '1': 'data', '3': 'schema', '4': 'site' }[key])
+        return
+      }
+      if (key === 't' || key === 'T') {
+        event.preventDefault()
+        newSqlTab()
         return
       }
       if (key === '/') {
@@ -6325,7 +6553,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tab, selected, offset, filterOpen, shortcutsOpen, loadRows, runQuery, sql])
+  }, [tab, selected, offset, filterOpen, shortcutsOpen, loadRows, runQuery, sql, newSqlTab])
 
   const markTabDirty = () => {
     setTabs((current) =>
@@ -6735,6 +6963,16 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         http: 'HTTP'
                       }[active.kind || 'postgres'] || 'PG'
                   }),
+                  active.display_tz
+                    ? jsx(Badge, {
+                        key: 'tz',
+                        variant: 'outline',
+                        size: 'xs',
+                        title: `Display timezone: ${active.display_tz}`,
+                        className: 'dbd-sm-hide',
+                        children: active.display_tz
+                      })
+                    : null,
                   jsx('span', {
                     key: 'h',
                     className: 'hidden min-w-0 truncate font-mono opacity-80 2xl:inline',
@@ -7105,43 +7343,71 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                     key: 'tables',
                     className:
                       'flex shrink-0 items-stretch overflow-x-auto border-b border-(--ui-stroke-secondary) px-1',
-                    children: tabs.map((tab) =>
-                      jsxs(
-                        'div',
+                    children: [
+                      ...tabs.map((tab) =>
+                        jsxs(
+                          'div',
+                          {
+                            className: cn(
+                              'group flex shrink-0 items-center gap-1 border-b-2 px-2.5',
+                              tab.id === activeTabId
+                                ? 'border-primary text-(--ui-text-primary)'
+                                : 'border-transparent text-(--ui-text-tertiary) hover:border-(--ui-stroke-secondary) hover:text-(--ui-text-secondary)'
+                            ),
+                            children: [
+                              tab.type === 'sql'
+                                ? jsx(Codicon, {
+                                    key: 'icon',
+                                    name: 'terminal',
+                                    className: 'text-[11px] opacity-70'
+                                  })
+                                : null,
+                              jsx('button', {
+                                type: 'button',
+                                className: 'max-w-[150px] truncate py-1.5 text-[11.5px]',
+                                title: tab.type === 'sql' ? 'SQL query tab' : tab.id,
+                                onClick: () => switchTab(tab.id),
+                                children:
+                                  tab.type === 'sql' ? tab.title || 'SQL Query' : tab.table
+                              }),
+                              jsx('button', {
+                                type: 'button',
+                                className:
+                                  'rounded-[2px] p-0.5 opacity-40 hover:bg-(--ui-bg-secondary) hover:opacity-100',
+                                title: 'Close tab',
+                                onClick: (event) => {
+                                  event.stopPropagation()
+                                  closeTab(tab.id)
+                                },
+                                children: jsx(Codicon, { name: 'close' })
+                              })
+                            ]
+                          },
+                          tab.id
+                        )
+                      ),
+                      jsx(
+                        'button',
                         {
-                          className: cn(
-                            'group flex shrink-0 items-center gap-1 border-b-2 px-2.5',
-                            tab.id === activeTabId
-                              ? 'border-primary text-(--ui-text-primary)'
-                              : 'border-transparent text-(--ui-text-tertiary) hover:border-(--ui-stroke-secondary) hover:text-(--ui-text-secondary)'
-                          ),
+                          key: 'new-sql-tab',
+                          type: 'button',
+                          title: 'New SQL query tab (⌘T)',
+                          onClick: () => newSqlTab(),
+                          className:
+                            'ml-1 flex shrink-0 items-center gap-1 self-center rounded-[3px] border border-dashed border-(--ui-stroke-secondary) px-2 py-1 text-[10.5px] text-(--ui-text-tertiary) hover:bg-(--ui-bg-secondary) hover:text-(--ui-text-primary)',
                           children: [
-                            jsx('button', {
-                              type: 'button',
-                              className: 'max-w-[150px] truncate py-1.5 text-[11.5px]',
-                              title: tab.id,
-                              onClick: () => switchTab(tab.id),
-                              children: tab.table
-                            }),
-                            jsx('button', {
-                              type: 'button',
-                              className:
-                                'rounded-[2px] p-0.5 opacity-40 hover:bg-(--ui-bg-secondary) hover:opacity-100',
-                              title: 'Close tab',
-                              onClick: (event) => {
-                                event.stopPropagation()
-                                closeTab(tab.id)
-                              },
-                              children: jsx(Codicon, { name: 'close' })
-                            })
+                            jsx(Codicon, { key: 'i', name: 'add' }),
+                            jsx('span', { key: 't', children: 'SQL' })
                           ]
                         },
-                        tab.id
+                        'new-sql-tab'
                       )
-                    )
+                    ]
                   })
                 : null,
-              jsxs('div', {
+              activeTabRecord && activeTabRecord.type === 'sql'
+                ? null
+                : jsxs('div', {
                 key: 'tabs',
                 className:
                   'flex shrink-0 items-center gap-1 overflow-x-auto border-b border-(--ui-stroke-secondary) px-2',
@@ -7165,7 +7431,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         ? 'border-primary text-(--ui-text-primary)'
                         : 'border-transparent text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)'
                     ),
-                    onClick: () => setTab('sql'),
+                    onClick: () => newSqlTab(),
                     children:
                       active && active.kind === 'redis'
                         ? 'Console'
@@ -7226,8 +7492,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             onClose: () => setAiOpen(false),
                             onUseSql: (sql) => {
                               setAiOpen(false)
-                              setTab('sql')
-                              setSql(sql)
+                              newSqlTab(sql)
                             }
                           })
                         : null,
@@ -7476,7 +7741,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         ? jsx(Grid, {
                             key: 'grid',
                             columns: data ? data.columns : null,
-                            rows: data ? data.rows : [],
+                            rows: displayRows,
                             emptyText: dataLoading ? 'Loading…' : 'No rows.',
                             onSort: sortBy,
                             pk: pkColumns.map((column) => column.name),
@@ -7623,6 +7888,31 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             onClick: () => void generateSql(),
                             children: jsx(Codicon, { name: 'code' })
                           }),
+                          data && data.decrypted_rows
+                            ? jsx(Button, {
+                                key: 'decrypt',
+                                variant: decryptOn ? 'secondary' : 'ghost',
+                                size: 'sm',
+                                title: decryptOn
+                                  ? 'Hide encrypted values'
+                                  : 'Reveal encrypted values',
+                                onClick: () => setDecryptOn((value) => !value),
+                                children: jsxs('span', {
+                                  className: 'flex items-center gap-1',
+                                  children: [
+                                    jsx(Codicon, {
+                                      key: 'i',
+                                      name: decryptOn ? 'unlock' : 'lock'
+                                    }),
+                                    jsx('span', {
+                                      key: 't',
+                                      className: 'dbd-sm-inline',
+                                      children: 'Decrypt'
+                                    })
+                                  ]
+                                })
+                              })
+                            : null,
                           jsx(ColumnsMenu, {
                             key: 'columns',
                             columns: columnsMeta,
@@ -7898,7 +8188,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             ? jsx('div', {
                                 key: 'suggest',
                                 className:
-                                  'absolute top-full left-2 z-30 mt-1 flex w-64 flex-col rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
+                                  'absolute top-9 left-2 z-30 flex max-h-[180px] w-64 flex-col overflow-auto rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
                                 children: suggestions.map((item, index) =>
                                   jsx(
                                     'button',
@@ -8720,10 +9010,9 @@ jsxs('div', {
                         key: 'open',
                         size: 'sm',
                         onClick: () => {
-                          setSql(generatedSql)
                           setSqlGenOpen(false)
                           setFilterOpen(false)
-                          setTab('sql')
+                          newSqlTab(generatedSql)
                         },
                         children: 'Open in SQL'
                       }),
@@ -9108,7 +9397,7 @@ jsxs('div', {
         ? jsx(RowDrawer, {
             key: 'row-detail',
             columns: data.columns,
-            row: data.rows[rowDetail] || [],
+            row: displayRows[rowDetail] || [],
             onClose: () => setRowDetail(null)
           })
         : null,
@@ -9175,9 +9464,8 @@ jsxs('div', {
             currentSql: sql,
             initialTab: queriesTab,
             onPick: (text) => {
-              setSql(text)
               setQueriesOpen(false)
-              setTab('sql')
+              newSqlTab(text)
             },
             onClose: () => setQueriesOpen(false)
           })

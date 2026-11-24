@@ -27,6 +27,33 @@ backend adapters, wrapped in a small Tauri shell with a Python sidecar.
 └──────────────────────────────┘
 ```
 
+## Beyond TablePlus
+
+DB Desk follows the TablePlus model — connections, a schema tree, a data grid,
+tabs, filters and a SQL runner — and adds workflows you normally need a second
+tool (or a hand-written query) for:
+
+- **Reveal encrypted columns in place.** Store a per-connection key (a raw
+  32-byte AES key, a `base64:` Laravel `APP_KEY`, or a passphrase) and name the
+  encrypted columns. DB Desk decrypts Laravel envelopes and `{"p": …, "h":
+  {"iv": …}}` payloads straight into the grid: AES-256-GCM or AES-256-CBC,
+  automatic envelope detection, one toggle to reveal/hide. No
+  `pgp_sym_decrypt(...)`, no copy-pasting ciphertext into another app, no
+  leaking the key to the AI provider. Keys are AES-GCM encrypted at rest and
+  never returned by the API.
+- **Browse in your timezone.** Set a display timezone per connection (for
+  example `Asia/Kuala_Lumpur`) and tell DB Desk how naive timestamps are stored
+  (`UTC` by default). `timestamp without time zone` and `timestamptz` values
+  render in your timezone, and values you type into column filters are
+  converted back to the storage timezone — search `2026-11-24 09:00` without
+  writing `AT TIME ZONE` by hand.
+- **MongoDB and Redis/Valkey next to SQL.** Collections, documents, keys and a
+  command console live in the same window, with the same read-only guards,
+  production approvals and audit trail as your SQL tables.
+
+A one-key reveal and a timezone switch sound small until the alternative is a
+migration script or a second GUI. They are the reason DB Desk exists.
+
 ## Requirements
 
 - **Node.js 26 LTS** (or any 22.12+; the repo ships `.nvmrc`)
@@ -143,7 +170,8 @@ Set `DBDESK_HOME` to override. The directory contains:
   rows, CSV, SQL and the AI agent. Disabled by default; one toggle generates a
   bearer token.
 - **Keyboard shortcuts** — **⌘F** filter/search, **⌘R** refresh, **⌘⏎** run,
-  **⌘S** save SQL, **⌘1–4** Data/SQL/Schema/Site, **⌘+ / ⌘− / ⌘0** zoom,
+  **⌘S** save SQL, **⌘2 / ⌘T** new SQL tab, **⌘1 / 3 / 4** Data/Schema/Site,
+  **⌘+ / ⌘− / ⌘0** zoom,
   **⌘/** shortcut list, **⌘,** settings.
 - **Remembers window size and position** across launches (saved to
   `window.json` in the app data folder); if the monitor is gone, the app falls
@@ -223,6 +251,9 @@ Set `DBDESK_HOME` to override. The directory contains:
   extra (auto-increment/identity), foreign key and comment, plus an index grid
   (`index_name`, algorithm, unique, column). DDL is still available from the
   **DDL** button but no longer the default view.
+- **SQL query tabs** — **SQL** (or **⌘T**) opens a dedicated query tab next to
+  the table tabs. Each tab keeps its own SQL text and result set, so a second
+  query does not overwrite the first; close a tab when you are done.
 - **Bottom data toolbar** — Run, Limit, Filter, row metadata, view/SQL/column
   actions, More menu and pagination sit under the grid, like TablePlus.
 - **TablePlus-style filters** — each row has a checkbox, a **Raw SQL / column**

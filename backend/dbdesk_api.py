@@ -46,6 +46,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 
@@ -53,6 +54,14 @@ try:  # available in the gateway's runtime; used only for credential encryption
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except Exception:  # pragma: no cover - surfaces on save with a clear error
     AESGCM = None
+
+try:  # optional AES-CBC support for Laravel-style encrypted columns
+    from cryptography.hazmat.primitives import padding as _sym_padding
+    from cryptography.hazmat.primitives.ciphers import Cipher as _SymCipher
+    from cryptography.hazmat.primitives.ciphers import algorithms as _sym_algorithms
+    from cryptography.hazmat.primitives.ciphers import modes as _sym_modes
+except Exception:  # pragma: no cover
+    _SymCipher = _sym_algorithms = _sym_modes = _sym_padding = None
 
 try:  # the Hermes runtime provides this; standalone/CI falls back to the env
     from hermes_constants import get_hermes_home
@@ -175,8 +184,17 @@ def _public(conn: dict[str, Any]) -> dict[str, Any]:
     out = {
         k: v
         for k, v in conn.items()
-        if k not in ("password", "password_enc", "ch_headers", "ch_headers_enc")
+        if k
+        not in (
+            "password",
+            "password_enc",
+            "ch_headers",
+            "ch_headers_enc",
+            "decrypt_key",
+            "decrypt_key_enc",
+        )
     }
+    out["decrypt_key_set"] = bool(conn.get("decrypt_key_enc"))
     out["ch_headers_set"] = bool(conn.get("ch_headers_enc"))
     names: list[str] = []
     if conn.get("ch_headers_enc"):
@@ -537,9 +555,19 @@ def _like_escape(value: Any) -> str:
     return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _where_clause(kind: str, filters: Any) -> str:
+def _where_clause(
+    kind: str,
+    filters: Any,
+    columns: Any = None,
+    conn: dict[str, Any] | None = None,
+) -> str:
     if not isinstance(filters, list):
         return ""
+    types = {
+        str(column.get("name")): column.get("type")
+        for column in (columns or [])
+        if isinstance(column, dict)
+    }
     quote = {
         "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident, "sqlite": _sqlite_ident
     }[kind]
@@ -567,6 +595,8 @@ def _where_clause(kind: str, filters: Any) -> str:
         if op not in ("isnull", "notnull") and str(value or "") == "":
             continue
         target = quote(column)
+        if conn is not None and op not in ("contains", "startswith", "endswith", "isnull", "notnull"):
+            value = _filter_value(conn, types.get(column), value)
         if op == "isnull":
             clauses.append(f"{target} IS NULL")
         elif op == "notnull":
@@ -661,6 +691,342 @@ def _pg_run_csv(conn: dict[str, Any], sql: str) -> str:
     if proc.returncode != 0:
         raise HTTPException(400, _clean_error(proc.stderr or proc.stdout))
     return proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+# encrypted-column reveal (Laravel / p+h JSON envelopes, AES-GCM / AES-CBC)
+# --------------------------------------------------------------------------- #
+
+DECRYPT_ALGOS = ("auto", "aes-256-gcm", "aes-256-cbc")
+_HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
+
+
+def _decrypt_columns(conn: dict[str, Any]) -> list[str]:
+    raw = str(conn.get("decrypt_columns") or "").strip()
+    if not raw:
+        return []
+    parts = [part.strip() for part in re.split(r"[,\n]", raw) if part.strip()]
+    return parts
+
+
+def _decrypt_key_candidates(conn: dict[str, Any]) -> list[bytes]:
+    token = str(conn.get("decrypt_key_enc") or "")
+    if not token:
+        return []
+    try:
+        raw = _decrypt(token)
+    except Exception:
+        return []
+    if not raw:
+        return []
+    text = raw.strip()
+    candidates: list[bytes] = []
+    if text.startswith("base64:"):
+        try:
+            candidates.append(base64.b64decode(text[7:]))
+        except Exception:
+            pass
+    if text.startswith("hex:"):
+        try:
+            candidates.append(bytes.fromhex(text[4:]))
+        except Exception:
+            pass
+    candidates.append(raw.encode("utf-8"))
+    stripped = text.replace("-", "+").replace("_", "/")
+    if re.fullmatch(r"[A-Za-z0-9+/=]{16,}", stripped):
+        try:
+            candidates.append(base64.b64decode(stripped + "=" * (-len(stripped) % 4)))
+        except Exception:
+            pass
+    if _HEX_RE.fullmatch(stripped) and len(stripped) in (32, 48, 64):
+        try:
+            candidates.append(bytes.fromhex(stripped))
+        except Exception:
+            pass
+    candidates.append(hashlib.sha256(raw.encode("utf-8")).digest())
+    seen: set[bytes] = set()
+    result: list[bytes] = []
+    for candidate in candidates:
+        if len(candidate) in (16, 24, 32) and candidate not in seen:
+            seen.add(candidate)
+            result.append(candidate)
+    return result
+
+
+def _b64_bytes(value: Any) -> bytes | None:
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if not isinstance(value, str):
+        return None
+    text = value.strip().replace("-", "+").replace("_", "/")
+    if not text:
+        return None
+    if _HEX_RE.fullmatch(text) and len(text) % 2 == 0:
+        try:
+            return bytes.fromhex(text)
+        except Exception:
+            pass
+    try:
+        return base64.b64decode(text + "=" * (-len(text) % 4))
+    except Exception:
+        return None
+
+
+def _clean_plain(data: bytes | None) -> str | None:
+    if not data:
+        return None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text:
+        return None
+    control = sum(1 for char in text if ord(char) < 9 or 13 < ord(char) < 32)
+    if control > max(1, len(text) // 20):
+        return None
+    return text
+
+
+def _aes_decrypt(ciphertext: bytes, iv: bytes, tag: bytes | None, keys: list[bytes], algo: str) -> str | None:
+    for key in keys:
+        if algo in ("auto", "aes-256-gcm") and AESGCM is not None and iv:
+            try:
+                blob = ciphertext + tag if tag else ciphertext
+                text = _clean_plain(AESGCM(key).decrypt(iv, blob, None))
+                if text is not None:
+                    return text
+            except Exception:
+                pass
+        if (
+            algo in ("auto", "aes-256-cbc")
+            and _SymCipher is not None
+            and len(iv) == 16
+            and len(ciphertext) % 16 == 0
+        ):
+            try:
+                decryptor = _SymCipher(_sym_algorithms.AES(key), _sym_modes.CBC(iv)).decryptor()
+                padded = decryptor.update(ciphertext) + decryptor.finalize()
+                unpadder = _sym_padding.PKCS7(128).unpadder()
+                text = _clean_plain(unpadder.update(padded) + unpadder.finalize())
+                if text is not None:
+                    return text
+            except Exception:
+                pass
+    return None
+
+
+def _decrypt_payload(raw: str, keys: list[bytes], algo: str) -> str | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    parsed: Any = None
+    if text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+    if isinstance(parsed, dict):
+        header = parsed.get("h") if isinstance(parsed.get("h"), dict) else {}
+        cipher_fields = [
+            parsed.get("p"), parsed.get("value"), parsed.get("ciphertext"),
+            parsed.get("ct"), parsed.get("c"), parsed.get("data"), parsed.get("payload"),
+        ]
+        iv_fields = [
+            header.get("iv"), header.get("nonce"), header.get("n"),
+            parsed.get("iv"), parsed.get("nonce"),
+        ]
+        tag_fields = [
+            header.get("tag"), header.get("authTag"), header.get("mac"),
+            parsed.get("tag"), parsed.get("authTag"),
+        ]
+        pairs = [(cipher, iv) for cipher in cipher_fields for iv in iv_fields]
+        # Some envelopes put the payload in h.iv and the nonce in p;
+        # try the swap too, it is cheap and harmless.
+        pairs += [(iv, cipher) for cipher in cipher_fields for iv in iv_fields]
+        for cipher_value, iv_value in pairs:
+            ciphertext = _b64_bytes(cipher_value)
+            iv = _b64_bytes(iv_value)
+            if not ciphertext or not iv:
+                continue
+            tags: list[bytes | None] = [None]
+            for tag_value in tag_fields:
+                tag = _b64_bytes(tag_value)
+                if tag:
+                    tags.append(tag)
+            for tag in tags:
+                result = _aes_decrypt(ciphertext, iv, tag, keys, algo)
+                if result is not None:
+                    return result
+    ciphertext = _b64_bytes(text)
+    if ciphertext:
+        for iv_len in (12, 16):
+            if len(ciphertext) > iv_len:
+                result = _aes_decrypt(ciphertext[iv_len:], ciphertext[:iv_len], None, keys, algo)
+                if result is not None:
+                    return result
+    return None
+
+
+def _tz(name: Any):
+    text = str(name or "").strip()
+    if not text:
+        return None
+    try:
+        return ZoneInfo(text)
+    except Exception:
+        return None
+
+
+def _is_timestamp_type(type_name: Any) -> bool:
+    text = str(type_name or "").lower()
+    return "timestamp" in text or "datetime" in text
+
+
+def _is_naive_timestamp_type(type_name: Any) -> bool:
+    text = str(type_name or "").lower()
+    return "without time zone" in text or text.startswith("datetime") or text == "timestamp"
+
+
+def _parse_datetime(value: Any) -> datetime.datetime | None:
+    if isinstance(value, datetime.datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        pass
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f%z",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+    ):
+        try:
+            return datetime.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _convert_for_display(value: Any, display, storage, type_name: Any) -> Any:
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        return value
+    if parsed.tzinfo is None:
+        base = storage or display
+        if base is not None:
+            parsed = parsed.replace(tzinfo=base)
+    if display is not None:
+        parsed = parsed.astimezone(display)
+    return parsed.isoformat(sep=" ")
+
+
+def _apply_timezone(conn: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    display = _tz(conn.get("display_tz"))
+    if display is None:
+        return result
+    storage = _tz(conn.get("storage_tz") or "UTC")
+    columns = result.get("columns") or []
+    indexes = [index for index, column in enumerate(columns) if _is_timestamp_type(column.get("type"))]
+    if not indexes:
+        return result
+    rows = result.get("rows") or []
+    changed = False
+    new_rows: list[list[Any]] = []
+    for row in rows:
+        new_row = list(row)
+        for index in indexes:
+            if index >= len(new_row):
+                continue
+            converted = _convert_for_display(
+                new_row[index], display, storage, columns[index].get("type")
+            )
+            if converted is not new_row[index]:
+                new_row[index] = converted
+                changed = True
+        new_rows.append(new_row)
+    if not changed:
+        return result
+    result = dict(result)
+    result["rows"] = new_rows
+    result["display_timezone"] = str(conn.get("display_tz"))
+    return result
+
+
+def _filter_value(conn: dict[str, Any], type_name: Any, value: Any) -> Any:
+    display = _tz(conn.get("display_tz"))
+    if display is None or not _is_timestamp_type(type_name) or not isinstance(value, str):
+        return value
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        return value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=display)
+    if _is_naive_timestamp_type(type_name):
+        storage = _tz(conn.get("storage_tz") or "UTC")
+        if storage is not None:
+            parsed = parsed.astimezone(storage).replace(tzinfo=None)
+        return parsed.isoformat(sep=" ")
+    return parsed.isoformat(sep=" ")
+
+
+def _apply_row_settings(conn: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Apply the per-connection display timezone, then reveal encrypted columns."""
+    result = _apply_timezone(conn, result)
+    return _apply_decryption(conn, result)
+
+
+def _apply_decryption(conn: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Attach ``decrypted_rows`` when encrypted columns are configured."""
+    targets = set(_decrypt_columns(conn))
+    if not targets or not conn.get("decrypt_key_enc"):
+        return result
+    columns = result.get("columns") or []
+    names = [str(column.get("name") or "") for column in columns]
+    rows = result.get("rows") or []
+    if not names or not rows:
+        return result
+    keys = _decrypt_key_candidates(conn)
+    if not keys:
+        return result
+    algo = str(conn.get("decrypt_algo") or "auto").lower()
+    if algo not in DECRYPT_ALGOS:
+        algo = "auto"
+    wanted = names if "*" in targets else [name for name in names if name in targets]
+    if not wanted:
+        return result
+    indexes = {names.index(name): name for name in wanted if name in names}
+    found = False
+    decrypted_rows: list[list[Any]] = []
+    for row in rows:
+        new_row = list(row)
+        for index, name in indexes.items():
+            value = new_row[index] if index < len(new_row) else None
+            if not isinstance(value, str):
+                continue
+            text = value.strip()
+            looks_encrypted = text.startswith("{") or bool(
+                re.fullmatch(r"[A-Za-z0-9+/=_-]{24,}", text)
+            )
+            if not looks_encrypted:
+                continue
+            plain = _decrypt_payload(value, keys, algo)
+            if plain is not None:
+                new_row[index] = plain
+                found = True
+        decrypted_rows.append(new_row)
+    if not found:
+        return result
+    result = dict(result)
+    result["decrypted_rows"] = decrypted_rows
+    result["decrypted_columns"] = [name for index, name in indexes.items()]
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -1322,8 +1688,9 @@ def _pg_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
 
 
 def _pg_rows(conn, schema, table, limit, offset, order_by, direction, filters=None) -> dict[str, Any]:
+    columns_meta = _columns(conn, schema, table) if conn.get("display_tz") else None
     sql = f"SELECT * FROM {_ident(schema)}.{_ident(table)}"
-    where = _where_clause("postgres", filters)
+    where = _where_clause("postgres", filters, columns_meta, conn)
     if where:
         sql += f" WHERE {where}"
     if order_by:
@@ -1332,7 +1699,10 @@ def _pg_rows(conn, schema, table, limit, offset, order_by, direction, filters=No
     started = time.monotonic()
     if psycopg is not None:
         columns, rows = _pg_native_exec(conn, sql, readonly=True, limit=limit)
-        meta = {column["name"]: column.get("type", "") for column in _columns(conn, schema, table)}
+        meta = {
+            column["name"]: column.get("type", "")
+            for column in (columns_meta or _columns(conn, schema, table))
+        }
         for column in columns:
             column["type"] = meta.get(column["name"], column["type"])
         return {
@@ -1566,7 +1936,7 @@ def _my_rows(conn, schema, table, limit, offset, order_by, direction, columns_me
             for c in columns_meta
         ) or "*"
     sql = f"SELECT {exprs} FROM {_my_ident(schema)}.{_my_ident(table)}"
-    where = _where_clause("mysql", filters)
+    where = _where_clause("mysql", filters, columns_meta, conn)
     if where:
         sql += f" WHERE {where}"
     if order_by:
@@ -1831,8 +2201,9 @@ def _ch_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str,
 
 
 def _ch_rows(conn, schema, table, limit, offset, order_by, direction, filters=None) -> dict[str, Any]:
+    columns_meta = _columns(conn, schema, table) if conn.get("display_tz") else None
     sql = f"SELECT * FROM {_ch_ident(schema)}.{_ch_ident(table)}"
-    where = _where_clause("clickhouse", filters)
+    where = _where_clause("clickhouse", filters, columns_meta, conn)
     if where:
         sql += f" WHERE {where}"
     if order_by:
@@ -2022,9 +2393,10 @@ def _sqlite_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[
 def _sqlite_rows(
     conn, schema, table, limit, offset, order_by, direction, filters=None
 ) -> dict[str, Any]:
-    meta = {column["name"]: column.get("type", "") for column in _columns(conn, schema, table)}
+    columns_meta = _columns(conn, schema, table)
+    meta = {column["name"]: column.get("type", "") for column in columns_meta}
     sql = f"SELECT * FROM {_sqlite_ident(table)}"
-    where = _where_clause("sqlite", filters)
+    where = _where_clause("sqlite", filters, columns_meta, conn)
     if where:
         sql += f" WHERE {where}"
     if order_by:
@@ -4387,19 +4759,21 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
     if kind == "http":
         return _http_rows(conn, schema, table, limit, offset, order_by, direction, filters)
     if kind == "sqlite":
-        return _sqlite_rows(conn, schema, table, limit, offset, order_by, direction, filters)
-    if kind == "mysql":
-        return _my_rows(
+        result = _sqlite_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    elif kind == "mysql":
+        result = _my_rows(
             conn, schema, table, limit, offset, order_by, direction,
             _columns(conn, schema, table), filters,
         )
-    if kind == "clickhouse":
-        return _ch_rows(conn, schema, table, limit, offset, order_by, direction, filters)
-    if kind == "mongodb":
-        return _mongo_rows(conn, schema, table, limit, offset, order_by, direction, filters)
-    if kind == "redis":
+    elif kind == "clickhouse":
+        result = _ch_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    elif kind == "mongodb":
+        result = _mongo_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    elif kind == "redis":
         return _redis_rows(conn, schema, table, limit, offset, order_by, direction, filters)
-    return _pg_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    else:
+        result = _pg_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    return _apply_row_settings(conn, result)
 
 
 def _query(conn, sql, limit, readonly) -> dict[str, Any]:
@@ -4410,18 +4784,20 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
     if kind == "http":
         _guard_readonly(conn, sql)
         return _http_query(conn, sql, limit)
-    if kind == "sqlite":
-        return _sqlite_query(conn, sql, limit, readonly)
-    if kind == "mysql":
-        return _my_query(conn, sql, limit, readonly)
-    if kind == "clickhouse":
-        return _ch_query(conn, sql, limit, readonly)
-    if kind == "mongodb":
-        return _mongo_query(conn, sql, limit, readonly)
     if kind == "redis":
         return _redis_query(conn, sql, limit, readonly)
-    _guard_readonly(conn, sql)
-    return _pg_query(conn, sql, limit, readonly)
+    if kind == "sqlite":
+        result = _sqlite_query(conn, sql, limit, readonly)
+    elif kind == "mysql":
+        result = _my_query(conn, sql, limit, readonly)
+    elif kind == "clickhouse":
+        result = _ch_query(conn, sql, limit, readonly)
+    elif kind == "mongodb":
+        result = _mongo_query(conn, sql, limit, readonly)
+    else:
+        _guard_readonly(conn, sql)
+        result = _pg_query(conn, sql, limit, readonly)
+    return _apply_row_settings(conn, result)
 
 
 # --------------------------------------------------------------------------- #
@@ -5206,6 +5582,7 @@ def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
             "http_url", "http_method", "http_sql_field", "http_headers",
             "http_body_mode", "http_dialect", "http_timeout",
         ]
+    fields += ["display_tz", "storage_tz"]
     defaults = {
         "readonly": True,
         "production": False,
@@ -5225,6 +5602,10 @@ def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
     item: dict[str, Any] = {"kind": kind}
     if conn.get("flavor"):
         item["flavor"] = conn["flavor"]
+    if conn.get("decrypt_columns"):
+        item["decrypt_columns"] = conn["decrypt_columns"]
+    if str(conn.get("decrypt_algo") or "auto") != "auto":
+        item["decrypt_algo"] = conn["decrypt_algo"]
     for key in fields:
         value = conn.get(key)
         if value in (None, "", [], {}):
@@ -5384,6 +5765,15 @@ def _record_from_bundle(item: dict[str, Any], record_id: str) -> dict[str, Any]:
         "mongo_srv": bool(item.get("mongo_srv", False)),
         "auth_source": str(item.get("auth_source") or "admin"),
         "redis_db": int(item.get("redis_db") or 0),
+        "decrypt_key_enc": _encrypt(str(item.get("decrypt_key")))
+        if item.get("decrypt_key")
+        else "",
+        "decrypt_columns": str(item.get("decrypt_columns") or "")[:1000],
+        "decrypt_algo": str(item.get("decrypt_algo") or "auto").lower()
+        if str(item.get("decrypt_algo") or "auto").lower() in DECRYPT_ALGOS
+        else "auto",
+        "display_tz": str(item.get("display_tz") or "")[:64],
+        "storage_tz": str(item.get("storage_tz") or "UTC")[:64] or "UTC",
         "db_labels": {
             str(key)[:128]: str(value)[:80]
             for key, value in (item.get("db_labels") or {}).items()
@@ -5480,6 +5870,24 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     else:
         password_enc = _encrypt(str(password))
 
+    decrypt_key = body.get("decrypt_key")
+    if body.get("decrypt_key_clear"):
+        decrypt_key_enc = ""
+    elif decrypt_key in (None, ""):
+        decrypt_key_enc = (existing or {}).get("decrypt_key_enc", "")
+    else:
+        decrypt_key_enc = _encrypt(str(decrypt_key))
+    decrypt_columns = str(pick("decrypt_columns", "")).strip()[:1000]
+    decrypt_algo = str(pick("decrypt_algo", "auto")).strip().lower()
+    if decrypt_algo not in DECRYPT_ALGOS:
+        decrypt_algo = "auto"
+    display_tz = str(pick("display_tz", "")).strip()[:64]
+    if display_tz and _tz(display_tz) is None:
+        raise HTTPException(400, f"unknown timezone {display_tz!r}; use an IANA name like Asia/Kuala_Lumpur")
+    storage_tz = str(pick("storage_tz", "UTC")).strip()[:64] or "UTC"
+    if _tz(storage_tz) is None:
+        raise HTTPException(400, f"unknown storage timezone {storage_tz!r}")
+
     ch_headers = body.get("ch_headers")
     if body.get("ch_headers_clear"):
         ch_headers_enc = ""
@@ -5552,6 +5960,11 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "mongo_srv": bool(pick("mongo_srv", False)),
         "auth_source": str(pick("auth_source", "admin")).strip() or "admin",
         "redis_db": max(0, min(int(pick("redis_db", 0)), 4095)),
+        "decrypt_key_enc": decrypt_key_enc,
+        "decrypt_columns": decrypt_columns,
+        "decrypt_algo": decrypt_algo,
+        "display_tz": display_tz,
+        "storage_tz": storage_tz,
         "db_labels": {
             str(k)[:128]: str(v)[:80] for k, v in (labels or {}).items() if str(v).strip()
         },
