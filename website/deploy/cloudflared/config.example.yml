@@ -1,0 +1,12 @@
+# Template — the real file lives on the web host with mode 600 next to
+# credentials.json (the tunnel secret). Never commit either of them.
+tunnel: <TUNNEL-UUID>
+credentials-file: /etc/cloudflared/credentials.json
+no-autoupdate: true
+
+ingress:
+  - hostname: dbdesk.app
+    service: http://web:80
+  - hostname: www.dbdesk.app
+    service: http://web:80
+  - service: http_status:404

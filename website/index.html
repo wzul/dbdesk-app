@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DB Desk — a TablePlus-style database browser for macOS</title>
+<meta name="description" content="DB Desk is a native macOS database browser for PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey. Read-only by default, encrypted credentials stay on your Mac, and an MCP server puts your databases in reach of local agents.">
+<link rel="canonical" href="https://dbdesk.app/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://dbdesk.app/">
+<meta property="og:site_name" content="DB Desk">
+<meta property="og:title" content="DB Desk — a TablePlus-style database browser for macOS">
+<meta property="og:description" content="PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey in one native Mac app. AI that only ever sees your schema. An MCP server for local agents. Nothing leaves your machine.">
+<meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DB Desk — a TablePlus-style database browser for macOS">
+<meta name="twitter:description" content="One native Mac app for PostgreSQL, MySQL, ClickHouse, SQLite, MongoDB and Redis. Read-only by default, credentials encrypted on your Mac.">
+<meta name="twitter:image" content="https://dbdesk.app/assets/img/og.png">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "DB Desk",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS 13 or later",
+  "url": "https://dbdesk.app/",
+  "downloadUrl": "https://github.com/wzul/dbdesk-app/releases/latest",
+  "description": "A TablePlus-style database browser for macOS covering PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey, with AI assistance and an MCP server for local agents.",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" opacity=".12"/>
+      <ellipse cx="12" cy="7.4" rx="5.1" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 7.4v9.2c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2V7.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 12c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="i-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>
+    </symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/><circle cx="12" cy="15.5" r="1.2" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3 5 6v6c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-3Z"/><path d="m9 12 2.2 2.2L15.5 10"/>
+    </symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.5 13.6 8l4.4 1.6L13.6 11 12 15.5 10.4 11 6 9.6 10.4 8 12 3.5Z"/>
+      <path d="M17.5 15.5 18.4 18l2.6.9-2.6.9-.9 2.5-.9-2.5-2.6-.9 2.6-.9.9-2.5Z"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 2"/>
+    </symbol>
+    <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4"/>
+    </symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 3v5M15 3v5M6.5 8h11v3.5A5.5 5.5 0 0 1 12 17a5.5 5.5 0 0 1-5.5-5.5V8ZM12 17v4"/>
+    </symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5v10"/>
+    </symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13.5 2.5 5 13.5h5L9.5 21.5 19 10h-5.5l0-7.5Z"/>
+    </symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <circle cx="8" cy="8" r="3.5"/><path d="m10.6 10.6 8.4 8.4M16 16l2-2M19 19l2-2"/>
+    </symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 3.5 8 4.2-8 4.2-8-4.2 8-4.2Z"/><path d="m4 12.5 8 4.2 8-4.2"/><path d="m4 16.8 8 4.2 8-4.2"/>
+    </symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="9" cy="8.5" r="3"/><path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M16 6.2a3 3 0 0 1 0 5.6M17.5 15.2c1.8.8 3 2.5 3 4.8"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m4.5 12.5 4.5 4.5 10.5-11"/>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.5v11M8 11l4 4 4-4M4.5 19.5h15"/>
+    </symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.7.6-3.3-1.2-3.3-1.2-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.3-1.1.6-1.4-2.2-.3-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.3 4.6-4.5 4.9.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z"/>
+    </symbol>
+    <symbol id="i-apple" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.7-1.8-3.3-1.8-1.4-.1-2.6.8-3.3.8-.7 0-1.7-.8-2.8-.8-1.4 0-2.7.8-3.4 2.1-1.5 2.5-.4 6.2 1 8.2.7 1 1.5 2.1 2.6 2 1-.1 1.4-.7 2.7-.7 1.2 0 1.6.7 2.7.6 1.1 0 1.8-1 2.5-2 .8-1.1 1.1-2.2 1.1-2.3-.1 0-2.5-1-2.5-3.6ZM14.3 5.6c.6-.7 1-1.7.9-2.7-.9.1-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6 1 .1 2-.5 2.5-1.2Z"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14M13 6l6 6-6 6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      DB Desk
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#databases">Databases</a>
+      <a href="#ai">AI</a>
+      <a href="#mcp">MCP</a>
+      <a href="#security">Security</a>
+      <a href="#download">Download</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
+        <svg><use href="#i-github"/></svg> GitHub
+      </a>
+      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl>
+        <svg><use href="#i-download"/></svg> Download
+      </a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <div class="hero">
+    <div class="wrap">
+      <span class="eyebrow"><span class="dot"></span> macOS 13+ · Apple silicon &amp; Intel</span>
+      <h1>Every database you touch,<br><em>one native Mac app.</em></h1>
+      <p class="lede">
+        DB Desk is a TablePlus-style browser for PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite,
+        MongoDB and Redis/Valkey — fast, keyboard-first, and read-only until you say otherwise.
+        It runs entirely on your Mac, and your credentials never leave it.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl>
+          <svg><use href="#i-apple"/></svg> Download for macOS
+        </a>
+        <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
+          <svg><use href="#i-github"/></svg> View source
+        </a>
+      </div>
+      <p class="hero-meta">
+        <span><svg><use href="#i-check"/></svg> No account, no sign-in</span>
+        <span><svg><use href="#i-check"/></svg> Signed in-app updates</span>
+        <span><svg><use href="#i-check"/></svg> Sequoia-ready DMG, ~40 MB</span>
+      </p>
+
+      <figure class="shot" style="margin-bottom:0">
+        <img src="/assets/img/standalone.webp" width="2200" height="1520"
+             alt="DB Desk showing the orders table in a data grid, with a table tree on the left and a Data/Structure switcher below">
+      </figure>
+      <p class="shot-caption">The data grid: sticky header, resizable columns, inline editing, and a Data / Structure switcher on every table.</p>
+    </div>
+  </div>
+
+  <div class="dbs" id="databases">
+    <div class="wrap">
+      <p class="dbs-label">One window for all of them</p>
+      <div class="dbs-row">
+        <span class="chip"><svg><use href="#i-db"/></svg> PostgreSQL</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> MySQL</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> MariaDB</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> ClickHouse</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> SQLite</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> MongoDB</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> Redis / Valkey</span>
+        <span class="chip"><svg><use href="#i-plug"/></svg> MCP</span>
+        <span class="chip"><svg><use href="#i-plug"/></svg> HTTP gateway</span>
+      </div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="kicker">Beyond TablePlus</p>
+        <h2>Workflows that usually need a second tool</h2>
+        <p>DB Desk follows the TablePlus model — connections, a grid, SQL tabs — then adds the
+          things you would otherwise script, bolt on, or do by hand.</p>
+      </div>
+
+      <div class="grid grid-3" style="margin-top:40px">
+        <article class="card">
+          <span class="icon-tile"><svg><use href="#i-lock"/></svg></span>
+          <h3>Reveal encrypted columns in place</h3>
+          <p>Store a per-connection AES key — raw, <code>base64:</code> Laravel <code>APP_KEY</code>,
+            or a passphrase — and name the encrypted columns. AES-256-GCM/CBC envelopes are
+            detected and decrypted inside the grid behind a <b>Decrypt</b> toggle. The key stays
+            encrypted at rest and is never sent to the AI.</p>
+        </article>
+        <article class="card">
+          <span class="icon-tile"><svg><use href="#i-clock"/></svg></span>
+          <h3>Timestamps in your timezone</h3>
+          <p>Pick a display timezone, and say how naive timestamps are stored. Both plain
+            <code>timestamp</code> columns and <code>timestamptz</code> render in your zone, and
+            filter values convert back automatically when you query.</p>
+        </article>
+        <article class="card">
+          <span class="icon-tile"><svg><use href="#i-spark"/></svg></span>
+          <h3>Ask AI — read-only, always</h3>
+          <p>Ask a question in plain language; DB Desk sends the current table and column names,
+            gets back one SELECT, runs it read-only and shows the SQL with the rows. It is a chat:
+            follow up and the previous SQL is carried into the next request.</p>
+        </article>
+        <article class="card">
+          <span class="icon-tile"><svg><use href="#i-layers"/></svg></span>
+          <h3>One question across databases</h3>
+          <p>When a question spans connections, the agent requests the missing schemas, returns one
+            read-only statement per database plus a join — then DB Desk loads each result into an
+            in-memory SQLite database and runs the join locally.</p>
+        </article>
+        <article class="card">
+          <span class="icon-tile"><svg><use href="#i-code"/></svg></span>
+          <h3>SQL editor that knows your schema</h3>
+          <p>Syntax highlighting plus alias-aware, join-aware, fuzzy-ranked autocomplete:
+            <code>c.</code> completes to that alias’s columns, schema qualifiers and functions
+            included. <b>⌘Space</b> completes on demand.</p>
+        </article>
+        <article class="card">
+          <span class="icon-tile"><svg><use href="#i-grid"/></svg></span>
+          <h3>Mongo and Redis, same guards</h3>
+          <p>Collections, documents, a raw filter object, an aggregate tab; keys, TTL, a type-aware
+            value drawer and a command console. They share the same read-only guards, production
+            approvals and audit trail as your SQL tables.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight" style="background:var(--bg-canvas);border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke)">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Everything in the app</p>
+        <h2>No feature behind a paywall, no add-ons</h2>
+      </div>
+
+      <div class="feature-groups">
+        <div class="feature-group">
+          <h4>Browse &amp; edit</h4>
+          <ul class="feature-list">
+            <li><svg><use href="#i-check"/></svg><span><strong>Connection picker</strong> — search, groups, type icons, read-only and PROD badges; right-click to open, edit, clone, test, export or delete.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Connection rail</strong> — a rail of open connections, right-click to edit or close.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Resume where you left off</strong> — the picker reopens the last connection in one click.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>TablePlus-style filters</strong> — per-column operators, limit control, and <b>⌘F</b> to search the grid.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Structure grid</strong> — columns, types, nullability, defaults, indexes and DDL in one view.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Row tools</strong> — insert, update, delete, copy, with a record panel that opens beside the grid.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Export &amp; import</strong> — CSV/JSON/SQL exports from the table menu, CSV import, a QR hand-off for a connection.</span></li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Query, AI &amp; data</h4>
+          <ul class="feature-list">
+            <li><svg><use href="#i-check"/></svg><span><strong>SQL tabs</strong> — many per connection, syntax highlighting, <b>⌘⏎</b> to run, <b>⌘S</b> to save, and saved-query buttons on the toolbar.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Quick panel</strong> — <b>⌘P</b> jumps to any table, view, schema, function or connection.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>AI setup assistant</strong> — describe the database and get a prefilled form; the password field is always left blank.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>AI autocomplete</strong> — on by default once a provider is set, <b>⌘I</b>, with a one-switch opt-out.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Any OpenAI-compatible provider</strong> — base URL, model and key; <b>Detect models</b> lists what the endpoint actually serves (OpenAI, OpenRouter, Ollama, LM Studio…).</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>JSON &amp; JSONB editor</strong> — a cell modal with Format, NULL and Save.</span></li>
+          </ul>
+        </div>
+        <div class="feature-group">
+          <h4>Team &amp; machine</h4>
+          <ul class="feature-list">
+            <li><svg><use href="#i-check"/></svg><span><strong>MCP server</strong> — stdio or loopback HTTP; connections, databases, tables, columns, keys, DDL, rows, CSV, SQL and the AI agent as MCP tools.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>SSH tunnels</strong> — key or agent auth, plus a custom tunnel-command field for anything else.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Read-only by default</strong> — enforced on the server side, not by hiding buttons.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Production approvals</strong> — writes against a PROD connection wait in an approval drawer and land in the audit log.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Backup &amp; restore</strong> — export every connection and setting, restore on a new Mac.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Native touches</strong> — macOS notifications for long queries, remembered window size and position, zoom shortcuts.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Offline by design</strong> — no telemetry, no sync server, no account. The updater is the only outbound call you did not make.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="split">
+        <div class="split-media">
+          <figure class="shot">
+            <img src="/assets/img/sql-tab.webp" width="2200" height="1520" alt="A SQL tab in DB Desk with syntax highlighting and an autocomplete list of columns">
+          </figure>
+        </div>
+        <div class="split-copy">
+          <p class="kicker">Query work</p>
+          <h3>A SQL tab that finishes your sentences</h3>
+          <p>Open as many tabs as the question needs, each with its own result set. The editor
+            understands aliases and joins, so completion follows the statement you are writing
+            rather than a flat list of every column in the database.</p>
+          <ul>
+            <li><svg><use href="#i-check"/></svg><span>Alias-aware completion: <code>c.</code> → that table’s columns</span></li>
+            <li><svg><use href="#i-check"/></svg><span>Fuzzy ranking, functions and schema qualifiers</span></li>
+            <li><svg><use href="#i-check"/></svg><span>⌘⏎ runs, ⌘S saves, saved queries come back as buttons</span></li>
+            <li><svg><use href="#i-check"/></svg><span>AI autocomplete on <b>⌘I</b>, with an opt-out in Settings</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="split reverse" style="margin-top:76px">
+        <div class="split-media">
+          <figure class="shot">
+            <img src="/assets/img/filters.webp" width="2200" height="1520" alt="The filter panel in DB Desk filtering rows by column, operator and value">
+          </figure>
+        </div>
+        <div class="split-copy">
+          <p class="kicker">Reading data</p>
+          <h3>Filters, limits and edits that behave</h3>
+          <p>Per-column operators build the WHERE clause without touching the SQL, and the limit
+            control decides how much of a large table you pull. Double-click a cell to edit it;
+            JSON cells get a proper editor, encrypted columns get a Decrypt toggle.</p>
+          <ul>
+            <li><svg><use href="#i-check"/></svg><span>Filter by column, operator and value — or search the page with ⌘F</span></li>
+            <li><svg><use href="#i-check"/></svg><span>Right-click a table: open, export CSV/JSON/SQL, copy name, drop (with arming)</span></li>
+            <li><svg><use href="#i-check"/></svg><span>Every write on a PROD connection asks first, and is logged</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight" id="ai" style="border-top:1px solid var(--stroke)">
+    <div class="wrap">
+      <div class="split">
+        <div class="split-media">
+          <figure class="shot">
+            <img src="/assets/img/connection-picker.webp" width="2200" height="1520" alt="The DB Desk connection picker listing saved connections with a Continue-where-you-left-off card">
+          </figure>
+        </div>
+        <div class="split-copy">
+          <p class="kicker">AI that stays in its lane</p>
+          <h3>Schema in, answers out — never your rows</h3>
+          <p>Point DB Desk at any OpenAI-compatible endpoint. It sends the SQL you are writing, the
+            dialect, and the names and types of the tables in play. Row data, passwords, tokens and
+            SSH material are not part of the request, and per-connection switches let you hide a
+            schema from the model entirely or keep it inspect-only.</p>
+          <ul>
+            <li><svg><use href="#i-check"/></svg><span><strong>AI can see this schema</strong> — off means the model never learns it exists</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>AI can run read-only queries</strong> — off keeps it to suggestions</span></li>
+            <li><svg><use href="#i-check"/></svg><span>Every statement the agent runs is written to the audit log</span></li>
+            <li><svg><use href="#i-check"/></svg><span>API keys are AES-GCM encrypted at rest, in the app’s own data folder</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="mcp">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="kicker">For your agents</p>
+        <h2>Your databases, as MCP tools</h2>
+        <p>Settings → MCP server exposes DB Desk to Claude Desktop, Cursor, Hermes or any MCP
+          client over stdio or loopback HTTP. It is off until you switch it on and generate a
+          bearer token.</p>
+      </div>
+
+      <div class="grid grid-4" style="margin-top:34px">
+        <article class="card">
+          <h3>Tools</h3>
+          <p>Connections, databases, tables, columns, indexes, DDL, rows, CSV, SQL — plus the AI
+            agent itself.</p>
+        </article>
+        <article class="card">
+          <h3>Local by default</h3>
+          <p>Stdio for a client on the same Mac, loopback HTTP when a tool needs a port. Tunnels
+            open on demand.</p>
+        </article>
+        <article class="card">
+          <h3>Same guards</h3>
+          <p>MCP calls obey each connection’s read-only flag and production approval drawer, and
+            land in the audit log.</p>
+        </article>
+        <article class="card">
+          <h3>One toggle</h3>
+          <p>Disabled out of the box. Enable it and a bearer token is generated for you.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight" id="security" style="background:var(--bg-canvas);border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke)">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Security model</p>
+        <h2>Local-first, read-only-first</h2>
+        <p>DB Desk is a Tauri shell around a local Python sidecar. The sidecar serves the UI and
+          talks to your databases; nothing else is in the path.</p>
+      </div>
+
+      <div class="sec-grid">
+        <div class="sec-item">
+          <span class="icon-tile"><svg><use href="#i-shield"/></svg></span>
+          <div>
+            <h3>Read-only is the default, and enforced server-side</h3>
+            <p>The guard lives in the API the UI calls, so hiding a button is not the protection.</p>
+          </div>
+        </div>
+        <div class="sec-item">
+          <span class="icon-tile"><svg><use href="#i-key"/></svg></span>
+          <div>
+            <h3>Credentials are encrypted at rest</h3>
+            <p>Secrets sit in the app’s data folder under AES-GCM. They are never printed,
+              never synced, and never part of an AI request.</p>
+          </div>
+        </div>
+        <div class="sec-item">
+          <span class="icon-tile"><svg><use href="#i-users"/></svg></span>
+          <div>
+            <h3>Production asks before it writes</h3>
+            <p>Writes against a PROD connection queue in an approval drawer; the audit log records
+              what ran, where, and for what.</p>
+          </div>
+        </div>
+        <div class="sec-item">
+          <span class="icon-tile"><svg><use href="#i-plug"/></svg></span>
+          <div>
+            <h3>No account, no backend, no telemetry</h3>
+            <p>The only outbound calls are the ones you configure: your database, your AI
+              endpoint, and the signed updater.</p>
+          </div>
+        </div>
+      </div>
+
+      <p style="margin-top:26px;font-size:12.5px;color:var(--text-3)">
+        Read the full write-up in
+        <a href="https://github.com/wzul/dbdesk-app/blob/main/docs/security.md" target="_blank" rel="noopener">docs/security.md</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="wrap">
+      <div class="panel">
+        <p class="kicker">Keyboard-first</p>
+        <h2 style="font-size:clamp(22px,2.4vw,28px)">The shortcuts you will actually use</h2>
+        <p style="margin:12px 0 0;color:var(--text-2);font-size:14.5px;max-width:620px">
+          Every action is reachable from the keyboard, and <b>⌘/</b> lists the rest.
+        </p>
+        <div class="keys">
+          <span class="key"><kbd>⌘F</kbd> filter</span>
+          <span class="key"><kbd>⌘T</kbd> new SQL tab</span>
+          <span class="key"><kbd>⌘⏎</kbd> run</span>
+          <span class="key"><kbd>⌘P</kbd> quick panel</span>
+          <span class="key"><kbd>⌘R</kbd> refresh</span>
+          <span class="key"><kbd>⌘I</kbd> AI autocomplete</span>
+          <span class="key"><kbd>⌘Space</kbd> complete</span>
+          <span class="key"><kbd>⌘S</kbd> save query</span>
+          <span class="key"><kbd>⌘1</kbd> <kbd>⌘3</kbd> <kbd>⌘4</kbd> Data / Structure / Site</span>
+          <span class="key"><kbd>⌘,</kbd> settings</span>
+          <span class="key"><kbd>⌘/</kbd> all shortcuts</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <div class="download">
+        <p class="kicker">Download</p>
+        <h2>DB Desk for macOS</h2>
+        <p class="sub">A single DMG, ad-hoc signed, updated in place by a signed updater. No Apple
+          Developer account needed on your side, no license key, no account.</p>
+        <div class="dl-buttons">
+          <a class="btn btn-primary btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="aarch64">
+            <svg><use href="#i-apple"/></svg> <span data-dl-label>Download for Apple silicon</span>
+          </a>
+          <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="x64">
+            <svg><use href="#i-download"/></svg> <span data-dl-label>Download for Intel</span>
+          </a>
+        </div>
+        <p class="dl-note">macOS 13 Ventura or later · Apple silicon and Intel · <span data-dl-version>latest release</span></p>
+
+        <div class="steps">
+          <div class="step">
+            <span class="n">1</span>
+            <h4>Open the DMG</h4>
+            <p>Drag <b>DB Desk</b> into Applications.</p>
+          </div>
+          <div class="step">
+            <span class="n">2</span>
+            <h4>Right-click → Open once</h4>
+            <p>The build is ad-hoc signed, so macOS asks you to confirm the first launch.</p>
+          </div>
+          <div class="step">
+            <span class="n">3</span>
+            <h4>Add a connection</h4>
+            <p>Pick a database type, paste the host and credentials, and the grid opens.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div class="foot-brand">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      <span>DB Desk · dbdesk.app — a native Mac database browser</span>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source</a>
+      <a href="https://github.com/wzul/dbdesk-app/tree/main/docs" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/wzul/dbdesk-app/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/wzul/dbdesk-app/blob/main/docs/security.md" target="_blank" rel="noopener">Security</a>
+      <a href="https://github.com/wzul/dbdesk-app/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <div>© <span id="year">2026</span> DB Desk</div>
+  </div>
+</footer>
+
+<script src="/assets/site.js" defer></script>
+</body>
+</html>

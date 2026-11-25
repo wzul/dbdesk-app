@@ -74,6 +74,14 @@ npm run app             # desktop shell (Rust + Tauri)
 Tests: `.venv/bin/python -m unittest discover -s tests`. See
 [Development](docs/development.md).
 
+## Website
+
+The marketing site at **dbdesk.app** lives in [`website/`](website/) — plain
+HTML/CSS, no build step. It is served by nginx in Docker behind a Cloudflare
+tunnel (no public origin), see [`website/deploy/`](website/deploy/) for the
+compose file and nginx config. `python3 website/tools/make-og.py` re-renders the
+link-preview card.
+
 ## Security
 
 Read-only is the default. Every write shows the exact SQL; production

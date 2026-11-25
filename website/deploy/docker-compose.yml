@@ -1,0 +1,56 @@
+name: dbdesk-web
+
+# nginx serves the static site; cloudflared dials out to the Cloudflare edge, so no
+# host port, no certificate on this box, and no public IP in DNS.
+services:
+  web:
+    image: nginx:1.29-alpine
+    container_name: dbdesk-web
+    restart: unless-stopped
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx:/etc/nginx/dbdesk:ro
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/index.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Mirrors the release manifest same-origin: GitHub's asset host sends no CORS
+  # headers, so the page cannot read it cross-origin. Atomic rename keeps nginx
+  # from ever serving a half-written file.
+  manifest:
+    image: alpine:3.22
+    container_name: dbdesk-manifest
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        while :; do
+        wget -q -O /out/.latest.json.new https://github.com/wzul/dbdesk-app/releases/latest/download/latest.json
+        && mv /out/.latest.json.new /out/latest.json
+        || rm -f /out/.latest.json.new;
+        sleep 900; done
+    volumes:
+      - ./site/release:/out
+    networks: [edge]
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: dbdesk-tunnel
+    restart: unless-stopped
+    # The image defaults to uid 65532; run as root so the tunnel config and
+    # credentials can stay 600 and root-owned on the host.
+    user: "0:0"
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - web
+    networks: [edge]
+
+networks:
+  edge:

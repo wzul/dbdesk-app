@@ -1,0 +1,3 @@
+# Local verification renders (screenshots of the site, not site assets).
+preview-*.png
+live-*.png

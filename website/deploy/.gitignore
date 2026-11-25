@@ -1,0 +1,4 @@
+# Runtime-only paths on the server side of this stack.
+site/
+cloudflared/*
+!cloudflared/config.example.yml
