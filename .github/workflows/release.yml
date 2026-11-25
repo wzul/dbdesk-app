@@ -34,7 +34,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           for name in dbdesk-aarch64-apple-darwin dbdesk-x86_64-apple-darwin \
-                      dbdesk-x86_64-pc-windows-msvc \
+                      dbdesk-x86_64-pc-windows-msvc dbdesk-aarch64-pc-windows-msvc \
                       dbdesk-linux-x64 dbdesk-linux-arm64; do
             dir="artifacts/${name#dbdesk-}"
             gh run download "${{ steps.build.outputs.run }}" --repo "$GITHUB_REPOSITORY" \
@@ -67,6 +67,11 @@ jobs:
           WIN_EXE=$(pick artifacts/x86_64-pc-windows-msvc '*setup.exe')
           cp "$WIN_EXE" "out/DB.Desk_${VERSION}_x64-setup.exe"
           cp "${WIN_EXE}.sig" "out/DB.Desk_${VERSION}_x64-setup.exe.sig"
+          WIN_ARM=$(pick artifacts/aarch64-pc-windows-msvc '*setup.exe')
+          if [ -n "$WIN_ARM" ]; then
+            cp "$WIN_ARM" "out/DB.Desk_${VERSION}_arm64-setup.exe"
+            cp "${WIN_ARM}.sig" "out/DB.Desk_${VERSION}_arm64-setup.exe.sig"
+          fi
 
           # Linux — deb for Debian/Ubuntu/Mint, rpm for Fedora/RHEL/openSUSE,
           # AppImage for everyone else, and the AppImage plus its detached .sig is
@@ -101,6 +106,7 @@ jobs:
           add darwin-aarch64 "out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz"
           add darwin-x86_64  "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"     "out/DB.Desk_${VERSION}_x64.app.tar.gz"
           add windows-x86_64 "out/DB.Desk_${VERSION}_x64-setup.exe.sig" "out/DB.Desk_${VERSION}_x64-setup.exe"
+          add windows-aarch64 "out/DB.Desk_${VERSION}_arm64-setup.exe.sig" "out/DB.Desk_${VERSION}_arm64-setup.exe"
           add linux-x86_64   "out/DB.Desk_${VERSION}_x64.AppImage.sig"  "out/DB.Desk_${VERSION}_x64.AppImage"
           add linux-aarch64  "out/DB.Desk_${VERSION}_arm64.AppImage.sig" "out/DB.Desk_${VERSION}_arm64.AppImage"
 

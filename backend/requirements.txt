@@ -2,6 +2,7 @@ fastapi>=0.165.0
 uvicorn>=0.54.0
 cryptography>=50.0.2
 psycopg[binary]>=3.3.9
+pg8000>=1.31.5
 PyMySQL>=1.2.4
 certifi>=2026.11.20
 pymongo>=4.20.1

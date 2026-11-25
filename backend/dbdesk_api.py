@@ -1039,6 +1039,186 @@ try:  # standalone bundle ships psycopg; the Hermes runtime may not
 except Exception:  # pragma: no cover - the psql CLI path still works
     psycopg = None
 
+try:  # pure Python, installs on any architecture
+    import pg8000.dbapi as _pg8000
+except Exception:  # pragma: no cover
+    _pg8000 = None
+
+
+# --------------------------------------------------------------------------- #
+# PostgreSQL driver fallback
+#
+# psycopg ships prebuilt wheels for every platform we build for except Windows on
+# ARM: there is no psycopg-binary win_arm64 wheel, which is what made that build
+# impossible. pg8000 is pure Python, so it installs anywhere, and the adapter below
+# gives it the sliver of the psycopg surface this module actually uses — connect()
+# with the same keywords, cursor()/execute/description/fetchall/rowcount, and
+# postgres.types.get() for type names (which already falls back to _PG_OID_TYPES
+# when it returns None).
+#
+# psycopg stays the default: it is faster and it is what the macOS/Linux bundles
+# ship. DBDESK_PG_DRIVER=pg8000 forces the fallback, which is how it gets tested.
+# --------------------------------------------------------------------------- #
+
+
+class _Pg8000Types:
+    """psycopg answers with the server's own type name ('int4', not 'integer').
+
+    The column headers must read the same on every platform, so the fallback
+    carries the same spellings psycopg would report instead of returning None and
+    letting the generic OID map below answer with SQL-standard names.
+    """
+
+    NAMES = {
+        16: "bool", 17: "bytea", 19: "name", 20: "int8", 21: "int2", 23: "int4",
+        25: "text", 26: "oid", 114: "json", 700: "float4", 701: "float8",
+        1042: "bpchar", 1043: "varchar", 1082: "date", 1083: "time",
+        1114: "timestamp", 1184: "timestamptz", 1186: "interval",
+        1700: "numeric", 2950: "uuid", 3802: "jsonb",
+    }
+
+    class _Info:
+        __slots__ = ("name",)
+
+        def __init__(self, name):
+            self.name = name
+
+    def get(self, code):
+        name = self.NAMES.get(int(code))
+        return self._Info(name) if name else None
+
+
+class _Pg8000Postgres:
+    types = _Pg8000Types()
+
+
+class _Pg8000Column:
+    """pg8000 describes a column as a DB-API 7-tuple; the app reads .name/.type_code."""
+
+    __slots__ = ("name", "type_code")
+
+    def __init__(self, item):
+        self.name = item[0]
+        self.type_code = item[1]
+
+
+class _Pg8000Cursor:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+        return False
+
+    def close(self):
+        try:
+            self._cursor.close()
+        except Exception:
+            pass
+
+    def execute(self, sql, params=None):
+        if params is None:
+            self._cursor.execute(sql)
+        else:
+            self._cursor.execute(sql, tuple(params) if isinstance(params, (list, tuple)) else params)
+
+    @property
+    def description(self):
+        raw = self._cursor.description
+        return [_Pg8000Column(item) for item in raw] if raw else raw
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchmany(self, size=None):
+        if size is None:
+            return self._cursor.fetchmany()
+        return self._cursor.fetchmany(size)
+
+
+class _Pg8000Connection:
+    def __init__(self, connection):
+        self._connection = connection
+
+    # psycopg connections are usable as `with conn:` (commit on success, rollback
+    # on error); keep that shape so no caller has to know which driver is behind it.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, _exc, _tb):
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+        return False
+
+    def cursor(self):
+        return _Pg8000Cursor(self._connection.cursor())
+
+    def commit(self):
+        try:
+            self._connection.commit()
+        except Exception:
+            pass
+
+    def rollback(self):
+        try:
+            self._connection.rollback()
+        except Exception:
+            pass
+
+    def close(self):
+        try:
+            self._connection.close()
+        except Exception:
+            pass
+
+
+class _Pg8000Driver:
+    """The two psycopg entry points used by this module, backed by pg8000."""
+
+    postgres = _Pg8000Postgres()
+
+    def __init__(self, module):
+        self._module = module
+
+    def connect(self, **kwargs):
+        sslmode = str(kwargs.pop("sslmode", "") or "").lower()
+        kwargs.pop("application_name", None)
+        connect_timeout = kwargs.pop("connect_timeout", None)
+        if "dbname" in kwargs:
+            kwargs["database"] = kwargs.pop("dbname")
+        if connect_timeout:
+            kwargs["timeout"] = connect_timeout
+        context = None
+        if sslmode in ("require", "verify-ca", "verify-full"):
+            context = ssl.create_default_context()
+            if sslmode == "require":
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+        if context is not None:
+            kwargs["ssl_context"] = context
+        kwargs.pop("autocommit", None)  # set below, pg8000 has no such kwarg
+        connection = self._module.connect(**kwargs)
+        connection.autocommit = True
+        return _Pg8000Connection(connection)
+
+
+if psycopg is None and _pg8000 is not None:
+    psycopg = _Pg8000Driver(_pg8000)
+elif psycopg is not None and os.environ.get("DBDESK_PG_DRIVER") == "pg8000" and _pg8000 is not None:
+    psycopg = _Pg8000Driver(_pg8000)
+
 try:  # pure Python, works everywhere
     import pymysql
 except Exception:  # pragma: no cover - the mysql CLI path still works
