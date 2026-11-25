@@ -125,6 +125,13 @@
   accepts.
 - **JSON editor** — double-click a JSON/JSONB cell for a large modal with
   **Format**, **NULL**, Cancel and Save; invalid JSON is rejected.
+- **AI autocomplete (opt-in)** — enable it under **Settings → AI provider**,
+  then press **⌘I** / **Ctrl+I** in the SQL editor. The configured model returns
+  a continuation at the caret; **Tab** inserts it and **Esc** dismisses it. Only
+  the SQL text and schema metadata are sent — never rows or secrets.
+- **Model detection** — in **Settings → AI provider**, enter the base URL and
+  API key and press **Detect models**. The model field turns into a picker of
+  the models the provider reports, with **Type** to go back to a custom name.
 - **Saved query buttons** — the SQL toolbar has **Save** (name + current SQL)
   and **Saved** (opens the snippet list); the same snippets are available to the
   MCP agent through `queries_list` / `query_save` / `query_delete`.

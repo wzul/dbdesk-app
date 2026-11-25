@@ -37,6 +37,10 @@ export default function SettingsDialog({ open, onClose, version }) {
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [aiMessage, setAiMessage] = useState('')
+  const [models, setModels] = useState([])
+  const [detecting, setDetecting] = useState(false)
+  const [aiComplete, setAiComplete] = useState(false)
+  const [customModel, setCustomModel] = useState(false)
   const [update, setUpdate] = useState(null)
   const [updateState, setUpdateState] = useState('')
   const [checking, setChecking] = useState(false)
@@ -66,6 +70,8 @@ export default function SettingsDialog({ open, onClose, version }) {
   useEffect(() => {
     if (!open) return
     setAiMessage('')
+    setModels([])
+    setCustomModel(false)
     setUpdateState('')
     setNotifyState('')
     setMcpMessage('')
@@ -82,6 +88,7 @@ export default function SettingsDialog({ open, onClose, version }) {
         setConfig(value)
         setBaseUrl(value.base_url || '')
         setModel(value.model || '')
+        setAiComplete(Boolean(value.ai_complete))
       })
       .catch(() => {})
     fetch('/health')
@@ -110,11 +117,12 @@ export default function SettingsDialog({ open, onClose, version }) {
     try {
       const value = await rest('/ai/config', {
         method: 'POST',
-        body: { base_url: baseUrl, model, api_key: apiKey }
+        body: { base_url: baseUrl, model, api_key: apiKey, ai_complete: aiComplete }
       })
       setConfig(value)
       setApiKey('')
       setAiMessage('Saved')
+      window.dispatchEvent(new CustomEvent('dbdesk:ai-config'))
     } catch (error) {
       setAiMessage(String(error.message || error))
     } finally {
@@ -122,6 +130,26 @@ export default function SettingsDialog({ open, onClose, version }) {
     }
   }
 
+
+  const detectModels = async () => {
+    setDetecting(true)
+    setAiMessage('')
+    try {
+      const value = await rest('/ai/models', {
+        method: 'POST',
+        body: { base_url: baseUrl, api_key: apiKey }
+      })
+      const list = (value && value.models) || []
+      setModels(list)
+      setCustomModel(list.length === 0)
+      if (list.length === 1) setModel(list[0])
+      setAiMessage(list.length ? `${list.length} models found` : 'No models returned')
+    } catch (error) {
+      setAiMessage(String(error.message || error))
+    } finally {
+      setDetecting(false)
+    }
+  }
 
   const copyText = async (value, label) => {
     if (!value) return
@@ -655,11 +683,40 @@ export default function SettingsDialog({ open, onClose, version }) {
                 placeholder="Base URL (https://api.openai.com/v1)"
                 onChange={(event) => setBaseUrl(event.target.value)}
               />
-              <Input
-                value={model}
-                placeholder="Model (gpt-4o-mini)"
-                onChange={(event) => setModel(event.target.value)}
-              />
+              {models.length > 0 && !customModel ? (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                    className="h-8 min-w-0 flex-1 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11.5px] outline-none focus:border-primary/60"
+                  >
+                    {model && !models.includes(model) ? (
+                      <option value={model}>{model}</option>
+                    ) : null}
+                    {models.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button variant="ghost" size="sm" onClick={() => setCustomModel(true)}>
+                    Type
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={model}
+                    placeholder="Model (gpt-4o-mini)"
+                    onChange={(event) => setModel(event.target.value)}
+                  />
+                  {models.length > 0 ? (
+                    <Button variant="ghost" size="sm" onClick={() => setCustomModel(false)}>
+                      Pick
+                    </Button>
+                  ) : null}
+                </div>
+              )}
               <Input
                 type="password"
                 value={apiKey}
@@ -671,6 +728,22 @@ export default function SettingsDialog({ open, onClose, version }) {
               <Button variant="secondary" size="sm" disabled={saving} onClick={() => void saveAi()}>
                 {saving ? 'Saving…' : 'Save'}
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={detecting}
+                onClick={() => void detectModels()}
+              >
+                {detecting ? 'Detecting…' : 'Detect models'}
+              </Button>
+              <label className="flex items-center gap-1.5 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={aiComplete}
+                  onChange={(event) => setAiComplete(event.target.checked)}
+                />
+                AI autocomplete (⌘I)
+              </label>
               {config && config.configured ? (
                 <Badge variant="outline" size="xs">
                   configured

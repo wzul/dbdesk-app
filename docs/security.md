@@ -15,6 +15,13 @@
 - **AI setup** sends only your message and generic instructions. The returned
   draft is sanitized: keys containing `password`, `token`, `secret`, `key`,
   `header`, `env`, `auth` or `cookie` are dropped.
+- **AI autocomplete** is opt-in (**Settings → AI provider → AI autocomplete**).
+  When you press **⌘I**, it sends the SQL text around the caret plus dialect,
+  database name and the table/column names and types referenced in the query.
+  It never sends rows, result sets, passwords, API keys, SSH material or tunnel
+  env, and the server rejects the request unless the toggle is on.
+- **Model detection** calls `GET <base URL>/models` with your API key to list
+  model names. The key stays on this Mac; only the model IDs are shown.
 - **Secrets at rest** stay AES-GCM encrypted and are decrypted only to open the
   database connection.
 - **Local-only option**: point the base URL at Ollama/LM Studio on

@@ -5527,6 +5527,7 @@ def _load_ai_config() -> dict[str, Any]:
         "base_url": str(data.get("base_url") or AI_DEFAULT_BASE),
         "model": str(data.get("model") or AI_DEFAULT_MODEL),
         "api_key_enc": str(data.get("api_key_enc") or ""),
+        "ai_complete": bool(data.get("ai_complete", False)),
     }
 
 
@@ -5543,7 +5544,9 @@ def _ai_key(config: dict[str, Any]) -> str:
     return _decrypt(token) if token else ""
 
 
-def _ai_post(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+def _ai_post(
+    config: dict[str, Any], payload: dict[str, Any], timeout: int = 60
+) -> dict[str, Any]:
     key = _ai_key(config)
     if not key:
         raise HTTPException(400, "AI is not configured: add an API key in AI settings")
@@ -5551,13 +5554,13 @@ def _ai_post(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     url = base + "/chat/completions"
     headers = {"Authorization": f"Bearer {key}"}
     try:
-        return _mcp_http_json(url, payload=payload, headers=headers, timeout=60)
+        return _mcp_http_json(url, payload=payload, headers=headers, timeout=timeout)
     except HTTPException as exc:
         # Some OpenAI-compatible servers reject response_format.
         if "response_format" in payload:
             retry = dict(payload)
             retry.pop("response_format", None)
-            return _mcp_http_json(url, payload=retry, headers=headers, timeout=60)
+            return _mcp_http_json(url, payload=retry, headers=headers, timeout=timeout)
         raise exc
 
 
@@ -6151,6 +6154,7 @@ async def ai_config() -> dict[str, Any]:
         "base_url": config["base_url"],
         "model": config["model"],
         "configured": bool(_ai_key(config)),
+        "ai_complete": bool(config.get("ai_complete")),
     }
 
 
@@ -6162,11 +6166,166 @@ async def ai_config_save(body: dict[str, Any]) -> dict[str, Any]:
         "base_url": str(body.get("base_url") or current["base_url"]).strip() or AI_DEFAULT_BASE,
         "model": str(body.get("model") or current["model"]).strip() or AI_DEFAULT_MODEL,
         "api_key_enc": current["api_key_enc"],
+        "ai_complete": bool(body.get("ai_complete", current.get("ai_complete", False))),
     }
     if api_key not in (None, ""):
         config["api_key_enc"] = _encrypt(str(api_key))
     _save_ai_config(config)
-    return {"ok": True, "configured": bool(config["api_key_enc"]), "base_url": config["base_url"], "model": config["model"]}
+    return {
+        "ok": True,
+        "configured": bool(config["api_key_enc"]),
+        "base_url": config["base_url"],
+        "model": config["model"],
+        "ai_complete": bool(config.get("ai_complete")),
+    }
+
+
+@router.post("/ai/models")
+async def ai_models(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    config = _load_ai_config()
+    base = str(body.get("base_url") or config["base_url"] or AI_DEFAULT_BASE).strip().rstrip("/")
+    if not re.match(r"^https?://", base, re.IGNORECASE):
+        raise HTTPException(400, "Base URL must start with http:// or https://")
+    key = str(body.get("api_key") or "").strip() or _ai_key(config)
+    if not key:
+        raise HTTPException(400, "Add an API key first, then detect models")
+    data = _mcp_http_json(
+        base + "/models",
+        headers={"Authorization": f"Bearer {key}"},
+        timeout=25,
+    )
+    items: Any = []
+    if isinstance(data, dict):
+        items = data.get("data") or data.get("models") or []
+    names: list[str] = []
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict):
+            name = item.get("id") or item.get("name") or item.get("model")
+        else:
+            name = item
+        if name:
+            names.append(str(name))
+    models = sorted({name for name in names if name}, key=str.lower)
+    return {"models": models, "base_url": base}
+
+
+SQL_COMPLETE_SYSTEM = (
+    "You complete SQL for a database browser. Output ONLY the text that should be "
+    "inserted at the caret: one short line, no markdown fences, no quotes around it, "
+    "no explanation. Use only the tables and columns in the schema context; never "
+    "invent identifiers. If nothing useful fits, output an empty string."
+)
+
+
+def _ai_complete_context(conn: dict[str, Any], database: str, sql: str) -> str:
+    kind = _kind(conn)
+    lines = [f"Dialect: {kind}", f"Database: {database or conn.get('dbname') or ''}"]
+    try:
+        tables = _tree(conn)
+    except HTTPException:
+        tables = []
+    names = [f"{row['schema']}.{row['name']}" for row in tables][:80]
+    if names:
+        lines.append("Tables: " + ", ".join(names))
+    references: list[str] = []
+    for match in re.finditer(r"\b(?:from|join|update|into)\s+([A-Za-z_][\w.$]*)", sql, re.IGNORECASE):
+        reference = match.group(1).replace('"', "").replace("`", "")
+        if reference and reference not in references:
+            references.append(reference)
+    for reference in references[:4]:
+        schema = ""
+        table = reference
+        if "." in reference:
+            schema, _, table = reference.partition(".")
+        else:
+            hit = next(
+                (row for row in tables if str(row.get("name")) == table),
+                None,
+            )
+            if hit:
+                schema = str(hit.get("schema") or "")
+        if not table:
+            continue
+        try:
+            columns = _columns(conn, schema, table) if schema else []
+        except HTTPException:
+            columns = []
+        if columns:
+            listed = ", ".join(
+                f"{column.get('name')} {str(column.get('type') or '')}".strip()
+                for column in columns[:40]
+            )
+            label = f"{schema}.{table}" if schema else table
+            lines.append(f"Columns {label}: {listed}")
+    return "\n".join(line for line in lines if line.strip())
+
+
+def _ai_clean_completion(text: str) -> str:
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    value = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", value)
+    value = re.sub(r"\s*```$", "", value).strip()
+    value = value.strip("`").strip()
+    first = value.splitlines()[0].strip() if value else ""
+    return first[:200]
+
+
+@router.post("/ai/complete")
+async def ai_complete(body: dict[str, Any]) -> dict[str, Any]:
+    config = _load_ai_config()
+    if not bool(config.get("ai_complete")):
+        raise HTTPException(403, "AI autocomplete is off. Enable it in Settings > AI provider.")
+    conn_id = str(body.get("connection_id") or "")
+    if not conn_id:
+        raise HTTPException(400, "connection_id is required")
+    sql = str(body.get("sql") or "")
+    if not sql.strip():
+        return {"suggestion": ""}
+    try:
+        position = int(body.get("caret"))
+    except (TypeError, ValueError):
+        position = len(sql)
+    position = max(0, min(len(sql), position))
+    database = str(body.get("database") or "")
+    conn = _with_db(_connect(conn_id), database)
+    if not _ai_kind_ok(conn):
+        raise HTTPException(400, "AI autocomplete supports SQL connections only")
+    if not bool(conn.get("ai_schema", True)):
+        raise HTTPException(403, "Schema sharing is disabled for this connection")
+    context = _ai_complete_context(conn, database, sql)
+    before, after = sql[:position], sql[position:]
+    line_start = before.rfind("\n") + 1
+    current_line = before[line_start:]
+    payload = {
+        "model": config.get("model") or AI_DEFAULT_MODEL,
+        "messages": [
+            {"role": "system", "content": SQL_COMPLETE_SYSTEM},
+            {
+                "role": "user",
+                "content": (
+                    f"{context}\n\nSQL (the marker CARET shows where the cursor is):\n"
+                    f"{before}CARET{after}\n\n"
+                    f"Text on the current line before CARET: {current_line}\n"
+                    "Return only the continuation."
+                ),
+            },
+        ],
+        "temperature": 0,
+        "max_tokens": 160,
+        "stream": False,
+    }
+    data = _ai_post(config, payload, timeout=25)
+    content = ""
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        message = choices[0].get("message")
+        if isinstance(message, dict):
+            content = str(message.get("content") or "")
+        if not content:
+            content = str(choices[0].get("text") or "")
+    return {"suggestion": _ai_clean_completion(content)}
 
 
 @router.post("/ai/setup")

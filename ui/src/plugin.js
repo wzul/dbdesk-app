@@ -4868,6 +4868,10 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [models, setModels] = useState([])
+  const [detecting, setDetecting] = useState(false)
+  const [aiComplete, setAiComplete] = useState(false)
+  const [customModel, setCustomModel] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [catalog, setCatalog] = useState([])
@@ -4881,10 +4885,31 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
         setConfig(value)
         setBaseUrl(value.base_url || '')
         setModel(value.model || '')
+        setAiComplete(Boolean(value.ai_complete))
         if (!value.configured) setSettingsOpen(true)
       })
       .catch(() => {})
   }, [])
+
+  const detectModels = async () => {
+    setDetecting(true)
+    setError('')
+    try {
+      const value = await call('/ai/models', {
+        method: 'POST',
+        body: { base_url: baseUrl, api_key: apiKey }
+      })
+      const list = (value && value.models) || []
+      setModels(list)
+      setCustomModel(list.length === 0)
+      if (list.length === 1) setModel(list[0])
+      if (list.length === 0) setError('The provider returned no models')
+    } catch (reason) {
+      setError(errText(reason))
+    } finally {
+      setDetecting(false)
+    }
+  }
 
   useEffect(() => {
     call('/ai/catalog')
@@ -4971,7 +4996,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
     try {
       const value = await call('/ai/config', {
         method: 'POST',
-        body: { base_url: baseUrl, model, api_key: apiKey }
+        body: { base_url: baseUrl, model, api_key: apiKey, ai_complete: aiComplete }
       })
       setConfig(value)
       setApiKey('')
@@ -5412,14 +5437,30 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                     className:
                       'h-8 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
                   }),
-                  jsx('input', {
-                    key: 'model',
-                    value: model,
-                    placeholder: 'Model (gpt-4o-mini)',
-                    onChange: (event) => setModel(event.target.value),
-                    className:
-                      'h-8 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
-                  }),
+                  models.length > 0 && !customModel
+                    ? jsx('select', {
+                        key: 'model',
+                        value: model,
+                        onChange: (event) => setModel(event.target.value),
+                        className:
+                          'h-8 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60',
+                        children: [
+                          model && !models.includes(model)
+                            ? jsx('option', { value: model, children: model }, 'saved')
+                            : null,
+                          ...models.map((name) =>
+                            jsx('option', { value: name, children: name }, name)
+                          )
+                        ]
+                      })
+                    : jsx('input', {
+                        key: 'model',
+                        value: model,
+                        placeholder: 'Model (gpt-4o-mini)',
+                        onChange: (event) => setModel(event.target.value),
+                        className:
+                          'h-8 rounded-[5px] border border-(--ui-stroke-secondary) bg-background px-2 text-[11px] outline-none focus:border-primary/60'
+                      }),
                   jsx('input', {
                     key: 'key',
                     type: 'password',
@@ -5436,13 +5477,44 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                 className: 'flex items-center gap-2',
                 children: [
                   jsx(Button, {
+                    key: 'save',
                     variant: 'secondary',
                     size: 'sm',
                     disabled: saving,
                     onClick: () => void saveSettings(),
                     children: saving ? 'Saving…' : 'Save'
                   }),
+                  jsx(Button, {
+                    key: 'detect',
+                    variant: 'ghost',
+                    size: 'sm',
+                    disabled: detecting,
+                    onClick: () => void detectModels(),
+                    children: detecting ? 'Detecting…' : 'Detect models'
+                  }),
+                  models.length > 0 && customModel
+                    ? jsx(Button, {
+                        key: 'pick',
+                        variant: 'ghost',
+                        size: 'sm',
+                        onClick: () => setCustomModel(false),
+                        children: 'Pick from list'
+                      })
+                    : null,
+                  jsxs('label', {
+                    key: 'optin',
+                    className: 'flex items-center gap-1.5 text-[10.5px] text-(--ui-text-secondary)',
+                    children: [
+                      jsx('input', {
+                        type: 'checkbox',
+                        checked: aiComplete,
+                        onChange: (event) => setAiComplete(event.target.checked)
+                      }),
+                      jsx('span', { children: 'AI autocomplete (⌘I)' })
+                    ]
+                  }),
                   jsx('span', {
+                    key: 'hint',
                     className: 'text-[10px] leading-4 text-(--ui-text-tertiary)',
                     children: 'Schema + questions only. Rows are joined locally, never sent.'
                   })
@@ -5891,6 +5963,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [suggestQualifier, setSuggestQualifier] = useState('')
   const [suggestIndex, setSuggestIndex] = useState(0)
   const [sqlFunctions, setSqlFunctions] = useState([])
+  const [aiConfig, setAiConfig] = useState(null)
+  const [aiSuggestion, setAiSuggestion] = useState(null)
+  const [aiBusy, setAiBusy] = useState(false)
   const [ddl, setDdl] = useState('')
   const [ddlLoading, setDdlLoading] = useState(false)
   const [structureIndexes, setStructureIndexes] = useState([])
@@ -6041,6 +6116,22 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
     window.dispatchEvent(new CustomEvent('dbdesk:appearance', { detail: next }))
   }
+
+  const refreshAiConfig = () => {
+    call('/ai/config')
+      .then((value) => setAiConfig(value))
+      .catch(() => setAiConfig(null))
+  }
+
+  useEffect(() => {
+    refreshAiConfig()
+    window.addEventListener('dbdesk:ai-config', refreshAiConfig)
+    return () => window.removeEventListener('dbdesk:ai-config', refreshAiConfig)
+  }, [tab])
+
+  useEffect(() => {
+    setAiSuggestion(null)
+  }, [activeId, activeDb, tab])
 
   useEffect(() => {
     setDecryptOn(false)
@@ -6325,6 +6416,55 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
       if (element) {
         element.focus()
         const position = start + (item.kind === 'function' ? item.value.length : value.length)
+        element.setSelectionRange(position, position)
+      }
+    })
+  }
+
+  const requestAiCompletion = async () => {
+    if (!activeId || aiBusy) return
+    if (!aiConfig || !aiConfig.ai_complete) {
+      host.notify({
+        kind: 'info',
+        message: 'Enable AI autocomplete in the AI panel settings, then save.'
+      })
+      return
+    }
+    setAiBusy(true)
+    setErr('')
+    try {
+      const element = sqlRef.current
+      const caret = element ? element.selectionStart : sql.length
+      const result = await call('/ai/complete', {
+        method: 'POST',
+        body: { connection_id: activeId, database: activeDb, sql, caret }
+      })
+      const text = String((result && result.suggestion) || '')
+      if (text) {
+        setAiSuggestion({ text, caret })
+      } else {
+        host.notify({ kind: 'info', message: 'No AI suggestion at the caret' })
+      }
+    } catch (reason) {
+      setErr(errText(reason))
+      host.notify({ kind: 'error', message: errText(reason) })
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  const acceptAiSuggestion = () => {
+    if (!aiSuggestion) return
+    const element = sqlRef.current
+    const caret = element ? element.selectionStart : sql.length
+    const text = aiSuggestion.text
+    const next = sql.slice(0, caret) + text + sql.slice(caret)
+    setSql(next)
+    setAiSuggestion(null)
+    requestAnimationFrame(() => {
+      if (element) {
+        element.focus()
+        const position = caret + text.length
         element.setSelectionRange(position, position)
       }
     })
@@ -9104,12 +9244,30 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                   : 'select * from public.users limit 50;',
                             onChange: (event) => {
                               setSql(event.target.value)
+                              setAiSuggestion(null)
                               updateSuggestions(event.target.value, event.target.selectionStart)
                             },
                             onClick: (event) =>
                               updateSuggestions(sql, event.currentTarget.selectionStart),
                             onBlur: () => setSuggestOpen(false),
                             onKeyDown: (event) => {
+                              if (aiSuggestion) {
+                                if (event.key === 'Tab' || event.key === 'Enter') {
+                                  event.preventDefault()
+                                  acceptAiSuggestion()
+                                  return
+                                }
+                                if (event.key === 'Escape') {
+                                  event.preventDefault()
+                                  setAiSuggestion(null)
+                                  return
+                                }
+                              }
+                              if ((event.metaKey || event.ctrlKey) && (event.key === 'i' || event.key === 'I')) {
+                                event.preventDefault()
+                                void requestAiCompletion()
+                                return
+                              }
                               if (suggestOpen && suggestions.length > 0) {
                                 if (event.key === 'ArrowDown') {
                                   event.preventDefault()
@@ -9198,7 +9356,35 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                   )
                                 )
                               })
-                            : null
+                            : null,
+                      aiSuggestion || aiBusy
+                        ? jsxs('div', {
+                            key: 'ai-suggest',
+                            className:
+                              'absolute right-2 bottom-2 left-2 z-30 flex items-center gap-2 rounded-[4px] border border-primary/40 bg-background px-2 py-1 shadow-lg',
+                            children: [
+                              jsx('span', {
+                                key: 'badge',
+                                className:
+                                  'shrink-0 rounded-[2px] bg-primary/15 px-1 py-0.5 text-[9px] font-semibold tracking-wide text-primary uppercase',
+                                children: 'AI'
+                              }),
+                              jsx('span', {
+                                key: 'text',
+                                className:
+                                  'min-w-0 flex-1 truncate font-mono text-[11px] text-(--ui-text-secondary)',
+                                children: aiBusy ? 'Thinking…' : aiSuggestion.text
+                              }),
+                              aiSuggestion
+                                ? jsx('span', {
+                                    key: 'hint',
+                                    className: 'shrink-0 text-[9.5px] text-(--ui-text-tertiary)',
+                                    children: 'Tab to insert · Esc to dismiss'
+                                  })
+                                : null
+                            ]
+                          })
+                        : null,
                         ]
                       }),
                       jsxs('div', {
@@ -10349,6 +10535,7 @@ jsxs('div', {
                     ['⌘ S', 'Save the current SQL'],
                     ['⌘ 1 / 3 / 4', 'Data / Structure / Site'],
                     ['⌘ 2 / ⌘ T', 'New SQL query tab'],
+                    ['⌘ I', 'AI autocomplete at the caret (opt-in)'],
                     ['⌘ P', 'Quick panel — jump to a table or run an action'],
                     ['⌘ + / − / 0', 'Zoom in / out / reset'],
                     ['⌘ ,', 'Settings'],
