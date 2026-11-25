@@ -153,7 +153,15 @@ function ContextMenu({ menu, onClose, onOpen, onEdit, onClone, onTest, onExport,
   )
 }
 
-export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, onReviewDraft }) {
+export default function Launcher({
+  onOpen,
+  onNew,
+  onEdit,
+  onSetup,
+  onSettings,
+  onReviewDraft,
+  resumeId = ''
+}) {
   const [connections, setConnections] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -345,6 +353,8 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, o
   }, [connections, query])
 
   const flat = groups.flatMap(([, items]) => items)
+  const resume = connections.find((connection) => connection.id === resumeId) || null
+  const resumeKind = resume ? kindOf(resume) : null
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-auto bg-background text-foreground">
@@ -405,6 +415,47 @@ export default function Launcher({ onOpen, onNew, onEdit, onSetup, onSettings, o
             New connection
           </button>
         </div>
+
+        {resume ? (
+          <button
+            type="button"
+            onClick={() => onOpen(resume.id)}
+            title="Return to the last database you had open"
+            className={cn(
+              'flex items-center gap-3 rounded-[6px] border border-primary/30 bg-primary/5 px-3 py-2.5 text-left',
+              'hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50'
+            )}
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-[5px] border border-primary/20 bg-background">
+              <Codicon name={resumeKind.icon} className={cn('text-base', resumeKind.tone)} />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-[10px] font-medium tracking-wide text-(--ui-text-tertiary) uppercase">
+                Continue where you left off
+              </span>
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="truncate text-[13px] font-medium">{resume.name}</span>
+                <span className="shrink-0 text-[10.5px] text-(--ui-text-tertiary)">
+                  {resumeKind.label}
+                </span>
+                {resume.production ? (
+                  <Badge variant="destructive" size="xs">
+                    PROD
+                  </Badge>
+                ) : null}
+                {resume.readonly ? (
+                  <Badge variant="outline" size="xs">
+                    read-only
+                  </Badge>
+                ) : null}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-primary">
+              Resume
+              <Codicon name="arrow-right" />
+            </span>
+          </button>
+        ) : null}
 
         {drafts.length ? (
           <div className="flex flex-col gap-2">

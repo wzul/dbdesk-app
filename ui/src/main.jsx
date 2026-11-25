@@ -14,7 +14,7 @@ import { isMacOS, sendNativeNotification } from './notify.js'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.13.6'
+const APP_VERSION = '0.13.7'
 const ZOOM_KEY = 'dbdesk.zoom'
 const ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 
@@ -250,6 +250,13 @@ function Shell() {
   const [active, setActive] = useState(null)
   const [editId, setEditId] = useState('')
   const [setupDraft, setSetupDraft] = useState(null)
+  const [lastActiveId, setLastActiveId] = useState(() => {
+    try {
+      return localStorage.getItem(ACTIVE_KEY) || ''
+    } catch {
+      return ''
+    }
+  })
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
@@ -280,6 +287,7 @@ function Shell() {
     } catch {
       /* private mode */
     }
+    setLastActiveId(id)
     setStartNew(false)
     setEditId('')
     setGeneration((value) => value + 1)
@@ -340,6 +348,7 @@ function Shell() {
           onSetup={setup}
           onSettings={() => setSettingsOpen(true)}
           onReviewDraft={(entry) => setup({ ...entry.draft, _draftId: entry.id })}
+          resumeId={lastActiveId}
         />
         <SettingsDialog
           open={settingsOpen}

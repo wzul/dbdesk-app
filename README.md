@@ -238,6 +238,9 @@ Set `DBDESK_HOME` to override. The directory contains:
   appears on the left. Right-click an icon for **Open / Edit connection / Close
   connection / Close other connections / Close all connections**. With a
   single connection open the rail hides itself.
+- **Resume last connection** — after you click the back chevron (or relaunch
+  the app), the picker shows a **Continue where you left off** banner for the
+  last connection you opened. One click returns to that explorer.
 - **Import / export & QR** — export one connection from the share icon or all of
   them from the picker as a `.dbdesk` bundle. Passwords are left out by default;
   tick **Include passwords** to encrypt them with a passphrase (scrypt +
