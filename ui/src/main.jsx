@@ -12,6 +12,7 @@ import Launcher from './launcher.jsx'
 import SettingsDialog from './settings-dialog.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
 import { HOMEPAGE_URL, openExternal } from './open-link.js'
+import UpdatePill from './update-pill.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
@@ -397,5 +398,6 @@ createRoot(document.getElementById('root')).render(
   <>
     <Shell />
     <Toasts />
+    <UpdatePill version={APP_VERSION} />
   </>
 )

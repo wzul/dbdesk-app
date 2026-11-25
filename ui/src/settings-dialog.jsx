@@ -4,6 +4,7 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { Badge, Button, Codicon, Input, cn, rest } from './sdk-shim.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
 import { HOMEPAGE_URL, REPO_URL, openExternal } from './open-link.js'
+import { autoUpdateEnabled, setAutoUpdateEnabled } from './updates.js'
 
 function Section({ title, children }) {
   return (
@@ -45,6 +46,7 @@ export default function SettingsDialog({ open, onClose, version }) {
   const [update, setUpdate] = useState(null)
   const [updateState, setUpdateState] = useState('')
   const [checking, setChecking] = useState(false)
+  const [autoUpdate, setAutoUpdate] = useState(() => autoUpdateEnabled())
   const [notifyEnabled, setNotifyEnabled] = useState(true)
   const [appearance, setAppearance] = useState('system')
   const [backupOpen, setBackupOpen] = useState(false)
@@ -446,6 +448,28 @@ export default function SettingsDialog({ open, onClose, version }) {
                   {checking ? 'Checking…' : 'Check for updates'}
                 </Button>
               )}
+            </Row>
+            <Row
+              label="Automatic updates"
+              hint="Checks in the background and installs quietly — the new version starts the next time DB Desk opens."
+            >
+              <label className="flex items-center gap-2 text-[11.5px] text-(--ui-text-secondary)">
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={autoUpdate}
+                  onChange={(event) => {
+                    setAutoUpdateEnabled(event.target.checked)
+                    setAutoUpdate(event.target.checked)
+                    setUpdateState(
+                      event.target.checked
+                        ? 'Updates install automatically from now on'
+                        : 'Automatic installs off — you will be asked first'
+                    )
+                  }}
+                />
+                {autoUpdate ? 'On' : 'Off'}
+              </label>
             </Row>
           </Section>
 
