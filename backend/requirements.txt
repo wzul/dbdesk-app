@@ -1,6 +1,9 @@
 fastapi>=0.165.0
 uvicorn>=0.54.0
-cryptography>=50.0.2
+cryptography>=50.0.2; platform_machine != "ARM64"
+# Only 46.0.1 publishes a win_arm64 wheel; 47-50 ship win_amd64 only. Same API
+# (AES-GCM), pinned so Windows on ARM can install without building OpenSSL.
+cryptography==46.0.1; platform_machine == "ARM64"
 # psycopg has no win_arm64 wheel (platform_machine == "ARM64" on Windows on ARM);
 # there the pure-Python pg8000 below is the driver instead.
 psycopg[binary]>=3.3.9; platform_machine != "ARM64"
