@@ -234,6 +234,10 @@ Set `DBDESK_HOME` to override. The directory contains:
   browser opens. Right-click a connection for **Open / Edit / Clone / Test /
   Export / Delete**; Clone duplicates the encrypted credentials too. **New connection** goes straight to the form, and the chevron
   in the header returns to the list.
+- **Connection rail** — when more than one connection is open, a slim rail
+  appears on the left. Right-click an icon for **Open / Edit connection / Close
+  connection / Close other connections / Close all connections**. With a
+  single connection open the rail hides itself.
 - **Import / export & QR** — export one connection from the share icon or all of
   them from the picker as a `.dbdesk` bundle. Passwords are left out by default;
   tick **Include passwords** to encrypt them with a passphrase (scrypt +

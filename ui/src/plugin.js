@@ -5314,10 +5314,46 @@ const CONNECTION_META = {
   http: { icon: 'cloud', tone: 'text-blue-600 dark:text-blue-400' }
 }
 
-function ConnectionRail({ connections, openIds, activeId, onSwitch, onAdd, onRemove, onOpenDatabase }) {
+function ConnectionRail({
+  connections,
+  openIds,
+  activeId,
+  onSwitch,
+  onAdd,
+  onRemove,
+  onCloseOthers,
+  onCloseAll,
+  onEdit,
+  onOpenDatabase
+}) {
   const items = openIds
     .map((id) => connections.find((connection) => connection.id === id))
     .filter(Boolean)
+  const [menu, setMenu] = useState(null)
+  useEffect(() => {
+    if (!menu) return undefined
+    const onKey = (event) => {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menu])
+  const menuItem = (label, action, disabled = false) =>
+    jsx(
+      'button',
+      {
+        type: 'button',
+        disabled,
+        className:
+          'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover) disabled:opacity-40',
+        onClick: () => {
+          setMenu(null)
+          action()
+        },
+        children: label
+      },
+      label
+    )
   return jsxs('div', {
     className:
       'flex w-[64px] shrink-0 flex-col overflow-y-auto border-r border-(--ui-stroke-secondary) bg-(--ui-bg-sidebar) py-1',
@@ -5338,11 +5374,17 @@ function ConnectionRail({ connections, openIds, activeId, onSwitch, onAdd, onRem
           'button',
           {
             type: 'button',
-            title: `${connection.name}\n${connection.kind} · ${connection.dbname || ''}\nRight-click to remove from the rail`,
+            title: `${connection.name}\n${connection.kind} · ${connection.dbname || ''}\nRight-click for options`,
             onClick: () => onSwitch(connection.id),
             onContextMenu: (event) => {
               event.preventDefault()
-              onRemove(connection.id)
+              event.stopPropagation()
+              setMenu({
+                x: event.clientX,
+                y: event.clientY,
+                id: connection.id,
+                name: connection.name
+              })
             },
             className: cn(
               'flex w-full flex-col items-center gap-1 border-l-2 px-1 py-2 text-center',
@@ -5376,7 +5418,45 @@ function ConnectionRail({ connections, openIds, activeId, onSwitch, onAdd, onRem
         className:
           'mx-auto mb-1 flex size-8 items-center justify-center rounded-[6px] border border-dashed border-(--ui-stroke-secondary) text-(--ui-text-tertiary) hover:bg-(--ui-bg-secondary) hover:text-(--ui-text-primary)',
         children: jsx(Codicon, { name: 'add' })
-      })
+      }),
+      menu
+        ? jsxs('div', {
+            key: 'menu',
+            children: [
+              jsx('button', {
+                type: 'button',
+                'aria-label': 'Close connections menu',
+                className: 'fixed inset-0 z-[60] cursor-default',
+                onClick: () => setMenu(null)
+              }),
+              jsxs('div', {
+                className:
+                  'fixed z-[70] flex w-48 flex-col rounded-[5px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-2xl',
+                style: {
+                  left: Math.max(8, Math.min(menu.x, window.innerWidth - 200)),
+                  top: Math.max(8, Math.min(menu.y, window.innerHeight - 210))
+                },
+                children: [
+                  jsx('div', {
+                    className:
+                      'truncate px-2 py-1 text-[10px] tracking-wide text-(--ui-text-tertiary) uppercase',
+                    children: menu.name
+                  }),
+                  menuItem('Open', () => onSwitch(menu.id)),
+                  menuItem('Edit connection…', () => onEdit && onEdit(menu.id)),
+                  jsx('div', { className: 'my-1 h-px bg-(--ui-stroke-secondary)' }),
+                  menuItem('Close connection', () => onRemove(menu.id)),
+                  menuItem(
+                    'Close other connections',
+                    () => onCloseOthers && onCloseOthers(menu.id),
+                    openIds.length <= 1
+                  ),
+                  menuItem('Close all connections', () => onCloseAll && onCloseAll())
+                ]
+              })
+            ]
+          })
+        : null
     ]
   })
 }
@@ -7163,6 +7243,22 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
   }
 
+  const closeOtherConnections = (id) => {
+    setOpenIds([id])
+    if (id !== activeId) switchConnection(id)
+  }
+
+  const closeAllConnections = () => {
+    setOpenIds([])
+    if (onHome) onHome()
+  }
+
+  const editConnection = (id) => {
+    const connection = connections.find((entry) => entry.id === id)
+    if (!connection) return
+    setDraft({ ...emptyDraft(), ...connection, password: '' })
+  }
+
   const groupedConnections = useMemo(() => {
     const map = new Map()
     for (const conn of connections) {
@@ -7518,6 +7614,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 onSwitch: switchConnection,
                 onAdd: onHome,
                 onRemove: removeOpenConnection,
+                onCloseOthers: closeOtherConnections,
+                onCloseAll: closeAllConnections,
+                onEdit: editConnection,
                 onOpenDatabase: activeId
                   ? () => {
                       setOpenDbQuery('')
