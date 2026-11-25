@@ -21,7 +21,8 @@ jobs:
         run: |
           SHA=$(git rev-parse HEAD)
           RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml \
-            --commit "$SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+            --commit "$SHA" --limit 10 --json databaseId,conclusion \
+            --jq '[.[] | select(.conclusion == "success")][0].databaseId')
           if [ -z "$RUN" ] || [ "$RUN" = "null" ]; then
             echo "No successful build for $SHA — push to main first." >&2
             exit 1
