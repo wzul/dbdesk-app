@@ -25,7 +25,8 @@ Apple silicon and Intel · ad-hoc signed
 2. **Pick a table** — the grid loads with a sticky header, resizable columns and
    a bottom **Data / Structure** switcher.
 3. **Work** — double-click a cell to edit, **⌘F** to filter, **⌘T** for a new SQL
-   tab, **⌘R** to refresh, **⌘,** for settings, **⌘/** for the shortcut list.
+   tab, **⌘P** for the quick panel, **⌘R** to refresh, **⌘,** for settings,
+   **⌘/** for the shortcut list.
 
 The picker remembers the last connection, so **Continue where you left off**
 takes you straight back after a relaunch.

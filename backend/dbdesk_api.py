@@ -6820,6 +6820,130 @@ async def table_csv(
     }
 
 
+def _export_literal(value: Any, kind: str) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    literal = {
+        "postgres": _lit, "mysql": _my_lit, "clickhouse": _ch_lit, "sqlite": _sqlite_lit,
+    }.get(kind, _lit)
+    return literal(value)
+
+
+def _sql_inserts(conn: dict[str, Any], schema: str, table: str, columns: list[dict[str, Any]], rows: list[list[Any]]) -> str:
+    kind = _kind(conn)
+    quote = {
+        "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident, "sqlite": _sqlite_ident,
+    }.get(kind, _ident)
+    target = quote(table) if kind == "sqlite" else f"{quote(schema)}.{quote(table)}"
+    names = ", ".join(quote(str(column["name"])) for column in columns)
+    lines: list[str] = []
+    for row in rows:
+        values = ", ".join(_export_literal(value, kind) for value in row)
+        lines.append(f"INSERT INTO {target} ({names}) VALUES ({values});")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+@router.post("/table/export")
+async def export_table(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    kind = _kind(conn)
+    schema = str(body.get("schema") or "")
+    table = str(body.get("table") or "")
+    fmt = str(body.get("format") or "csv").strip().lower()
+    if not schema or not table:
+        raise HTTPException(400, "schema and table are required")
+    if fmt not in ("csv", "json", "sql"):
+        raise HTTPException(400, "format must be csv, json or sql")
+    if fmt == "sql" and kind not in ("postgres", "mysql", "clickhouse", "sqlite"):
+        raise HTTPException(400, "SQL export is only available for SQL connections")
+    limit = max(1, min(int(body.get("limit") or 50000), 200000))
+    order_by = str(body.get("order_by") or "").strip()
+    direction = "DESC" if str(body.get("order_dir") or "").lower() == "desc" else "ASC"
+    filters = body.get("filters")
+    result = _rows(
+        conn, schema, table, limit + 1, 0, order_by, direction,
+        filters if isinstance(filters, list) else None,
+    )
+    columns = result.get("columns") or []
+    rows = (result.get("rows") or [])[:limit]
+    truncated = bool(result.get("truncated")) or len(result.get("rows") or []) > limit
+    if fmt == "csv":
+        content = _csv_from(columns, rows)
+        mime = "text/csv;charset=utf-8"
+        ext = "csv"
+    elif fmt == "json":
+        payload = [
+            {str(column["name"]): row[index] if index < len(row) else None for index, column in enumerate(columns)}
+            for row in rows
+        ]
+        content = json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n"
+        mime = "application/json;charset=utf-8"
+        ext = "json"
+    else:
+        content = _sql_inserts(conn, schema, table, columns, rows)
+        mime = "application/sql;charset=utf-8"
+        ext = "sql"
+    return {
+        "content": content,
+        "filename": f"{schema}.{table}.{ext}",
+        "mime": mime,
+        "rows": len(rows),
+        "truncated": truncated,
+    }
+
+
+@router.post("/table/drop")
+async def drop_table(body: dict[str, Any]) -> dict[str, Any]:
+    conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))
+    _writable(conn)
+    kind = _kind(conn)
+    if kind not in ("postgres", "mysql", "clickhouse", "sqlite"):
+        raise HTTPException(400, "dropping tables is only available for SQL connections")
+    schema = str(body.get("schema") or "")
+    table = str(body.get("table") or "")
+    if not schema or not table:
+        raise HTTPException(400, "schema and table are required")
+    quote = {
+        "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident, "sqlite": _sqlite_ident,
+    }[kind]
+    target = quote(table) if kind == "sqlite" else f"{quote(schema)}.{quote(table)}"
+    return _mutation(conn, body, f"DROP TABLE {target}", False, "drop_table")
+
+
+@router.get("/connections/{conn_id}/functions")
+async def connection_functions(conn_id: str, database: str = "") -> dict[str, Any]:
+    conn = _with_db(_connect(conn_id), database)
+    kind = _kind(conn)
+    functions: list[dict[str, Any]] = []
+    try:
+        if kind == "postgres":
+            rows = _pg_rows_sql(
+                conn,
+                "SELECT n.nspname AS schema, p.proname AS name, "
+                "pg_get_function_identity_arguments(p.oid) AS args "
+                "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                "WHERE n.nspname NOT IN ('pg_catalog','information_schema') "
+                "ORDER BY 1, 2",
+            )
+            functions = [{"schema": str(r[0]), "name": str(r[1]), "args": str(r[2] or "")} for r in rows if r and r[0] and r[1]]
+        elif kind == "mysql":
+            rows = _my_rows_sql(
+                conn,
+                "SELECT routine_schema, routine_name, routine_type "
+                "FROM information_schema.routines "
+                "WHERE routine_schema NOT IN ('mysql','information_schema','performance_schema','sys') "
+                "ORDER BY 1, 2",
+            )
+            functions = [{"schema": str(r[0]), "name": str(r[1]), "args": str(r[2] or "").lower()} for r in rows if r and r[0] and r[1]]
+    except HTTPException:
+        functions = []
+    return {"functions": functions}
+
+
 @router.post("/table/sql")
 async def table_sql(body: dict[str, Any]) -> dict[str, Any]:
     conn = _with_db(_connect(str(body.get("connection_id") or "")), body.get("database"))

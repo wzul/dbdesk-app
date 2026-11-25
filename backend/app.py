@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "DB Desk"
-VERSION = "0.13.8"
+VERSION = "0.13.9"
 
 
 def _app_home() -> Path:

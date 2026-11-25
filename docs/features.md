@@ -111,6 +111,16 @@
   all** enables every valid row, **Clear** unapplies the filters but keeps
   their values (press Apply to re-enable), and **SQL** turns the active filters
   into a SELECT. Saved views keep the flags.
+- **Flexible export** — export the current table as **CSV**, **JSON** or **SQL
+  INSERTs** from the table right-click menu or the **More** menu. The export
+  respects the active filters and sort and caps at 50k rows (200k server cap).
+- **Quick panel (⌘P / Ctrl+P)** — jump to a table, view, schema, function or
+  connection, or run actions such as **New SQL tab**, **Toggle theme**,
+  **Settings** and **Close connection**. Arrow keys + Enter work.
+- **SQL editor** — syntax highlighting for keywords, strings, numbers, comments
+  and function calls, plus schema-aware autocomplete.
+- **JSON editor** — double-click a JSON/JSONB cell for a large modal with
+  **Format**, **NULL**, Cancel and Save; invalid JSON is rejected.
 - **Saved query buttons** — the SQL toolbar has **Save** (name + current SQL)
   and **Saved** (opens the snippet list); the same snippets are available to the
   MCP agent through `queries_list` / `query_save` / `query_delete`.

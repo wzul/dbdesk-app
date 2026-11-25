@@ -354,8 +354,8 @@ function parseCsv(text) {
   return rows
 }
 
-function downloadCsv(filename, text) {
-  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })
+function downloadFile(filename, text, mime = 'text/csv;charset=utf-8') {
+  const blob = new Blob([text], { type: mime })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -364,6 +364,45 @@ function downloadCsv(filename, text) {
   anchor.click()
   anchor.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function downloadCsv(filename, text) {
+  downloadFile(filename, text, 'text/csv;charset=utf-8')
+}
+
+const SQL_HIGHLIGHT_WORDS = new Set(
+  `select from where join left right inner outer full cross on using group by order having limit offset
+   insert into values update set delete create table alter drop index view materialized with as and or not
+   null is in like ilike between case when then else end distinct union all exists true false default
+   primary key foreign references constraint unique check returning asc desc over partition window
+   begin commit rollback transaction explain analyze show describe truncate grant revoke cascade
+   serial bigserial int bigint smallint integer numeric decimal real double float boolean date time
+   timestamp interval varchar char text uuid json jsonb array`.split(/\s+/)
+)
+
+function highlightSql(text) {
+  if (!text) return null
+  const parts = []
+  const regex =
+    /(--[^\n]*|\/\*[\s\S]*?\*\/)|('(?:''|[^'])*'|"(?:[^"]|"")*"|`(?:[^`]|``)*`)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|([\s\S])/g
+  let match
+  let key = 0
+  while ((match = regex.exec(text))) {
+    const [raw, comment, string, number, word] = match
+    let className = ''
+    if (comment) className = 'text-(--ui-text-tertiary) italic'
+    else if (string) className = 'text-emerald-600 dark:text-emerald-400'
+    else if (number) className = 'text-amber-600 dark:text-amber-400'
+    else if (word) {
+      if (SQL_HIGHLIGHT_WORDS.has(word.toUpperCase())) {
+        className = 'font-semibold text-sky-600 dark:text-sky-400'
+      } else if (/^\s*\(/.test(text.slice(regex.lastIndex))) {
+        className = 'text-purple-600 dark:text-purple-400'
+      }
+    }
+    parts.push(jsx('span', { className: className || undefined, children: raw }, key++))
+  }
+  return parts
 }
 
 function isEqualityType(type) {
@@ -570,6 +609,60 @@ function CellMenu({ menu, onClose, onEdit, onCopy, onCopyRow, onFollow, onRowDet
           row('Row detail', 'eye', onRowDetail),
           menu.fk && menu.value !== null
             ? row(`Follow → ${menu.fk.table}`, 'link', onFollow)
+            : null
+        ]
+      })
+    ]
+  })
+}
+
+function TableMenu({ menu, onClose, onOpen, onExport, onDrop, onCopy, sqlKind, canWrite }) {
+  const item =
+    'flex w-full items-center gap-2 rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover) disabled:opacity-40'
+  const action = (fn) => () => {
+    onClose()
+    fn()
+  }
+  return jsxs('div', {
+    children: [
+      jsx('button', {
+        key: 'bg',
+        type: 'button',
+        'aria-label': 'Close table menu',
+        className: 'fixed inset-0 z-40 cursor-default',
+        onClick: onClose
+      }),
+      jsxs('div', {
+        key: 'panel',
+        className:
+          'fixed z-50 flex w-52 flex-col rounded-[5px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-2xl',
+        style: {
+          left: Math.max(8, Math.min(menu.x, window.innerWidth - 220)),
+          top: Math.max(8, Math.min(menu.y, window.innerHeight - 280))
+        },
+        children: [
+          jsx('div', {
+            key: 'h',
+            className:
+              'truncate px-2 py-1 text-[10px] font-medium tracking-wide text-(--ui-text-tertiary) uppercase',
+            children: `${menu.schema}.${menu.table}`
+          }),
+          jsx('button', { type: 'button', className: item, onClick: action(onOpen), children: 'Open' }),
+          jsx('div', { className: 'my-1 h-px bg-(--ui-stroke-secondary)' }),
+          jsx('button', { type: 'button', className: item, onClick: action(() => onExport('csv')), children: 'Export as CSV' }),
+          jsx('button', { type: 'button', className: item, onClick: action(() => onExport('json')), children: 'Export as JSON' }),
+          sqlKind
+            ? jsx('button', { type: 'button', className: item, onClick: action(() => onExport('sql')), children: 'Export as SQL' })
+            : null,
+          jsx('div', { className: 'my-1 h-px bg-(--ui-stroke-secondary)' }),
+          jsx('button', { type: 'button', className: item, onClick: action(onCopy), children: 'Copy name' }),
+          sqlKind && canWrite
+            ? jsx('button', {
+                type: 'button',
+                className: item + ' text-destructive',
+                onClick: action(onDrop),
+                children: 'Delete table…'
+              })
             : null
         ]
       })
@@ -1080,6 +1173,16 @@ function CellEditor({ editor, column, onCancel, onSave }) {
   const [phpError, setPhpError] = useState('')
 
   useEffect(() => {
+    if (kind !== 'json' || editor.value === null || editor.value === undefined) return
+    try {
+      setValue(JSON.stringify(JSON.parse(String(editor.value)), null, 2))
+    } catch {
+      /* keep the original text */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     const onKey = (event) => {
       if (event.key === 'Escape') onCancel()
     }
@@ -1111,6 +1214,126 @@ function CellEditor({ editor, column, onCancel, onSave }) {
   const left = Math.max(8, Math.min(window.innerWidth - 300, editor.rect.left))
   const field =
     'w-full rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-2 font-mono text-[12px] outline-none focus:border-primary/60 disabled:opacity-40'
+
+  if (kind === 'json') {
+    return jsxs('div', {
+      key: 'json-editor',
+      className: 'fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4',
+      children: [
+        jsx('button', {
+          key: 'bg',
+          type: 'button',
+          'aria-label': 'Cancel editing',
+          className: 'absolute inset-0 cursor-default',
+          onClick: onCancel
+        }),
+        jsxs('div', {
+          key: 'panel',
+          className:
+            'relative flex max-h-[86vh] w-full max-w-[560px] flex-col gap-3 overflow-auto rounded-[6px] border border-(--ui-stroke-secondary) bg-background p-3 shadow-2xl',
+          children: [
+            jsxs('div', {
+              key: 'head',
+              className: 'flex items-center gap-2',
+              children: [
+                jsx(Codicon, {
+                  key: 'i',
+                  name: column.pk ? 'key' : 'json',
+                  className: 'text-(--ui-text-tertiary)'
+                }),
+                jsx('span', {
+                  key: 'n',
+                  className: 'min-w-0 flex-1 truncate font-mono text-[12px] font-semibold',
+                  children: column.name
+                }),
+                jsx('span', {
+                  key: 't',
+                  className: 'shrink-0 text-[10.5px] text-(--ui-text-tertiary)',
+                  children: shortenType(column.type)
+                }),
+                jsx(Button, {
+                  key: 'close',
+                  variant: 'ghost',
+                  size: 'icon-xs',
+                  title: 'Close',
+                  onClick: onCancel,
+                  children: jsx(Codicon, { name: 'close' })
+                })
+              ]
+            }),
+            jsx('textarea', {
+              key: 'input',
+              autoFocus: true,
+              spellCheck: false,
+              rows: 16,
+              value: isNull ? '' : value,
+              disabled: isNull,
+              className:
+                'min-h-[260px] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-2 font-mono text-[12px] leading-5 outline-none focus:border-primary/60 disabled:opacity-40',
+              onChange: (event) => setValue(event.target.value),
+              onKeyDown: (event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  event.preventDefault()
+                  void commit()
+                }
+              }
+            }),
+            err
+              ? jsx('div', {
+                  key: 'err',
+                  className: 'font-mono text-[10.5px] whitespace-pre-wrap text-destructive',
+                  children: err
+                })
+              : null,
+            jsxs('div', {
+              key: 'actions',
+              className: 'flex flex-wrap items-center gap-1.5',
+              children: [
+                jsx(Button, {
+                  key: 'null',
+                  variant: isNull ? 'default' : 'ghost',
+                  size: 'xs',
+                  onClick: () => setIsNull((current) => !current),
+                  children: 'NULL'
+                }),
+                jsx(Button, {
+                  key: 'format',
+                  variant: 'ghost',
+                  size: 'xs',
+                  disabled: isNull,
+                  onClick: () => {
+                    try {
+                      setValue(JSON.stringify(JSON.parse(value), null, 2))
+                      setErr('')
+                    } catch {
+                      setErr('Invalid JSON')
+                    }
+                  },
+                  children: 'Format'
+                }),
+                jsx('div', { key: 'sp', className: 'flex-1' }),
+                jsx(Button, {
+                  key: 'cancel',
+                  variant: 'ghost',
+                  size: 'xs',
+                  onClick: onCancel,
+                  children: 'Cancel'
+                }),
+                jsx(Button, {
+                  key: 'save',
+                  variant: 'default',
+                  size: 'xs',
+                  disabled: busy,
+                  onClick: () => void commit(),
+                  children: busy ? 'Preparing…' : 'Save'
+                })
+              ]
+            })
+          ]
+        })
+      ]
+    })
+  }
 
   const control =
     kind === 'boolean'
@@ -5504,6 +5727,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [dataLoading, setDataLoading] = useState(false)
   const [columnsMeta, setColumnsMeta] = useState([])
   const [sql, setSql] = useState('select * from ')
+
+  const syncSqlScroll = (event) => {
+    const highlight = sqlHighlightRef.current
+    if (!highlight) return
+    highlight.scrollTop = event.currentTarget.scrollTop
+    highlight.scrollLeft = event.currentTarget.scrollLeft
+  }
   const [query, setQuery] = useState(null)
   const [queryLoading, setQueryLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -5550,7 +5780,12 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [queriesOpen, setQueriesOpen] = useState(false)
   const [views, setViews] = useState([])
   const [viewsOpen, setViewsOpen] = useState(false)
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState('')
+  const [tableMenu, setTableMenu] = useState(null)
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickQuery, setQuickQuery] = useState('')
+  const [quickIndex, setQuickIndex] = useState(0)
+  const [quickFunctions, setQuickFunctions] = useState([])
   const [tabs, setTabs] = useState([])
   const [activeTabId, setActiveTabId] = useState(null)
   const [showColumnTypes, setShowColumnTypes] = useState(() => {
@@ -5599,6 +5834,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [importNullEmpty, setImportNullEmpty] = useState(true)
   const importFileRef = useRef(null)
   const sqlRef = useRef(null)
+  const sqlHighlightRef = useRef(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [suggestPrefix, setSuggestPrefix] = useState('')
   const [suggestIndex, setSuggestIndex] = useState(0)
@@ -5726,6 +5962,32 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     columnCacheRef.current = {}
     setColumnCacheVersion((version) => version + 1)
   }, [activeId, activeDb])
+
+  useEffect(() => {
+    if (!quickOpen || !activeId) return undefined
+    let cancelled = false
+    call(
+      `/connections/${activeId}/functions?database=${encodeURIComponent(activeDb || '')}`
+    )
+      .then((result) => {
+        if (!cancelled) setQuickFunctions(result.functions || [])
+      })
+      .catch(() => {
+        if (!cancelled) setQuickFunctions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [quickOpen, activeId, activeDb])
+
+  const toggleTheme = () => {
+    const dark = !document.documentElement.classList.contains('dark')
+    const next = dark ? 'dark' : 'light'
+    if (globalThis.__DBDESK_STANDALONE__) {
+      call('/prefs', { method: 'POST', body: { appearance: next } }).catch(() => {})
+    }
+    window.dispatchEvent(new CustomEvent('dbdesk:appearance', { detail: next }))
+  }
 
   useEffect(() => {
     setDecryptOn(false)
@@ -6883,8 +7145,16 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     const onKey = (event) => {
       const mod = event.metaKey || event.ctrlKey
       if (event.key === 'Escape') {
+        if (quickOpen) {
+          setQuickOpen(false)
+          return
+        }
         if (shortcutsOpen) {
           setShortcutsOpen(false)
+          return
+        }
+        if (tableMenu) {
+          setTableMenu(null)
           return
         }
         if (headerMenuOpen) {
@@ -6947,6 +7217,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
         newSqlTab()
         return
       }
+      if (key === 'p' || key === 'P') {
+        event.preventDefault()
+        setQuickQuery('')
+        setQuickIndex(0)
+        setQuickOpen((open) => !open)
+        return
+      }
       if (key === '/') {
         event.preventDefault()
         setShortcutsOpen((open) => !open)
@@ -6954,7 +7231,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tab, selected, offset, filterOpen, shortcutsOpen, headerMenuOpen, moreOpen, loadRows, runQuery, sql, newSqlTab])
+  }, [tab, selected, offset, filterOpen, shortcutsOpen, quickOpen, headerMenuOpen, moreOpen, tableMenu, loadRows, runQuery, sql, newSqlTab])
 
   const markTabDirty = () => {
     setTabs((current) =>
@@ -7185,29 +7462,72 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     })
   }
 
-  const exportTable = async () => {
-    if (!selected || !activeId) return
-    setExporting(true)
+  const exportTable = async (format = 'csv', target = null) => {
+    const source = target || selected
+    if (!source || !activeId) return
+    setExporting(format)
     setErr('')
     try {
-      const params = new URLSearchParams({
-        schema: selected.schema,
-        table: selected.table,
-        database: activeDb,
-        limit: '50000'
+      const current =
+        selected && selected.schema === source.schema && selected.table === source.table
+      const result = await call('/table/export', {
+        method: 'POST',
+        body: {
+          connection_id: activeId,
+          database: activeDb,
+          schema: source.schema,
+          table: source.table,
+          format,
+          limit: 50000,
+          filters: current ? filters.filter(filterValid) : [],
+          order_by: current ? order.by : '',
+          order_dir: current ? order.dir : 'asc'
+        }
       })
-      const result = await call(`/connections/${activeId}/table/csv?${params.toString()}`)
-      downloadCsv(result.filename || `${selected.table}.csv`, result.csv)
+      downloadFile(
+        result.filename || `${source.table}.${format}`,
+        result.content,
+        result.mime || 'text/plain;charset=utf-8'
+      )
       host.notify({
         kind: 'info',
         message: result.truncated
-          ? `Exported first ${result.rows} rows (50k cap)`
-          : `Exported ${result.rows} rows`
+          ? `Exported first ${result.rows} rows as ${format.toUpperCase()} (cap)`
+          : `Exported ${result.rows} rows as ${format.toUpperCase()}`
       })
     } catch (error) {
       setErr(errText(error))
     } finally {
-      setExporting(false)
+      setExporting('')
+    }
+  }
+
+  const dropTable = async (schema, table) => {
+    if (!activeId) return
+    const body = { connection_id: activeId, database: activeDb, schema, table }
+    try {
+      const preview = await call('/table/drop', {
+        method: 'POST',
+        body: { ...body, preview: true }
+      })
+      armMutation('/table/drop', body, preview, {
+        title: `Drop ${schema}.${table}`,
+        action: 'drop_table',
+        table,
+        done: 'Table dropped',
+        after: async () => {
+          if (selected && selected.schema === schema && selected.table === table) {
+            setSelected(null)
+            setData(null)
+            setTabs([])
+            setActiveTabId(null)
+            setDdl('')
+          }
+          setTreeVersion((value) => value + 1)
+        }
+      })
+    } catch (error) {
+      setErr(errText(error))
     }
   }
 
@@ -7294,6 +7614,92 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
       }))
       .filter((schema) => schema.tables.length > 0)
   }, [tree, filter])
+
+  const quickItems = (() => {
+    const q = quickQuery.trim().toLowerCase()
+    const matches = (value) => !q || String(value || '').toLowerCase().includes(q)
+    const items = []
+    for (const schema of tree) {
+      if (matches(schema.name)) {
+        items.push({
+          group: 'Schemas',
+          label: schema.name,
+          detail: 'schema',
+          icon: 'symbol-namespace',
+          action: () => {
+            setFilter(schema.name)
+            setTreeOpen(true)
+          }
+        })
+      }
+      for (const table of schema.tables) {
+        if (matches(table.name) || matches(`${schema.name}.${table.name}`)) {
+          items.push({
+            group: 'Tables & views',
+            label: table.name,
+            detail: `${table.kind || 'table'} · ${schema.name}`,
+            icon: table.kind === 'view' ? 'eye' : 'table',
+            action: () => pickTable(schema.name, table.name)
+          })
+        }
+      }
+    }
+    for (const fn of quickFunctions) {
+      if (matches(fn.name) || matches(`${fn.schema}.${fn.name}`)) {
+        items.push({
+          group: 'Functions',
+          label: fn.name,
+          detail: `function · ${fn.schema}`,
+          icon: 'symbol-method',
+          action: () => newSqlTab(`SELECT ${fn.schema}.${fn.name}(`)
+        })
+      }
+    }
+    for (const conn of connections) {
+      if (matches(conn.name)) {
+        items.push({
+          group: 'Connections',
+          label: conn.name,
+          detail: `${conn.kind} · ${conn.dbname || ''}`,
+          icon: 'plug',
+          action: () => switchConnection(conn.id)
+        })
+      }
+    }
+    const actions = [
+      ['Toggle theme', 'Appearance', 'color-mode', toggleTheme],
+      ['New SQL tab', 'Editor', 'terminal', () => newSqlTab()],
+      ['Settings', 'Preferences', 'settings-gear', () => onSettings && onSettings()],
+      [
+        'Close connection',
+        active ? active.name : 'Current connection',
+        'debug-disconnect',
+        () => activeId && removeOpenConnection(activeId)
+      ]
+    ]
+    for (const [label, detail, icon, action] of actions) {
+      if (matches(label)) items.push({ group: 'Actions', label, detail, icon, action })
+    }
+    return items.slice(0, 80)
+  })()
+
+  const quickGroups = (() => {
+    const groups = []
+    let index = 0
+    for (const item of quickItems) {
+      const last = groups[groups.length - 1]
+      if (!last || last.name !== item.group) {
+        groups.push({ name: item.group, items: [] })
+      }
+      groups[groups.length - 1].items.push({ ...item, index })
+      index += 1
+    }
+    return groups
+  })()
+
+  useEffect(() => {
+    setQuickIndex(0)
+  }, [quickQuery])
 
   const onSaved = async (connection) => {
     setDraft(null)
@@ -7742,6 +8148,16 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                     ),
                                     title: `${schema.name}.${table.name} · ~${table.est_rows} rows`,
                                     onClick: () => pickTable(schema.name, table.name),
+                                    onContextMenu: (event) => {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      setTableMenu({
+                                        x: event.clientX,
+                                        y: event.clientY,
+                                        schema: schema.name,
+                                        table: table.name
+                                      })
+                                    },
                                     children: [
                                       jsx(Codicon, {
                                         key: 'i',
@@ -8323,18 +8739,35 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                         className:
                                           'absolute bottom-7 right-0 z-30 flex w-52 flex-col rounded-[4px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
                                         children: [
-                                          jsx('button', {
-                                            key: 'csv',
-                                            type: 'button',
-                                            disabled: !selected || exporting,
-                                            className:
-                                              'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover) disabled:opacity-40',
-                                            onClick: () => {
-                                              setMoreOpen(false)
-                                              void exportTable()
-                                            },
-                                            children: exporting ? 'Exporting…' : 'Export table as CSV'
-                                          }),
+                                          ...['csv', 'json', 'sql']
+                                            .filter(
+                                              (format) =>
+                                                format !== 'sql' ||
+                                                ['postgres', 'mysql', 'clickhouse', 'sqlite'].includes(
+                                                  (active && active.kind) || 'postgres'
+                                                )
+                                            )
+                                            .map((format) =>
+                                              jsx(
+                                                'button',
+                                                {
+                                                  key: `export-${format}`,
+                                                  type: 'button',
+                                                  disabled: !selected || Boolean(exporting),
+                                                  className:
+                                                    'rounded-[3px] px-2 py-1 text-left text-[11px] hover:bg-(--chrome-action-hover) disabled:opacity-40',
+                                                  onClick: () => {
+                                                    setMoreOpen(false)
+                                                    void exportTable(format)
+                                                  },
+                                                  children:
+                                                    exporting === format
+                                                      ? 'Exporting…'
+                                                      : `Export as ${format.toUpperCase()}`
+                                                },
+                                                format
+                                              )
+                                            ),
                                           jsx('div', {
                                             key: 'sep1',
                                             className: 'my-1 h-px bg-(--ui-stroke-secondary)'
@@ -8504,13 +8937,22 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         key: 'editor',
                         className: 'relative shrink-0 border-b border-(--ui-stroke-secondary) p-2',
                         children: [
+                          jsx('pre', {
+                            key: 'highlight',
+                            ref: sqlHighlightRef,
+                            'aria-hidden': true,
+                            className:
+                              'pointer-events-none absolute inset-0 overflow-hidden rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-2 font-mono text-[12px] leading-5 break-words whitespace-pre-wrap text-(--ui-text-primary)',
+                            children: highlightSql(sql)
+                          }),
                           jsx('textarea', {
                             key: 'input',
                             ref: sqlRef,
                             value: sql,
                             spellCheck: false,
+                            onScroll: syncSqlScroll,
                             className:
-                              'h-32 w-full resize-y rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-2 font-mono text-[12px] leading-5 outline-none focus:border-primary/60',
+                              'relative h-32 w-full resize-y rounded-[3px] border border-transparent bg-transparent p-2 font-mono text-[12px] leading-5 text-transparent caret-(--ui-text-primary) outline-none placeholder:text-(--ui-text-tertiary) focus:border-primary/60',
                             placeholder:
                               active && active.kind === 'mongodb'
                                 ? '{"collection": "users", "find": {"age": {"$gt": 18}}, "limit": 50}'
@@ -9353,6 +9795,156 @@ jsxs('div', {
         ref: importFileRef,
         onChange: onImportFile
       }),
+      quickOpen
+        ? jsxs('div', {
+            key: 'quick',
+            className:
+              'fixed inset-0 z-[85] flex items-start justify-center bg-black/40 px-4 pt-[12vh]',
+            children: [
+              jsx('button', {
+                key: 'bg',
+                type: 'button',
+                'aria-label': 'Close quick panel',
+                className: 'absolute inset-0 cursor-default',
+                onClick: () => setQuickOpen(false)
+              }),
+              jsxs('div', {
+                key: 'panel',
+                className:
+                  'relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-[8px] border border-(--ui-stroke-secondary) bg-background shadow-2xl',
+                children: [
+                  jsxs('div', {
+                    key: 'head',
+                    className:
+                      'flex items-center gap-2 border-b border-(--ui-stroke-secondary) px-3 py-2',
+                    children: [
+                      jsx(Codicon, { name: 'search', className: 'text-(--ui-text-tertiary)' }),
+                      jsx('input', {
+                        autoFocus: true,
+                        value: quickQuery,
+                        placeholder: 'Jump to a table, view, schema, function…',
+                        className:
+                          'h-7 min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-(--ui-text-tertiary)',
+                        onChange: (event) => setQuickQuery(event.target.value),
+                        onKeyDown: (event) => {
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            setQuickIndex((index) => Math.min(quickItems.length - 1, index + 1))
+                          } else if (event.key === 'ArrowUp') {
+                            event.preventDefault()
+                            setQuickIndex((index) => Math.max(0, index - 1))
+                          } else if (event.key === 'Enter') {
+                            event.preventDefault()
+                            const item = quickItems[quickIndex]
+                            if (item) {
+                              setQuickOpen(false)
+                              item.action()
+                            }
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault()
+                            setQuickOpen(false)
+                          }
+                        }
+                      }),
+                      jsx('kbd', {
+                        className:
+                          'rounded-[3px] border border-(--ui-stroke-secondary) px-1.5 py-0.5 font-mono text-[9px] text-(--ui-text-tertiary)',
+                        children: 'esc'
+                      })
+                    ]
+                  }),
+                  jsx('div', {
+                    key: 'list',
+                    className: 'max-h-[420px] overflow-auto p-1',
+                    children: quickGroups.length
+                      ? quickGroups.map((group) =>
+                          jsxs(
+                            'div',
+                            {
+                              children: [
+                                jsx('div', {
+                                  key: 'h',
+                                  className:
+                                    'px-2 pt-2 pb-1 text-[9px] font-semibold tracking-wide text-(--ui-text-tertiary) uppercase',
+                                  children: group.name
+                                }),
+                                ...group.items.map((item) =>
+                                  jsxs(
+                                    'button',
+                                    {
+                                      type: 'button',
+                                      onClick: () => {
+                                        setQuickOpen(false)
+                                        item.action()
+                                      },
+                                      onMouseEnter: () => setQuickIndex(item.index),
+                                      className: cn(
+                                        'flex w-full items-center gap-2 rounded-[3px] px-2 py-1.5 text-left text-[11.5px]',
+                                        item.index === quickIndex
+                                          ? 'bg-(--ui-bg-quaternary) text-(--ui-text-primary)'
+                                          : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)'
+                                      ),
+                                      children: [
+                                        jsx(Codicon, {
+                                          key: 'i',
+                                          name: item.icon,
+                                          className: 'shrink-0 opacity-70'
+                                        }),
+                                        jsx('span', {
+                                          key: 'l',
+                                          className: 'min-w-0 flex-1 truncate',
+                                          children: item.label
+                                        }),
+                                        jsx('span', {
+                                          key: 'd',
+                                          className:
+                                            'shrink-0 text-[10px] text-(--ui-text-tertiary)',
+                                          children: item.detail
+                                        })
+                                      ]
+                                    },
+                                    `${group.name}-${item.index}`
+                                  )
+                                )
+                              ]
+                            },
+                            group.name
+                          )
+                        )
+                      : jsx('div', {
+                          className: 'px-3 py-6 text-center text-[11.5px] text-(--ui-text-tertiary)',
+                          children: 'No matches'
+                        })
+                  }),
+                  jsxs('div', {
+                    key: 'foot',
+                    className:
+                      'flex items-center gap-3 border-t border-(--ui-stroke-secondary) px-3 py-1.5 text-[10px] text-(--ui-text-tertiary)',
+                    children: ['↑↓ navigate', '⏎ open', 'esc close'].map((text) =>
+                      jsx('span', { children: text }, text)
+                    )
+                  })
+                ]
+              })
+            ]
+          })
+        : null,
+      tableMenu
+        ? jsx(TableMenu, {
+            key: 'table-menu',
+            menu: tableMenu,
+            onClose: () => setTableMenu(null),
+            onOpen: () => pickTable(tableMenu.schema, tableMenu.table),
+            onExport: (format) =>
+              exportTable(format, { schema: tableMenu.schema, table: tableMenu.table }),
+            onDrop: () => dropTable(tableMenu.schema, tableMenu.table),
+            onCopy: () => writeClipboardText(`${tableMenu.schema}.${tableMenu.table}`),
+            sqlKind:
+              active &&
+              ['postgres', 'mysql', 'clickhouse', 'sqlite'].includes(active.kind || 'postgres'),
+            canWrite: Boolean(active && !active.readonly)
+          })
+        : null,
       cellMenu
         ? jsx(CellMenu, {
             key: 'cell-menu',
@@ -9588,6 +10180,7 @@ jsxs('div', {
                     ['⌘ S', 'Save the current SQL'],
                     ['⌘ 1 / 3 / 4', 'Data / Structure / Site'],
                     ['⌘ 2 / ⌘ T', 'New SQL query tab'],
+                    ['⌘ P', 'Quick panel — jump to a table or run an action'],
                     ['⌘ + / − / 0', 'Zoom in / out / reset'],
                     ['⌘ ,', 'Settings'],
                     ['⌘ /', 'This list'],
