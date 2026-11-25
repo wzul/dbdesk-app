@@ -3,7 +3,7 @@
 A TablePlus-style database browser for **PostgreSQL, MySQL/MariaDB, ClickHouse,
 SQLite, MongoDB and Redis/Valkey** — a native Mac app, no Hermes required.
 
-![DB Desk](docs/img/standalone.png)
+[![DB Desk](docs/img/standalone.png)](docs/img/standalone.png)
 
 DB Desk is a small Tauri shell around a local Python sidecar (FastAPI). The
 sidecar serves the UI and talks to your databases; nothing leaves the Mac.
