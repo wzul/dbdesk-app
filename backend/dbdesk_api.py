@@ -3272,6 +3272,12 @@ def _mcp_native_call(conn: dict[str, Any], sql: str) -> Any:
             for block in result.get("content") or []
             if isinstance(block, dict)
         )
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and parsed.get("message"):
+                text = str(parsed["message"])
+        except ValueError:
+            pass
         raise HTTPException(400, text[:1000] or "MCP tool reported an error")
     return result
 
@@ -3441,7 +3447,7 @@ def _mcp_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
     dialect = str(conn.get("mcp_dialect") or "postgres")
     if dialect == "mysql":
         sql = (
-            "SELECT table_schema AS schema, table_name AS name, "
+            "SELECT table_schema AS `schema`, table_name AS name, "
             "CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END AS kind, "
             "COALESCE(table_rows, 0) AS est_rows "
             "FROM information_schema.tables "
@@ -3450,7 +3456,7 @@ def _mcp_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
         )
     elif dialect == "clickhouse":
         sql = (
-            "SELECT database AS schema, name, engine AS kind, total_rows AS est_rows "
+            "SELECT database AS `schema`, name, engine AS kind, total_rows AS est_rows "
             "FROM system.tables "
             "WHERE database NOT IN ('system','INFORMATION_SCHEMA','information_schema') "
             "ORDER BY 1, 2"

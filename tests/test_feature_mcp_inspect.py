@@ -71,5 +71,44 @@ class McpInspect(unittest.TestCase):
         self.assertEqual(result["tool_count"], len(TOOLS))
 
 
+
+
+class McpTreeSql(unittest.TestCase):
+    def _tree(self, dialect):
+        captured = {}
+        original = api._mcp_query
+
+        def fake(conn, sql, limit=api.MAX_ROWS):
+            captured["sql"] = sql
+            return {
+                "columns": [
+                    {"name": "schema", "type": "text"},
+                    {"name": "name", "type": "text"},
+                    {"name": "kind", "type": "text"},
+                    {"name": "est_rows", "type": "int"},
+                ],
+                "rows": [["public", "users", "table", 1]],
+                "truncated": False,
+                "duration_ms": 0,
+            }
+
+        api._mcp_query = fake
+        try:
+            rows = api._mcp_tree({"mcp_dialect": dialect})
+        finally:
+            api._mcp_query = original
+        return captured["sql"], rows
+
+    def test_mysql_quotes_schema_alias(self):
+        sql, rows = self._tree("mysql")
+        self.assertIn("AS `schema`", sql)
+        self.assertNotIn("AS schema,", sql)
+        self.assertEqual(rows[0]["schema"], "public")
+
+    def test_clickhouse_quotes_schema_alias(self):
+        sql, _ = self._tree("clickhouse")
+        self.assertIn("AS `schema`", sql)
+
+
 if __name__ == "__main__":
     unittest.main()
