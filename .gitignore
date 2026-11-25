@@ -22,3 +22,12 @@ __pycache__/
 *.sqlite
 *.sqlite3
 .DS_Store
+
+# secrets / local environment
+.env*
+*.pem
+*.key
+*.p12
+
+# logs
+*.log

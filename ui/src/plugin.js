@@ -5323,8 +5323,7 @@ function ConnectionRail({
   onRemove,
   onCloseOthers,
   onCloseAll,
-  onEdit,
-  onOpenDatabase
+  onEdit
 }) {
   const items = openIds
     .map((id) => connections.find((connection) => connection.id === id))
@@ -5358,16 +5357,6 @@ function ConnectionRail({
     className:
       'flex w-[64px] shrink-0 flex-col overflow-y-auto border-r border-(--ui-stroke-secondary) bg-(--ui-bg-sidebar) py-1',
     children: [
-      onOpenDatabase
-        ? jsx('button', {
-            type: 'button',
-            title: 'Open database…',
-            onClick: onOpenDatabase,
-            className:
-              'mx-auto mb-1 flex size-8 items-center justify-center rounded-[6px] border border-(--ui-stroke-secondary) bg-background text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary) hover:text-(--ui-text-primary)',
-            children: jsx(Codicon, { name: 'database' })
-          })
-        : null,
       ...items.map((connection) => {
         const meta = CONNECTION_META[connection.kind] || CONNECTION_META.postgres
         return jsxs(
@@ -7222,6 +7211,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     }
   }
 
+  const persistOpenIds = (ids) => {
+    try {
+      localStorage.setItem('dbdesk.openConnections', JSON.stringify(ids))
+    } catch {
+      /* private mode */
+    }
+  }
+
   const switchConnection = (id) => {
     setActiveId(id)
     setSelected(null)
@@ -7237,6 +7234,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const removeOpenConnection = (id) => {
     const remaining = openIds.filter((value) => value !== id)
     setOpenIds(remaining)
+    persistOpenIds(remaining)
     if (id === activeId) {
       if (remaining.length) switchConnection(remaining[0])
       else onHome()
@@ -7245,11 +7243,13 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   const closeOtherConnections = (id) => {
     setOpenIds([id])
+    persistOpenIds([id])
     if (id !== activeId) switchConnection(id)
   }
 
   const closeAllConnections = () => {
     setOpenIds([])
+    persistOpenIds([])
     if (onHome) onHome()
   }
 
@@ -7616,15 +7616,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 onRemove: removeOpenConnection,
                 onCloseOthers: closeOtherConnections,
                 onCloseAll: closeAllConnections,
-                onEdit: editConnection,
-                onOpenDatabase: activeId
-                  ? () => {
-                      setOpenDbQuery('')
-                      setOpenDbSelected(activeDb)
-                      setOpenDbOpen(true)
-                      setDbVersion((value) => value + 1)
-                    }
-                  : null
+                onEdit: editConnection
               })
             : null,
           jsxs('aside', {
