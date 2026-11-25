@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { Badge, Button, Codicon, Input, cn, rest } from './sdk-shim.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
+import { HOMEPAGE_URL, REPO_URL, openExternal } from './open-link.js'
 
 function Section({ title, children }) {
   return (
@@ -414,8 +415,15 @@ export default function SettingsDialog({ open, onClose, version }) {
                 {version}
               </Badge>
             </Row>
-            <Row label="Home page" hint="Downloads, screenshots and release notes (coming soon).">
-              <span className="text-[11.5px] font-medium">dbdesk.app</span>
+            <Row label="Home page" hint="Downloads, screenshots and release notes.">
+              <Button
+                variant="secondary"
+                size="sm"
+                title={`Open ${HOMEPAGE_URL}`}
+                onClick={() => void openExternal(HOMEPAGE_URL)}
+              >
+                <Codicon name="link-external" /> dbdesk.app
+              </Button>
             </Row>
             <Row
               label="Updates"
@@ -812,11 +820,27 @@ export default function SettingsDialog({ open, onClose, version }) {
 
           <Section title="About">
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-(--ui-text-tertiary)">
-              <span>DB Desk {version} · dbdesk.app</span>
+              <span>DB Desk {version}</span>
+              <span>·</span>
+              <button
+                type="button"
+                title={`Open ${HOMEPAGE_URL}`}
+                onClick={() => void openExternal(HOMEPAGE_URL)}
+                className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[inherit] underline-offset-2 hover:text-(--ui-text-secondary) hover:underline"
+              >
+                dbdesk.app
+              </button>
               <span>·</span>
               <span>MIT</span>
               <span>·</span>
-              <span className="font-mono">github.com/wzul/dbdesk-app</span>
+              <button
+                type="button"
+                title={`Open ${REPO_URL}`}
+                onClick={() => void openExternal(REPO_URL)}
+                className="cursor-pointer border-0 bg-transparent p-0 font-mono text-[inherit] underline-offset-2 hover:text-(--ui-text-secondary) hover:underline"
+              >
+                github.com/wzul/dbdesk-app
+              </button>
             </div>
           </Section>
         </div>

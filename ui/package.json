@@ -12,6 +12,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-notification": "^2.3.0",
+    "@tauri-apps/plugin-opener": "^2.7.3",
     "@tauri-apps/plugin-process": "^2.3.0",
     "@tauri-apps/plugin-updater": "^2.9.0",
     "@vscode/codicons": "^0.0.45",

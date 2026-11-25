@@ -3,7 +3,7 @@ name = "dbdesk"
 version = "0.13.11"
 description = "DB Desk standalone desktop shell"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.90"
 
 [build-dependencies]
 tauri-build = { version = "2.7.6", features = [] }
@@ -11,6 +11,7 @@ tauri-build = { version = "2.7.6", features = [] }
 [dependencies]
 tauri = { version = "2.12.7", features = [] }
 tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }

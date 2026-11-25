@@ -11,6 +11,7 @@ import plugin, { DbDesk } from './plugin.js'
 import Launcher from './launcher.jsx'
 import SettingsDialog from './settings-dialog.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
+import { HOMEPAGE_URL, openExternal } from './open-link.js'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
@@ -93,7 +94,15 @@ function StatusBar({ connection }) {
       ) : null}
       <span className="flex-1" />
       <span>
-        DB Desk {APP_VERSION} <span className="text-(--ui-text-tertiary)">· dbdesk.app</span>
+        DB Desk {APP_VERSION}{' '}
+        <button
+          type="button"
+          title={`Open ${HOMEPAGE_URL.replace('https://', '')}`}
+          onClick={() => void openExternal(HOMEPAGE_URL)}
+          className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[inherit] text-(--ui-text-tertiary) underline-offset-2 hover:text-(--ui-text-secondary) hover:underline"
+        >
+          dbdesk.app
+        </button>
       </span>
     </div>
   )
