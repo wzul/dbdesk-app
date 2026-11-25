@@ -3075,6 +3075,168 @@ def _mcp_session(url: str, token: str) -> str:
     return session or ""
 
 
+def _mcp_tools(url: str) -> list[dict[str, Any]]:
+    """List tools from a Streamable-HTTP MCP server (paginated)."""
+    token = _mcp_access_token(url)
+    session = _mcp_session(url, token)
+    tools: list[dict[str, Any]] = []
+    cursor: str | None = None
+    for _ in range(8):
+        params: dict[str, Any] = {"cursor": cursor} if cursor else {}
+        result, session = _mcp_post(
+            url,
+            {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "tools/list",
+                "params": params,
+            },
+            token,
+            session,
+        )
+        if not isinstance(result, dict):
+            break
+        batch = result.get("tools")
+        if isinstance(batch, list):
+            tools.extend(tool for tool in batch if isinstance(tool, dict))
+        cursor = result.get("nextCursor")
+        if not cursor:
+            break
+    return tools
+
+
+def _mcp_tool_schema(tool: dict[str, Any]) -> dict[str, Any]:
+    schema = tool.get("inputSchema") or tool.get("input_schema") or {}
+    return schema if isinstance(schema, dict) else {}
+
+
+def _mcp_tool_properties(tool: dict[str, Any]) -> list[str]:
+    properties = _mcp_tool_schema(tool).get("properties")
+    return sorted(properties) if isinstance(properties, dict) else []
+
+
+def _mcp_tool_sql_arg(tool: dict[str, Any]) -> str:
+    properties = _mcp_tool_schema(tool).get("properties")
+    if not isinstance(properties, dict):
+        return ""
+    for name in ("sql", "query", "statement", "sql_query", "query_text", "q"):
+        if name in properties:
+            return name
+    for name, spec in properties.items():
+        if isinstance(spec, dict):
+            text = (str(spec.get("description") or "") + " " + str(name)).lower()
+            if "sql" in text:
+                return name
+    return ""
+
+
+def _mcp_tool_dialect(tool: dict[str, Any], tools: list[dict[str, Any]]) -> str:
+    name = str(tool.get("name") or "").lower()
+    text = name + " " + str(tool.get("description") or "").lower()
+    prefix = name.split("_")[0] if "_" in name else ""
+    if prefix:
+        for other in tools:
+            other_name = str(other.get("name") or "").lower()
+            if other_name.startswith(prefix + "_"):
+                text += " " + str(other.get("description") or "").lower()
+    if "clickhouse" in text:
+        return "clickhouse"
+    if "mysql" in text or "mariadb" in text:
+        return "mysql"
+    if "postgres" in text or "psql" in text:
+        return "postgres"
+    return ""
+
+
+def _mcp_tool_database(tool: dict[str, Any]) -> str:
+    name = str(tool.get("name") or "")
+    for suffix in ("_query", "_sql", "_execute", "_select"):
+        if name.lower().endswith(suffix):
+            return name[: -len(suffix)]
+    return ""
+
+
+def _mcp_tool_score(tool: dict[str, Any]) -> int:
+    name = str(tool.get("name") or "").lower()
+    desc = str(tool.get("description") or "").lower()
+    score = 0
+    if _mcp_tool_sql_arg(tool):
+        score += 6
+    if name.endswith("_query") or name == "query":
+        score += 10
+    elif name.endswith("_sql") or name.endswith("_execute"):
+        score += 6
+    elif "query" in name:
+        score += 3
+    if "read-only sql" in desc or "sql query" in desc or "run a sql" in desc:
+        score += 4
+    if "execute" in desc or "run a " in desc:
+        score += 1
+    for bad in (
+        "list_", "describe_", "get_", "create", "insert", "update", "delete",
+        "drop", "alter", "schema", "table", "database", "backup", "restore",
+        "admin", "search_",
+    ):
+        if bad in name:
+            score -= 6
+    return score
+
+
+def _mcp_inspect(url: str) -> dict[str, Any]:
+    tools = _mcp_tools(url)
+    if not tools:
+        raise HTTPException(502, "MCP server returned no tools")
+    candidates: list[dict[str, Any]] = []
+    for tool in tools:
+        score = _mcp_tool_score(tool)
+        if score <= 0:
+            continue
+        candidates.append(
+            {
+                "name": str(tool.get("name") or ""),
+                "description": str(tool.get("description") or "")[:280],
+                "sql_arg": _mcp_tool_sql_arg(tool),
+                "dialect": _mcp_tool_dialect(tool, tools),
+                "database": _mcp_tool_database(tool),
+                "properties": _mcp_tool_properties(tool),
+                "score": score,
+            }
+        )
+    candidates.sort(key=lambda item: (-item["score"], item["name"]))
+    seen: set[str] = set()
+    query_tools: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if candidate["name"] in seen:
+            continue
+        seen.add(candidate["name"])
+        query_tools.append(candidate)
+        if len(query_tools) >= 20:
+            break
+    suggested = query_tools[0] if query_tools else {
+        "name": "query",
+        "sql_arg": "sql",
+        "dialect": "postgres",
+        "database": "",
+        "properties": ["sql"],
+    }
+    return {
+        "tool_count": len(tools),
+        "query_tools": query_tools,
+        "suggested": suggested,
+        "tools": [
+            {
+                "name": str(tool.get("name") or ""),
+                "description": str(tool.get("description") or "")[:140],
+                "properties": _mcp_tool_properties(tool),
+                "sql_arg": _mcp_tool_sql_arg(tool),
+                "dialect": _mcp_tool_dialect(tool, tools),
+                "database": _mcp_tool_database(tool),
+            }
+            for tool in tools
+        ],
+    }
+
+
 def _mcp_native_call(conn: dict[str, Any], sql: str) -> Any:
     url = str(conn.get("mcp_url") or "").strip()
     tool = str(conn.get("mcp_tool") or "query").strip() or "query"
@@ -6548,6 +6710,14 @@ async def table_ddl(conn_id: str, schema: str, table: str, database: str = "") -
     if not schema or not table:
         raise HTTPException(400, "schema and table are required")
     return {"ddl": _ddl(conn, schema, table)}
+
+
+@router.post("/mcp/inspect")
+async def mcp_inspect(body: dict[str, Any]) -> dict[str, Any]:
+    url = str(body.get("url") or "").strip()
+    if not url:
+        raise HTTPException(400, "MCP server URL is required")
+    return _mcp_inspect(url)
 
 
 @router.post("/mcp/authorize")

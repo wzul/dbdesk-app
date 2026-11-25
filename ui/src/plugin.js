@@ -3424,8 +3424,18 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
   const [err, setErr] = useState('')
   const [mcpStatus, setMcpStatus] = useState(null)
   const [mcpBusy, setMcpBusy] = useState(false)
+  const [mcpInspect, setMcpInspect] = useState(null)
+  const [mcpDetecting, setMcpDetecting] = useState(false)
   const standalone = Boolean(globalThis.__DBDESK_STANDALONE__)
   const editing = Boolean(draft.id)
+  const inspectedTool =
+    mcpInspect && mcpInspect.tools
+      ? mcpInspect.tools.find((tool) => tool.name === draft.mcp_tool)
+      : null
+  const sqlArgOptions =
+    inspectedTool && inspectedTool.properties && inspectedTool.properties.length
+      ? inspectedTool.properties
+      : ['sql', 'query', 'statement']
 
   useEffect(() => {
     if (!standalone || draft.kind !== 'mcp' || !draft.mcp_url) {
@@ -3446,6 +3456,50 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
       clearInterval(timer)
     }
   }, [standalone, draft.kind, draft.mcp_url])
+
+  useEffect(() => {
+    setMcpInspect(null)
+  }, [draft.mcp_url])
+
+  const detectMcp = async () => {
+    const url = String(draft.mcp_url || '').trim()
+    if (!url) return
+    setMcpDetecting(true)
+    setErr('')
+    try {
+      const result = await call('/mcp/inspect', { method: 'POST', body: { url } })
+      setMcpInspect(result)
+      const suggested = result.suggested || {}
+      onDraft({
+        ...draft,
+        mcp_tool: suggested.name || draft.mcp_tool || 'query',
+        mcp_sql_arg: suggested.sql_arg || draft.mcp_sql_arg || 'sql',
+        mcp_dialect: suggested.dialect || draft.mcp_dialect || 'postgres',
+        dbname: suggested.database || draft.dbname
+      })
+    } catch (error) {
+      setErr(errText(error))
+    } finally {
+      setMcpDetecting(false)
+    }
+  }
+
+  const chooseMcpTool = (name) => {
+    const found = mcpInspect && mcpInspect.tools
+      ? mcpInspect.tools.find((tool) => tool.name === name)
+      : null
+    onDraft({
+      ...draft,
+      mcp_tool: name,
+      ...(found
+        ? {
+            mcp_sql_arg: found.sql_arg || draft.mcp_sql_arg || 'sql',
+            mcp_dialect: found.dialect || draft.mcp_dialect || 'postgres',
+            dbname: found.database || draft.dbname
+          }
+        : {})
+    })
+  }
 
   const authorizeMcp = async () => {
     const url = String(draft.mcp_url || '').trim()
@@ -3813,6 +3867,13 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                                     ? 'Re-authorize'
                                     : 'Authorize'
                               }),
+                              jsx(Button, {
+                                variant: 'secondary',
+                                size: 'sm',
+                                disabled: mcpDetecting || !draft.mcp_url,
+                                onClick: detectMcp,
+                                children: mcpDetecting ? 'Detecting…' : 'Detect tools'
+                              }),
                               jsx('span', {
                                 className:
                                   'text-[11px] ' +
@@ -3835,24 +3896,105 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                             ]
                           })
                         : null,
+                      mcpInspect
+                        ? jsxs('div', {
+                            key: 'detected',
+                            className:
+                              'flex flex-col gap-2 rounded-[3px] border border-(--ui-stroke-secondary)/60 p-2',
+                            children: [
+                              jsx('div', {
+                                key: 'summary',
+                                className: 'text-[11px] text-(--ui-text-tertiary)',
+                                children: `${mcpInspect.tool_count} tools · ${mcpInspect.query_tools.length} SQL candidate${
+                                  mcpInspect.query_tools.length === 1 ? '' : 's'
+                                }`
+                              }),
+                              mcpInspect.query_tools.length
+                                ? jsx(Field, {
+                                    key: 'pick',
+                                    label: 'Detected query tools',
+                                    hint: 'Pick the tool that runs SQL; the name usually tells you the database.',
+                                    children: jsxs('select', {
+                                      className:
+                                        'h-8 rounded-[3px] border border-(--ui-stroke-secondary) bg-background px-2 text-xs outline-none',
+                                      value: draft.mcp_tool || '',
+                                      onChange: (event) => chooseMcpTool(event.target.value),
+                                      children: [
+                                        jsx('option', { value: '', children: '— pick a tool —' }, ''),
+                                        ...mcpInspect.query_tools.map((tool) =>
+                                          jsx(
+                                            'option',
+                                            {
+                                              value: tool.name,
+                                              children: `${tool.name}${
+                                                tool.database ? ` · ${tool.database}` : ''
+                                              }${tool.dialect ? ` · ${tool.dialect}` : ''}`
+                                            },
+                                            tool.name
+                                          )
+                                        )
+                                      ]
+                                    })
+                                  })
+                                : jsx('div', {
+                                    key: 'none',
+                                    className: 'text-[11px] text-(--ui-text-tertiary)',
+                                    children:
+                                      'No obvious SQL tool detected; type the tool name manually.'
+                                  })
+                            ]
+                          })
+                        : null,
                       jsxs('div', {
                         key: 'tool',
                         className: 'dbd-grid-2',
                         children: [
                           jsx(Field, {
                             label: 'Query tool',
-                            children: jsx(Input, {
-                              value: draft.mcp_tool || 'query',
-                              placeholder: 'query',
-                              onChange: set('mcp_tool')
+                            hint: 'Often ends with _query. Use Detect tools to list them.',
+                            children: jsxs('div', {
+                              className: 'flex flex-col gap-1',
+                              children: [
+                                jsx(Input, {
+                                  value: draft.mcp_tool || 'query',
+                                  placeholder: 'query',
+                                  list: 'mcp-tool-names',
+                                  onChange: (event) => chooseMcpTool(event.target.value)
+                                }),
+                                jsx('datalist', {
+                                  id: 'mcp-tool-names',
+                                  children: (mcpInspect && mcpInspect.tools
+                                    ? mcpInspect.tools
+                                    : []
+                                  ).map((tool) =>
+                                    jsx(
+                                      'option',
+                                      { value: tool.name, label: tool.description },
+                                      tool.name
+                                    )
+                                  )
+                                })
+                              ]
                             })
                           }),
                           jsx(Field, {
                             label: 'SQL argument',
-                            children: jsx(Input, {
-                              value: draft.mcp_sql_arg || 'sql',
-                              placeholder: 'sql',
-                              onChange: set('mcp_sql_arg')
+                            children: jsxs('div', {
+                              className: 'flex flex-col gap-1',
+                              children: [
+                                jsx(Input, {
+                                  value: draft.mcp_sql_arg || 'sql',
+                                  placeholder: 'sql',
+                                  list: 'mcp-sql-args',
+                                  onChange: set('mcp_sql_arg')
+                                }),
+                                jsx('datalist', {
+                                  id: 'mcp-sql-args',
+                                  children: sqlArgOptions.map((name) =>
+                                    jsx('option', { value: name }, name)
+                                  )
+                                })
+                              ]
                             })
                           })
                         ]
@@ -3903,11 +4045,18 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                 children: [
                   jsx(Field, {
                     key: 'db',
-                    label: (draft.kind || 'postgres') === 'sqlite' ? 'Database file' : 'Database',
+                    label:
+                      (draft.kind || 'postgres') === 'sqlite'
+                        ? 'Database file'
+                        : (draft.kind || 'postgres') === 'mcp'
+                          ? 'Database label'
+                          : 'Database',
                     hint:
                       (draft.kind || 'postgres') === 'sqlite'
                         ? 'Absolute path to the .db/.sqlite file on the machine running Hermes.'
-                        : undefined,
+                        : (draft.kind || 'postgres') === 'mcp'
+                          ? 'Display name only. The chosen tool determines the real database; if the tool needs a database argument, add it to Extra arguments.'
+                          : undefined,
                     children: jsx(Input, {
                       value: draft.dbname || '',
                       placeholder:

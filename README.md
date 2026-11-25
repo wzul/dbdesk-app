@@ -532,6 +532,20 @@ The app must be open. The bridge discovers the port from
 `<app home>/data/runtime.json`; the token lives in `<app home>/data/mcp.json`
 (mode 0600).
 
+### Connecting to an MCP server
+
+1. Paste the Streamable-HTTP URL and click **Authorize**.
+2. Click **Detect tools**. DB Desk calls `tools/list` and shows the tools that
+   look like SQL runners (usually names ending in `_query`), with the detected
+   dialect and database name.
+3. Pick one. DB Desk fills the **SQL argument** (usually `sql`), the dialect and
+   the **Database label**.
+
+For an MCP connection the **Database** field is only a display label — the
+tool you pick determines the real database. If the tool itself needs a
+database argument, put it in **Extra arguments**, for example
+`{"database":"analytics"}`.
+
 ### Tools
 
 | Tool | What it does |
