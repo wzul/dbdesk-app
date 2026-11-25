@@ -62,23 +62,22 @@ jobs:
           cp "$X64_APP" "out/DB.Desk_${VERSION}_x64.app.tar.gz"
           cp "${X64_APP}.sig" "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"
 
-          # Windows — NSIS installer; the updater consumes the .nsis.zip.
+          # Windows — the NSIS installer is itself the updater artefact in Tauri v2,
+          # with a detached .exe.sig next to it.
           WIN_EXE=$(pick artifacts/x86_64-pc-windows-msvc '*setup.exe')
-          WIN_ZIP=$(pick artifacts/x86_64-pc-windows-msvc '*.nsis.zip')
           cp "$WIN_EXE" "out/DB.Desk_${VERSION}_x64-setup.exe"
-          cp "$WIN_ZIP" "out/DB.Desk_${VERSION}_x64.nsis.zip"
-          cp "${WIN_ZIP}.sig" "out/DB.Desk_${VERSION}_x64.nsis.zip.sig"
+          cp "${WIN_EXE}.sig" "out/DB.Desk_${VERSION}_x64-setup.exe.sig"
 
           # Linux — deb for Debian/Ubuntu/Mint, rpm for Fedora/RHEL/openSUSE,
-          # AppImage for everyone else; the AppImage tarball feeds the updater.
+          # AppImage for everyone else, and the AppImage plus its detached .sig is
+          # what the updater downloads.
           for arch in x64 arm64; do
             dir="artifacts/linux-${arch}"
             cp "$(pick "$dir" '*.deb')"               "out/DB.Desk_${VERSION}_${arch}.deb"
             cp "$(pick "$dir" '*.rpm')"               "out/DB.Desk_${VERSION}_${arch}.rpm"
             appimage=$(pick "$dir" '*.AppImage')
             cp "$appimage"                            "out/DB.Desk_${VERSION}_${arch}.AppImage"
-            cp "${appimage}.tar.gz"                   "out/DB.Desk_${VERSION}_${arch}.AppImage.tar.gz"
-            cp "${appimage}.tar.gz.sig"               "out/DB.Desk_${VERSION}_${arch}.AppImage.tar.gz.sig"
+            cp "${appimage}.sig"                      "out/DB.Desk_${VERSION}_${arch}.AppImage.sig"
           done
 
           (cd out && sha256sum ./* > SHA256SUMS.txt)
@@ -101,9 +100,9 @@ jobs:
           }
           add darwin-aarch64 "out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz"
           add darwin-x86_64  "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"     "out/DB.Desk_${VERSION}_x64.app.tar.gz"
-          add windows-x86_64 "out/DB.Desk_${VERSION}_x64.nsis.zip.sig"        "out/DB.Desk_${VERSION}_x64.nsis.zip"
-          add linux-x86_64   "out/DB.Desk_${VERSION}_x64.AppImage.tar.gz.sig" "out/DB.Desk_${VERSION}_x64.AppImage.tar.gz"
-          add linux-aarch64  "out/DB.Desk_${VERSION}_arm64.AppImage.tar.gz.sig" "out/DB.Desk_${VERSION}_arm64.AppImage.tar.gz"
+          add windows-x86_64 "out/DB.Desk_${VERSION}_x64-setup.exe.sig" "out/DB.Desk_${VERSION}_x64-setup.exe"
+          add linux-x86_64   "out/DB.Desk_${VERSION}_x64.AppImage.sig"  "out/DB.Desk_${VERSION}_x64.AppImage"
+          add linux-aarch64  "out/DB.Desk_${VERSION}_arm64.AppImage.sig" "out/DB.Desk_${VERSION}_arm64.AppImage"
 
           jq -n \
             --arg version "$VERSION" \
@@ -121,8 +120,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --title "DB Desk ${VERSION}" --generate-notes \
             out/DB.Desk_*.dmg out/DB.Desk_*.app.tar.gz out/DB.Desk_*.app.tar.gz.sig \
-            out/DB.Desk_*-setup.exe \
-            out/DB.Desk_*.nsis.zip out/DB.Desk_*.nsis.zip.sig \
+            out/DB.Desk_*-setup.exe out/DB.Desk_*-setup.exe.sig \
             out/DB.Desk_*.deb out/DB.Desk_*.rpm \
-            out/DB.Desk_*.AppImage out/DB.Desk_*.AppImage.tar.gz out/DB.Desk_*.AppImage.tar.gz.sig \
+            out/DB.Desk_*.AppImage out/DB.Desk_*.AppImage.sig \
             out/latest.json out/SHA256SUMS.txt
