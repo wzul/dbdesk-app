@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -33,47 +33,85 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run download "${{ steps.build.outputs.run }}" --repo "$GITHUB_REPOSITORY" \
-            --name dbdesk-aarch64-apple-darwin -D artifacts/arm64
-          gh run download "${{ steps.build.outputs.run }}" --repo "$GITHUB_REPOSITORY" \
-            --name dbdesk-x86_64-apple-darwin -D artifacts/x64
+          for name in dbdesk-aarch64-apple-darwin dbdesk-x86_64-apple-darwin \
+                      dbdesk-x86_64-pc-windows-msvc \
+                      dbdesk-linux-x64 dbdesk-linux-arm64; do
+            dir="artifacts/${name#dbdesk-}"
+            gh run download "${{ steps.build.outputs.run }}" --repo "$GITHUB_REPOSITORY" \
+              --name "$name" -D "$dir" || echo "missing artifact: $name"
+          done
+          find artifacts -maxdepth 1 -mindepth 1 -type d
 
       - name: Stage release files
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p out
-          ARM_DMG=$(find artifacts/arm64 -name '*.dmg' -print -quit)
-          X64_DMG=$(find artifacts/x64 -name '*.dmg' -print -quit)
-          ARM_APP=$(find artifacts/arm64 -name '*.app.tar.gz' -print -quit)
-          X64_APP=$(find artifacts/x64 -name '*.app.tar.gz' -print -quit)
-          ARM_SIG=$(find artifacts/arm64 -name '*.app.tar.gz.sig' -print -quit)
-          X64_SIG=$(find artifacts/x64 -name '*.app.tar.gz.sig' -print -quit)
+
+          pick() { find "$1" -name "$2" -print -quit 2>/dev/null || true; }
+
+          # macOS — DMG for humans, .app.tar.gz + signature for the updater.
+          ARM_DMG=$(pick artifacts/aarch64-apple-darwin '*.dmg')
+          X64_DMG=$(pick artifacts/x86_64-apple-darwin '*.dmg')
+          ARM_APP=$(pick artifacts/aarch64-apple-darwin '*.app.tar.gz')
+          X64_APP=$(pick artifacts/x86_64-apple-darwin '*.app.tar.gz')
           cp "$ARM_DMG" "out/DB.Desk_${VERSION}_aarch64.dmg"
           cp "$X64_DMG" "out/DB.Desk_${VERSION}_x64.dmg"
           cp "$ARM_APP" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz"
-          cp "$ARM_SIG" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig"
+          cp "${ARM_APP}.sig" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig"
           cp "$X64_APP" "out/DB.Desk_${VERSION}_x64.app.tar.gz"
-          cp "$X64_SIG" "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"
-          (cd out && sha256sum *.dmg > SHA256SUMS.txt)
+          cp "${X64_APP}.sig" "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"
+
+          # Windows — NSIS installer; the updater consumes the .nsis.zip.
+          WIN_EXE=$(pick artifacts/x86_64-pc-windows-msvc '*setup.exe')
+          WIN_ZIP=$(pick artifacts/x86_64-pc-windows-msvc '*.nsis.zip')
+          cp "$WIN_EXE" "out/DB.Desk_${VERSION}_x64-setup.exe"
+          cp "$WIN_ZIP" "out/DB.Desk_${VERSION}_x64.nsis.zip"
+          cp "${WIN_ZIP}.sig" "out/DB.Desk_${VERSION}_x64.nsis.zip.sig"
+
+          # Linux — deb for Debian/Ubuntu/Mint, rpm for Fedora/RHEL/openSUSE,
+          # AppImage for everyone else; the AppImage tarball feeds the updater.
+          for arch in x64 arm64; do
+            dir="artifacts/linux-${arch}"
+            cp "$(pick "$dir" '*.deb')"               "out/DB.Desk_${VERSION}_${arch}.deb"
+            cp "$(pick "$dir" '*.rpm')"               "out/DB.Desk_${VERSION}_${arch}.rpm"
+            appimage=$(pick "$dir" '*.AppImage')
+            cp "$appimage"                            "out/DB.Desk_${VERSION}_${arch}.AppImage"
+            cp "${appimage}.tar.gz"                   "out/DB.Desk_${VERSION}_${arch}.AppImage.tar.gz"
+            cp "${appimage}.tar.gz.sig"               "out/DB.Desk_${VERSION}_${arch}.AppImage.tar.gz.sig"
+          done
+
+          (cd out && sha256sum ./* > SHA256SUMS.txt)
+          ls -lh out
 
       - name: Build latest.json
         run: |
           REPO="$GITHUB_REPOSITORY"
           TAG="$GITHUB_REF_NAME"
+          PLATFORMS='{}'
+          add() { # <platform key> <signature file> <asset file>
+            if [ -f "$2" ] && [ -f "$3" ]; then
+              PLATFORMS=$(jq --arg k "$1" \
+                --arg s "$(cat "$2")" \
+                --arg u "https://github.com/${REPO}/releases/download/${TAG}/$(basename "$3")" \
+                '. + {($k): {signature: $s, url: $u}}' <<<"$PLATFORMS")
+            else
+              echo "skipping $1 — no signed updater artefact"
+            fi
+          }
+          add darwin-aarch64 "out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig" "out/DB.Desk_${VERSION}_aarch64.app.tar.gz"
+          add darwin-x86_64  "out/DB.Desk_${VERSION}_x64.app.tar.gz.sig"     "out/DB.Desk_${VERSION}_x64.app.tar.gz"
+          add windows-x86_64 "out/DB.Desk_${VERSION}_x64.nsis.zip.sig"        "out/DB.Desk_${VERSION}_x64.nsis.zip"
+          add linux-x86_64   "out/DB.Desk_${VERSION}_x64.AppImage.tar.gz.sig" "out/DB.Desk_${VERSION}_x64.AppImage.tar.gz"
+          add linux-aarch64  "out/DB.Desk_${VERSION}_arm64.AppImage.tar.gz.sig" "out/DB.Desk_${VERSION}_arm64.AppImage.tar.gz"
+
           jq -n \
             --arg version "$VERSION" \
             --arg notes "See the release notes on GitHub." \
             --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg sig_arm "$(cat out/DB.Desk_${VERSION}_aarch64.app.tar.gz.sig)" \
-            --arg sig_x64 "$(cat out/DB.Desk_${VERSION}_x64.app.tar.gz.sig)" \
-            --arg url_arm "https://github.com/${REPO}/releases/download/${TAG}/DB.Desk_${VERSION}_aarch64.app.tar.gz" \
-            --arg url_x64 "https://github.com/${REPO}/releases/download/${TAG}/DB.Desk_${VERSION}_x64.app.tar.gz" \
-            '{version: $version, notes: $notes, pub_date: $pub_date,
-              platforms: {
-                "darwin-aarch64": {signature: $sig_arm, url: $url_arm},
-                "darwin-x86_64": {signature: $sig_x64, url: $url_x64}
-              }}' > out/latest.json
+            --argjson platforms "$PLATFORMS" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' \
+            > out/latest.json
           cat out/latest.json
 
       - name: Publish release
@@ -82,4 +120,9 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --title "DB Desk ${VERSION}" --generate-notes \
-            out/*.dmg out/*.app.tar.gz out/*.app.tar.gz.sig out/latest.json out/SHA256SUMS.txt
+            out/DB.Desk_*.dmg out/DB.Desk_*.app.tar.gz out/DB.Desk_*.app.tar.gz.sig \
+            out/DB.Desk_*-setup.exe \
+            out/DB.Desk_*.nsis.zip out/DB.Desk_*.nsis.zip.sig \
+            out/DB.Desk_*.deb out/DB.Desk_*.rpm \
+            out/DB.Desk_*.AppImage out/DB.Desk_*.AppImage.tar.gz out/DB.Desk_*.AppImage.tar.gz.sig \
+            out/latest.json out/SHA256SUMS.txt
