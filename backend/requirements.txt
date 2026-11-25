@@ -1,7 +1,9 @@
 fastapi>=0.165.0
 uvicorn>=0.54.0
 cryptography>=50.0.2
-psycopg[binary]>=3.3.9
+# psycopg has no win_arm64 wheel (platform_machine == "ARM64" on Windows on ARM);
+# there the pure-Python pg8000 below is the driver instead.
+psycopg[binary]>=3.3.9; platform_machine != "ARM64"
 pg8000>=1.31.5
 PyMySQL>=1.2.4
 certifi>=2026.11.20
