@@ -1,5 +1,5 @@
 fastapi>=0.110
-uvicorn>=0.27
+uvicorn>=0.54.0
 cryptography>=42
 psycopg[binary]>=3.2
 PyMySQL>=1.1
