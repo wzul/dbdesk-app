@@ -370,6 +370,57 @@ function downloadCsv(filename, text) {
   downloadFile(filename, text, 'text/csv;charset=utf-8')
 }
 
+const SQL_ALIAS_STOPWORDS = new Set(
+  `where join left right inner outer full cross on using group order limit offset having union
+   except intersect set values returning as natural lateral window with select from update into
+   delete insert and or not null case when then else end default asc desc fetch`.split(/\s+/)
+)
+
+const SQL_ALIAS_RE =
+  /\b(?:from|join|update|into)\s+([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)(?:\s+(?:as\s+)?([A-Za-z_][\w$]*))?/gi
+
+function sqlAliases(text) {
+  if (!text) return []
+  const found = []
+  const seen = new Set()
+  SQL_ALIAS_RE.lastIndex = 0
+  let match
+  while ((match = SQL_ALIAS_RE.exec(text))) {
+    const reference = match[1]
+    const candidate = match[2]
+    const alias =
+      candidate && !SQL_ALIAS_STOPWORDS.has(candidate.toLowerCase()) ? candidate : ''
+    const parts = reference.split('.')
+    const schema = parts.length > 1 ? parts[0] : ''
+    const table = parts.length > 1 ? parts[1] : parts[0]
+    const key = `${alias.toLowerCase()}|${schema.toLowerCase()}.${table.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    found.push({ schema, table, alias })
+  }
+  return found
+}
+
+function fuzzyScore(value, query) {
+  const text = String(value || '').toLowerCase()
+  const needle = String(query || '').toLowerCase()
+  if (!needle) return 1
+  if (text === needle) return 130
+  if (text.startsWith(needle)) return 110 - Math.min(20, text.length - needle.length)
+  const boundary = new RegExp(
+    `(^|[_.])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+  )
+  if (boundary.test(text)) return 85
+  if (text.includes(needle)) return 60
+  let index = 0
+  for (const char of needle) {
+    index = text.indexOf(char, index)
+    if (index === -1) return 0
+    index += 1
+  }
+  return 30
+}
+
 const SQL_HIGHLIGHT_WORDS = new Set(
   `select from where join left right inner outer full cross on using group by order having limit offset
    insert into values update set delete create table alter drop index view materialized with as and or not
@@ -5837,7 +5888,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const sqlHighlightRef = useRef(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [suggestPrefix, setSuggestPrefix] = useState('')
+  const [suggestQualifier, setSuggestQualifier] = useState('')
   const [suggestIndex, setSuggestIndex] = useState(0)
+  const [sqlFunctions, setSqlFunctions] = useState([])
   const [ddl, setDdl] = useState('')
   const [ddlLoading, setDdlLoading] = useState(false)
   const [structureIndexes, setStructureIndexes] = useState([])
@@ -6030,6 +6083,26 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
 
   useEffect(() => {
     if (tab !== 'sql' || !activeId) return undefined
+    const kind = (active && active.kind) || 'postgres'
+    if (!['postgres', 'mysql', 'clickhouse', 'sqlite'].includes(kind)) {
+      setSqlFunctions([])
+      return undefined
+    }
+    let cancelled = false
+    call(`/connections/${activeId}/functions?database=${encodeURIComponent(activeDb || '')}`)
+      .then((result) => {
+        if (!cancelled) setSqlFunctions(result.functions || [])
+      })
+      .catch(() => {
+        if (!cancelled) setSqlFunctions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, activeId, activeDb])
+
+  useEffect(() => {
+    if (tab !== 'sql' || !activeId) return undefined
     const references = [...sql.matchAll(/\b(?:from|join|update|into)\s+([A-Za-z_][\w.$]*)/gi)].map(
       (match) => match[1].replace(/["`]/g, '')
     )
@@ -6142,35 +6215,104 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, selected, offset, limit, order, tab, filterRevision, schemaVersion])
 
-  const suggestionPool = useMemo(() => {
-    const pool = new Set(SQL_KEYWORDS.map((word) => word.toUpperCase()))
-    for (const schema of tree) {
-      for (const table of schema.tables) pool.add(table.name)
-    }
-    for (const column of columnsMeta) pool.add(column.name)
-    for (const names of Object.values(columnCacheRef.current)) {
-      for (const name of names) pool.add(name)
-    }
-    return [...pool]
-  }, [tree, columnsMeta, columnCacheVersion])
+  const sqlAliasMap = useMemo(() => sqlAliases(tab === 'sql' ? sql : ''), [sql, tab])
 
   const suggestions = useMemo(() => {
-    const query = suggestPrefix.toLowerCase()
-    return suggestionPool
-      .filter((item) => item.toLowerCase().startsWith(query))
-      .slice(0, 8)
-  }, [suggestionPool, suggestPrefix])
+    const qualifier = suggestQualifier.toLowerCase()
+    const prefix = suggestPrefix
+    const entries = []
+    const seen = new Set()
+    const push = (value, kind, detail) => {
+      const key = `${kind}:${value}`
+      if (!value || seen.has(key)) return
+      seen.add(key)
+      entries.push({ value, kind, detail })
+    }
+    const resolveKey = (schema, table) => {
+      if (schema) return `${schema}.${table}`
+      const hit = tree
+        .flatMap((item) =>
+          item.tables.map((entry) => ({ schema: item.name, table: entry.name }))
+        )
+        .find((entry) => entry.table === table)
+      return hit ? `${hit.schema}.${hit.table}` : table
+    }
+    const pushColumns = (key) => {
+      for (const name of columnCacheRef.current[key] || []) push(name, 'column', key)
+    }
+
+    if (qualifier) {
+      const refs = sqlAliasMap.filter(
+        (ref) =>
+          (ref.alias || '').toLowerCase() === qualifier ||
+          (ref.table || '').toLowerCase() === qualifier
+      )
+      const keys = new Set(refs.map((ref) => resolveKey(ref.schema, ref.table)))
+      for (const key of keys) pushColumns(key)
+      const schemaMatch = tree.find((item) => item.name.toLowerCase() === qualifier)
+      if (keys.size === 0 && schemaMatch) {
+        for (const table of schemaMatch.tables) {
+          push(table.name, 'table', `${schemaMatch.name} · ${table.kind || 'table'}`)
+        }
+      }
+    } else {
+      for (const word of SQL_HIGHLIGHT_WORDS) push(word.toUpperCase(), 'keyword', 'keyword')
+      for (const schema of tree) {
+        for (const table of schema.tables) {
+          push(table.name, 'table', `${schema.name} · ${table.kind || 'table'}`)
+        }
+      }
+      const keys = new Set(sqlAliasMap.map((ref) => resolveKey(ref.schema, ref.table)))
+      if (selected) keys.add(`${selected.schema}.${selected.table}`)
+      for (const key of keys) pushColumns(key)
+      const selectedLabel = selected ? `${selected.schema}.${selected.table}` : ''
+      for (const column of columnsMeta) push(column.name, 'column', selectedLabel)
+      for (const fn of sqlFunctions) push(`${fn.name}(`, 'function', `${fn.schema} · function`)
+    }
+
+    const ranked = []
+    for (const entry of entries) {
+      const score = fuzzyScore(entry.value, prefix) + (entry.kind === 'keyword' ? 0 : 6)
+      if (score > 6) ranked.push({ ...entry, score })
+    }
+    ranked.sort(
+      (a, b) =>
+        b.score - a.score || a.value.length - b.value.length || a.value.localeCompare(b.value)
+    )
+    return ranked.slice(0, 10)
+  }, [
+    suggestQualifier,
+    suggestPrefix,
+    sqlAliasMap,
+    tree,
+    columnsMeta,
+    selected,
+    sqlFunctions,
+    columnCacheVersion
+  ])
 
   const updateSuggestions = (value, caret) => {
     const position = caret == null ? value.length : caret
-    const match = /([A-Za-z_][\w$]*)$/.exec(value.slice(0, position))
-    const prefix = match ? match[1] : ''
+    const before = value.slice(0, position)
+    const qualified = /([A-Za-z_][\w$]*)\.([A-Za-z_][\w$]*)?$/.exec(before)
+    let qualifier = ''
+    let prefix = ''
+    if (qualified) {
+      qualifier = qualified[1]
+      prefix = qualified[2] || ''
+    } else {
+      const word = /([A-Za-z_][\w$]*)$/.exec(before)
+      prefix = word ? word[1] : ''
+    }
+    setSuggestQualifier(qualifier)
     setSuggestPrefix(prefix)
     setSuggestIndex(0)
-    setSuggestOpen(prefix.length >= 2)
+    setSuggestOpen(Boolean(qualifier) || prefix.length >= 2)
   }
 
-  const acceptSuggestion = (value) => {
+  const acceptSuggestion = (entry) => {
+    const item = entry && typeof entry === 'object' ? entry : { value: entry, kind: 'keyword' }
+    const value = item.kind === 'function' ? `${item.value})` : item.value
     const element = sqlRef.current
     const caret = element ? element.selectionStart : sql.length
     const before = sql.slice(0, caret)
@@ -6178,10 +6320,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     const next = sql.slice(0, start) + value + sql.slice(caret)
     setSql(next)
     setSuggestOpen(false)
+    setSuggestQualifier('')
     requestAnimationFrame(() => {
       if (element) {
         element.focus()
-        const position = start + value.length
+        const position = start + (item.kind === 'function' ? item.value.length : value.length)
         element.setSelectionRange(position, position)
       }
     })
@@ -8994,6 +9137,8 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                               if ((event.metaKey || event.ctrlKey) && event.key === ' ') {
                                 event.preventDefault()
                                 setSuggestPrefix('')
+                                setSuggestQualifier('')
+                                setSuggestIndex(0)
                                 setSuggestOpen(true)
                                 return
                               }
@@ -9007,14 +9152,14 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                             ? jsx('div', {
                                 key: 'suggest',
                                 className:
-                                  'absolute top-9 left-2 z-30 flex max-h-[180px] w-64 flex-col overflow-auto rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
+                                  'absolute top-9 left-2 z-30 flex max-h-[230px] w-72 flex-col overflow-auto rounded-[3px] border border-(--ui-stroke-secondary) bg-background p-1 shadow-xl',
                                 children: suggestions.map((item, index) =>
-                                  jsx(
+                                  jsxs(
                                     'button',
                                     {
                                       type: 'button',
                                       className: cn(
-                                        'rounded-[2px] px-2 py-1 text-left font-mono text-[11px]',
+                                        'flex w-full items-center gap-2 rounded-[2px] px-2 py-1 text-left',
                                         index === suggestIndex
                                           ? 'bg-(--ui-bg-quaternary)'
                                           : 'hover:bg-(--chrome-action-hover)'
@@ -9023,9 +9168,33 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                         event.preventDefault()
                                         acceptSuggestion(item)
                                       },
-                                      children: item
+                                      children: [
+                                        jsx(Codicon, {
+                                          key: 'icon',
+                                          name:
+                                            item.kind === 'column'
+                                              ? 'symbol-field'
+                                              : item.kind === 'table'
+                                                ? 'table'
+                                                : item.kind === 'function'
+                                                  ? 'symbol-method'
+                                                  : 'symbol-keyword',
+                                          className: 'shrink-0 opacity-60'
+                                        }),
+                                        jsx('span', {
+                                          key: 'value',
+                                          className: 'min-w-0 flex-1 truncate font-mono text-[11px]',
+                                          children: item.value
+                                        }),
+                                        jsx('span', {
+                                          key: 'detail',
+                                          className:
+                                            'max-w-[110px] shrink-0 truncate text-[9.5px] text-(--ui-text-tertiary)',
+                                          children: item.detail
+                                        })
+                                      ]
                                     },
-                                    item
+                                    `${item.kind}-${item.value}-${index}`
                                   )
                                 )
                               })

@@ -118,7 +118,11 @@
   connection, or run actions such as **New SQL tab**, **Toggle theme**,
   **Settings** and **Close connection**. Arrow keys + Enter work.
 - **SQL editor** — syntax highlighting for keywords, strings, numbers, comments
-  and function calls, plus schema-aware autocomplete.
+  and function calls. Autocomplete is **alias-aware** (`c.` lists the columns of
+  the table aliased `c`), knows every table referenced in `FROM`/`JOIN`, includes
+  table names, columns and functions, and supports fuzzy matching with a source
+  label. `⌘Space` / `Ctrl+Space` opens the list manually; `↑`/`↓` + `Tab`/`Enter`
+  accepts.
 - **JSON editor** — double-click a JSON/JSONB cell for a large modal with
   **Format**, **NULL**, Cancel and Save; invalid JSON is rejected.
 - **Saved query buttons** — the SQL toolbar has **Save** (name + current SQL)
