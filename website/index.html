@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DB Desk — a TablePlus-style database browser for macOS</title>
-<meta name="description" content="DB Desk is a native macOS database browser for PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey. Read-only by default, encrypted credentials stay on your Mac, and an MCP server puts your databases in reach of local agents.">
+<title>DB Desk — a TablePlus-style database browser for macOS, Windows and Linux</title>
+<meta name="description" content="DB Desk is a native database browser for macOS, Windows and Linux, covering PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey. Read-only by default, encrypted credentials stay on your machine, and an MCP server puts your databases in reach of local agents.">
 <link rel="canonical" href="https://dbdesk.app/">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -12,14 +12,14 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://dbdesk.app/">
 <meta property="og:site_name" content="DB Desk">
-<meta property="og:title" content="DB Desk — a TablePlus-style database browser for macOS">
-<meta property="og:description" content="PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey in one native Mac app. AI that only ever sees your schema. An MCP server for local agents. Nothing leaves your machine.">
+<meta property="og:title" content="DB Desk — a TablePlus-style database browser for macOS, Windows and Linux">
+<meta property="og:description" content="PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey in one native desktop app. AI that only ever sees your schema. An MCP server for local agents. Nothing leaves your machine.">
 <meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="DB Desk — a TablePlus-style database browser for macOS">
-<meta name="twitter:description" content="One native Mac app for PostgreSQL, MySQL, ClickHouse, SQLite, MongoDB and Redis. Read-only by default, credentials encrypted on your Mac.">
+<meta name="twitter:title" content="DB Desk — a TablePlus-style database browser for macOS, Windows and Linux">
+<meta name="twitter:description" content="One native desktop app for PostgreSQL, MySQL, ClickHouse, SQLite, MongoDB and Redis. Read-only by default, credentials encrypted on your machine.">
 <meta name="twitter:image" content="https://dbdesk.app/assets/img/og.png">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/assets/favicon.svg">
@@ -30,10 +30,10 @@
   "@type": "SoftwareApplication",
   "name": "DB Desk",
   "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "macOS 13 or later",
+  "operatingSystem": "macOS 13+, Windows 10/11, Linux",
   "url": "https://dbdesk.app/",
   "downloadUrl": "https://github.com/wzul/dbdesk-app/releases/latest",
-  "description": "A TablePlus-style database browser for macOS covering PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey, with AI assistance and an MCP server for local agents.",
+  "description": "A TablePlus-style database browser for macOS, Windows and Linux covering PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB and Redis/Valkey, with AI assistance and an MCP server for local agents.",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
@@ -121,7 +121,7 @@
       <a class="btn btn-ghost" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
         <svg><use href="#i-github"/></svg> GitHub
       </a>
-      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl>
+      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="auto">
         <svg><use href="#i-download"/></svg> Download
       </a>
     </div>
@@ -132,16 +132,16 @@
 
   <div class="hero">
     <div class="wrap">
-      <span class="eyebrow"><span class="dot"></span> macOS 13+ · Apple silicon &amp; Intel</span>
-      <h1>Every database you touch,<br><em>one native Mac app.</em></h1>
+      <span class="eyebrow"><span class="dot"></span> macOS · Windows · Linux — same local database</span>
+      <h1>Every database you touch,<br><em>one native desktop app.</em></h1>
       <p class="lede">
         DB Desk is a TablePlus-style browser for PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite,
         MongoDB and Redis/Valkey — fast, keyboard-first, and read-only until you say otherwise.
-        It runs entirely on your Mac, and your credentials never leave it.
+        It runs entirely on your machine, and your credentials never leave it.
       </p>
       <div class="hero-cta">
-        <a class="btn btn-primary btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl>
-          <svg><use href="#i-apple"/></svg> Download for macOS
+        <a class="btn btn-primary btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="auto" data-dl-short>
+          <svg><use href="#i-apple"/></svg> <span data-dl-label>Download</span>
         </a>
         <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
           <svg><use href="#i-github"/></svg> View source
@@ -149,8 +149,8 @@
       </div>
       <p class="hero-meta">
         <span><svg><use href="#i-check"/></svg> No account, no sign-in</span>
-        <span><svg><use href="#i-check"/></svg> Signed in-app updates</span>
-        <span><svg><use href="#i-check"/></svg> Sequoia-ready DMG, ~40 MB</span>
+        <span><svg><use href="#i-check"/></svg> Signed, automatic updates</span>
+        <span><svg><use href="#i-check"/></svg> DMG · NSIS installer · deb · rpm · AppImage</span>
       </p>
 
       <figure class="shot" style="margin-bottom:0">
@@ -273,8 +273,8 @@
             <li><svg><use href="#i-check"/></svg><span><strong>SSH tunnels</strong> — key or agent auth, plus a custom tunnel-command field for anything else.</span></li>
             <li><svg><use href="#i-check"/></svg><span><strong>Read-only by default</strong> — enforced on the server side, not by hiding buttons.</span></li>
             <li><svg><use href="#i-check"/></svg><span><strong>Production approvals</strong> — writes against a PROD connection wait in an approval drawer and land in the audit log.</span></li>
-            <li><svg><use href="#i-check"/></svg><span><strong>Backup &amp; restore</strong> — export every connection and setting, restore on a new Mac.</span></li>
-            <li><svg><use href="#i-check"/></svg><span><strong>Native touches</strong> — macOS notifications for long queries, remembered window size and position, zoom shortcuts.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Backup &amp; restore</strong> — export every connection and setting, restore on a new machine.</span></li>
+            <li><svg><use href="#i-check"/></svg><span><strong>Native touches</strong> — desktop notifications for long queries, remembered window size and position, zoom shortcuts.</span></li>
             <li><svg><use href="#i-check"/></svg><span><strong>Offline by design</strong> — no telemetry, no sync server, no account. The updater is the only outbound call you did not make.</span></li>
           </ul>
         </div>
@@ -371,7 +371,7 @@
         </article>
         <article class="card">
           <h3>Local by default</h3>
-          <p>Stdio for a client on the same Mac, loopback HTTP when a tool needs a port. Tunnels
+          <p>Stdio for a client on the same machine, loopback HTTP when a tool needs a port. Tunnels
             open on demand.</p>
         </article>
         <article class="card">
@@ -466,29 +466,46 @@
     <div class="wrap">
       <div class="download">
         <p class="kicker">Download</p>
-        <h2>DB Desk for macOS</h2>
-        <p class="sub">A single DMG, ad-hoc signed, updated in place by a signed updater. No Apple
-          Developer account needed on your side, no license key, no account.</p>
+        <h2>Get DB Desk</h2>
+        <p class="sub">One download per platform, updated in place by a signed updater. No account,
+          no licence key, and no build that phones home.</p>
         <div class="dl-buttons">
-          <a class="btn btn-primary btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="aarch64">
-            <svg><use href="#i-apple"/></svg> <span data-dl-label>Download for Apple silicon</span>
+          <a class="btn btn-primary btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="auto" data-dl-short hidden>
+            <svg><use href="#i-download"/></svg> <span data-dl-label>Download</span>
           </a>
-          <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="x64">
-            <svg><use href="#i-download"/></svg> <span data-dl-label>Download for Intel</span>
+          <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="darwin-aarch64" hidden>
+            <svg><use href="#i-apple"/></svg> <span data-dl-label>macOS · Apple silicon</span>
+          </a>
+          <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="darwin-x86_64" hidden>
+            <svg><use href="#i-apple"/></svg> <span data-dl-label>macOS · Intel</span>
+          </a>
+          <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="windows-x86_64" hidden>
+            <svg><use href="#i-download"/></svg> <span data-dl-label>Windows · x64</span>
+          </a>
+          <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="linux-x86_64" hidden>
+            <svg><use href="#i-download"/></svg> <span data-dl-label>Linux · x64</span>
+          </a>
+          <a class="btn btn-lg" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="linux-aarch64" hidden>
+            <svg><use href="#i-download"/></svg> <span data-dl-label>Linux · arm64</span>
           </a>
         </div>
-        <p class="dl-note">macOS 13 Ventura or later · Apple silicon and Intel · <span data-dl-version>latest release</span></p>
+        <p class="dl-note">macOS 13+ · Windows 10/11 · Linux with glibc 2.39 or newer · <span data-dl-version>latest release</span></p>
+        <p class="dl-alt" data-dl-extras hidden>
+          Prefer a native package?
+          <a data-dl-deb href="https://github.com/wzul/dbdesk-app/releases/latest">.deb</a> for Debian, Ubuntu, Mint and Pop!_OS ·
+          <a data-dl-rpm href="https://github.com/wzul/dbdesk-app/releases/latest">.rpm</a> for Fedora, RHEL and openSUSE
+        </p>
 
         <div class="steps">
           <div class="step">
             <span class="n">1</span>
-            <h4>Open the DMG</h4>
-            <p>Drag <b>DB Desk</b> into Applications.</p>
+            <h4>Install it</h4>
+            <p>macOS: drag the app out of the DMG. Windows: run the installer. Linux: <code>deb</code>/<code>rpm</code>, or make the AppImage executable and run it.</p>
           </div>
           <div class="step">
             <span class="n">2</span>
-            <h4>Right-click → Open once</h4>
-            <p>The build is ad-hoc signed, so macOS asks you to confirm the first launch.</p>
+            <h4>First launch</h4>
+            <p>Builds are ad-hoc signed, so macOS asks you to confirm once — right-click → <b>Open</b>. Windows SmartScreen may ask the same.</p>
           </div>
           <div class="step">
             <span class="n">3</span>
@@ -506,7 +523,7 @@
   <div class="wrap foot">
     <div class="foot-brand">
       <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
-      <span>DB Desk · dbdesk.app — a native Mac database browser</span>
+      <span>DB Desk · dbdesk.app — a native database browser for macOS, Windows and Linux</span>
     </div>
     <div class="foot-links">
       <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source</a>

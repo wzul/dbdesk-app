@@ -558,3 +558,15 @@ footer {
   .download { padding: 32px 20px; }
   .hero-meta { font-size: 12px; }
 }
+
+/* Buttons carry an explicit display, so the `hidden` attribute (used to hide a
+   platform that has no published build) has to win over it. */
+[hidden] { display: none !important; }
+
+.dl-alt {
+  margin: 14px auto 0;
+  max-width: 620px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.dl-alt a { font-weight: 550; }

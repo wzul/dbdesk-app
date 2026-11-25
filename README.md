@@ -1,22 +1,32 @@
 # DB Desk — standalone
 
 A TablePlus-style database browser for **PostgreSQL, MySQL/MariaDB, ClickHouse,
-SQLite, MongoDB and Redis/Valkey** — a native Mac app, no Hermes required.
-Home page: **dbdesk.app**.
+SQLite, MongoDB and Redis/Valkey** — a native desktop app for macOS, Windows and
+Linux, no Hermes required. Home page: **dbdesk.app**.
 
 [![DB Desk](docs/img/standalone.png)](docs/img/standalone.png)
 
 DB Desk is a small Tauri shell around a local Python sidecar (FastAPI). The
-sidecar serves the UI and talks to your databases; nothing leaves the Mac.
+sidecar serves the UI and talks to your databases; nothing leaves the machine.
 
 ## Download
 
-[**Latest release**](https://github.com/wzul/dbdesk-app/releases/latest) · macOS 13+ ·
-Apple silicon and Intel · ad-hoc signed
+[**Latest release**](https://github.com/wzul/dbdesk-app/releases/latest)
 
-1. Open the DMG and drag **DB Desk** into **Applications**.
-2. The first launch is ad-hoc signed: right-click the app → **Open** once.
-3. Updates are signed and delivered in-app (Settings → Updates).
+| Platform | Package |
+|---|---|
+| macOS 13+ (Apple silicon, Intel) | `.dmg`, ad-hoc signed |
+| Windows 10/11 (x64) | NSIS installer (`.exe`) |
+| Debian, Ubuntu, Mint, Pop!_OS | `.deb` |
+| Fedora, RHEL, openSUSE | `.rpm` |
+| Any Linux with glibc ≥ 2.39 | `.AppImage` |
+
+1. Install it — macOS: drag the app out of the DMG · Windows: run the installer ·
+   Linux: install the deb/rpm or `chmod +x` the AppImage and run it.
+2. The first launch is ad-hoc signed, so macOS (right-click → **Open**) and
+   Windows SmartScreen may ask you to confirm once.
+3. Updates are signed and install themselves in the background; the new version
+   starts the next time DB Desk opens (Settings → Automatic updates opts out).
 
 ## Quick start
 
