@@ -5518,7 +5518,12 @@ def _ai_path() -> Path:
 def _load_ai_config() -> dict[str, Any]:
     path = _ai_path()
     if not path.exists():
-        return {"base_url": AI_DEFAULT_BASE, "model": AI_DEFAULT_MODEL, "api_key_enc": ""}
+        return {
+            "base_url": AI_DEFAULT_BASE,
+            "model": AI_DEFAULT_MODEL,
+            "api_key_enc": "",
+            "ai_complete": True,
+        }
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -5527,7 +5532,7 @@ def _load_ai_config() -> dict[str, Any]:
         "base_url": str(data.get("base_url") or AI_DEFAULT_BASE),
         "model": str(data.get("model") or AI_DEFAULT_MODEL),
         "api_key_enc": str(data.get("api_key_enc") or ""),
-        "ai_complete": bool(data.get("ai_complete", False)),
+        "ai_complete": bool(data.get("ai_complete", True)),
     }
 
 
@@ -6166,7 +6171,7 @@ async def ai_config_save(body: dict[str, Any]) -> dict[str, Any]:
         "base_url": str(body.get("base_url") or current["base_url"]).strip() or AI_DEFAULT_BASE,
         "model": str(body.get("model") or current["model"]).strip() or AI_DEFAULT_MODEL,
         "api_key_enc": current["api_key_enc"],
-        "ai_complete": bool(body.get("ai_complete", current.get("ai_complete", False))),
+        "ai_complete": bool(body.get("ai_complete", current.get("ai_complete", True))),
     }
     if api_key not in (None, ""):
         config["api_key_enc"] = _encrypt(str(api_key))

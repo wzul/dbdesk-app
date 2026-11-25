@@ -39,7 +39,7 @@ export default function SettingsDialog({ open, onClose, version }) {
   const [aiMessage, setAiMessage] = useState('')
   const [models, setModels] = useState([])
   const [detecting, setDetecting] = useState(false)
-  const [aiComplete, setAiComplete] = useState(false)
+  const [aiComplete, setAiComplete] = useState(true)
   const [customModel, setCustomModel] = useState(false)
   const [update, setUpdate] = useState(null)
   const [updateState, setUpdateState] = useState('')
@@ -742,7 +742,7 @@ export default function SettingsDialog({ open, onClose, version }) {
                   checked={aiComplete}
                   onChange={(event) => setAiComplete(event.target.checked)}
                 />
-                AI autocomplete (⌘I)
+                AI autocomplete (⌘I, on by default)
               </label>
               {config && config.configured ? (
                 <Badge variant="outline" size="xs">

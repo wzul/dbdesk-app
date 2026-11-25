@@ -15,8 +15,9 @@
 - **AI setup** sends only your message and generic instructions. The returned
   draft is sanitized: keys containing `password`, `token`, `secret`, `key`,
   `header`, `env`, `auth` or `cookie` are dropped.
-- **AI autocomplete** is opt-in (**Settings → AI provider → AI autocomplete**).
-  When you press **⌘I**, it sends the SQL text around the caret plus dialect,
+- **AI autocomplete** is **on by default** once an AI provider is configured;
+  turn it off at **Settings → AI provider → AI autocomplete**. When you press
+  **⌘I**, it sends the SQL text around the caret plus dialect,
   database name and the table/column names and types referenced in the query.
   It never sends rows, result sets, passwords, API keys, SSH material or tunnel
   env, and the server rejects the request unless the toggle is on.

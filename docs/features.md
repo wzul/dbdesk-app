@@ -125,8 +125,9 @@
   accepts.
 - **JSON editor** — double-click a JSON/JSONB cell for a large modal with
   **Format**, **NULL**, Cancel and Save; invalid JSON is rejected.
-- **AI autocomplete (opt-in)** — enable it under **Settings → AI provider**,
-  then press **⌘I** / **Ctrl+I** in the SQL editor. The configured model returns
+- **AI autocomplete (on by default)** — once an AI provider is configured,
+  press **⌘I** / **Ctrl+I** in the SQL editor; turn it off under
+  **Settings → AI provider** if you prefer. The configured model returns
   a continuation at the caret; **Tab** inserts it and **Esc** dismisses it. Only
   the SQL text and schema metadata are sent — never rows or secrets.
 - **Model detection** — in **Settings → AI provider**, enter the base URL and

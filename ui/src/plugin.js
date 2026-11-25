@@ -4870,7 +4870,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
   const [apiKey, setApiKey] = useState('')
   const [models, setModels] = useState([])
   const [detecting, setDetecting] = useState(false)
-  const [aiComplete, setAiComplete] = useState(false)
+  const [aiComplete, setAiComplete] = useState(true)
   const [customModel, setCustomModel] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -5510,7 +5510,7 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                         checked: aiComplete,
                         onChange: (event) => setAiComplete(event.target.checked)
                       }),
-                      jsx('span', { children: 'AI autocomplete (⌘I)' })
+                      jsx('span', { children: 'AI autocomplete (⌘I, on by default)' })
                     ]
                   }),
                   jsx('span', {
