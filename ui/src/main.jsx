@@ -92,7 +92,9 @@ function StatusBar({ connection }) {
         <span>{connection.readonly ? 'read-only' : 'writes allowed'}</span>
       ) : null}
       <span className="flex-1" />
-      <span>DB Desk {APP_VERSION}</span>
+      <span>
+        DB Desk {APP_VERSION} <span className="text-(--ui-text-tertiary)">· dbdesk.app</span>
+      </span>
     </div>
   )
 }

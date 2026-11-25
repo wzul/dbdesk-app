@@ -414,6 +414,9 @@ export default function SettingsDialog({ open, onClose, version }) {
                 {version}
               </Badge>
             </Row>
+            <Row label="Home page" hint="Downloads, screenshots and release notes (coming soon).">
+              <span className="text-[11.5px] font-medium">dbdesk.app</span>
+            </Row>
             <Row
               label="Updates"
               hint={
@@ -809,7 +812,7 @@ export default function SettingsDialog({ open, onClose, version }) {
 
           <Section title="About">
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-(--ui-text-tertiary)">
-              <span>DB Desk {version}</span>
+              <span>DB Desk {version} · dbdesk.app</span>
               <span>·</span>
               <span>MIT</span>
               <span>·</span>

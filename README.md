@@ -2,6 +2,7 @@
 
 A TablePlus-style database browser for **PostgreSQL, MySQL/MariaDB, ClickHouse,
 SQLite, MongoDB and Redis/Valkey** — a native Mac app, no Hermes required.
+Home page: **dbdesk.app**.
 
 [![DB Desk](docs/img/standalone.png)](docs/img/standalone.png)
 
