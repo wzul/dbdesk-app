@@ -1,8 +1,8 @@
-fastapi>=0.110
+fastapi>=0.165.0
 uvicorn>=0.54.0
-cryptography>=42
-psycopg[binary]>=3.2
+cryptography>=50.0.2
+psycopg[binary]>=3.3.9
 PyMySQL>=1.2.4
-certifi>=2024.0
-pymongo>=4.9
-redis>=5.0
+certifi>=2026.11.20
+pymongo>=4.20.1
+redis>=8.2.0
