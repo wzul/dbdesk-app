@@ -21,4 +21,10 @@ if [ -d "$HERMES_ROOT" ]; then
   PYTHONPATH="$HERMES_ROOT${PYTHONPATH:+:$PYTHONPATH}"
   export PYTHONPATH
 fi
+
+# These tests cover the psql-CLI fallback. With psycopg installed the code takes
+# the native path instead and the mocks never fire, so pin the driver off; export
+# DBDESK_PG_DRIVER yourself to run them against a real driver instead.
+DBDESK_PG_DRIVER=${DBDESK_PG_DRIVER:-none}
+export DBDESK_PG_DRIVER
 exec "$PYTHON" -m unittest discover -s "$HERE" -p 'test_*.py' -v

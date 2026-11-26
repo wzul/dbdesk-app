@@ -1214,9 +1214,14 @@ class _Pg8000Driver:
         return _Pg8000Connection(connection)
 
 
-if psycopg is None and _pg8000 is not None:
+_requested_driver = (os.environ.get("DBDESK_PG_DRIVER") or "").strip().lower()
+if _requested_driver == "none":
+    # No native driver at all: forces the psql CLI path. The plugin's test suite
+    # exercises that path, and it must not depend on what happens to be installed.
+    psycopg = None
+elif _requested_driver == "pg8000" and _pg8000 is not None:
     psycopg = _Pg8000Driver(_pg8000)
-elif psycopg is not None and os.environ.get("DBDESK_PG_DRIVER") == "pg8000" and _pg8000 is not None:
+elif psycopg is None and _pg8000 is not None:
     psycopg = _Pg8000Driver(_pg8000)
 
 try:  # pure Python, works everywhere
