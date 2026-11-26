@@ -71,6 +71,13 @@ app.include_router(router, prefix="/api")
 app.include_router(mcp_gateway.runtime_router, prefix="/api")
 app.include_router(mcp_gateway.protocol_router)
 
+# Hosted mode: login, CSRF and the two feature gates that only make sense on a
+# machine you own. Off unless DBDESK_SERVER=1, so the desktop app is unchanged.
+if os.environ.get("DBDESK_SERVER") == "1":
+    import server_auth
+
+    server_auth.install_server_mode(app)
+
 
 @app.get("/health")
 async def health() -> dict[str, object]:
@@ -103,6 +110,15 @@ def main() -> None:
 
     import uvicorn
 
+    if os.environ.get("DBDESK_SERVER") == "1":
+        import server_auth
+
+        if not server_auth.configured_password_hash():
+            print(
+                "dbdesk: DBDESK_SERVER=1 but no password is configured — set "
+                "DBDESK_SERVER_PASSWORD (or DBDESK_SERVER_PASSWORD_HASH) before exposing this port",
+                file=sys.stderr,
+            )
     host = os.environ.get("HOST") or "127.0.0.1"
     port = int(os.environ.get("PORT") or os.environ.get("DBDESK_PORT") or 8765)
     mcp_gateway.set_runtime(port, VERSION)

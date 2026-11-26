@@ -1,0 +1,31 @@
+name: dbdesk-server
+
+# Self-hosted DB Desk. Put your TLS terminator in front (Caddy, Traefik, nginx) —
+# this container speaks plain HTTP on the docker network and nothing else.
+services:
+  dbdesk:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: dbdesk-server:latest
+    container_name: dbdesk
+    restart: unless-stopped
+    environment:
+      # First boot only: the password is hashed and stored in /data/server.json.
+      # After that, replace this with DBDESK_SERVER_PASSWORD_HASH (or delete it and
+      # keep the state volume).
+      DBDESK_SERVER_PASSWORD: "${DBDESK_SERVER_PASSWORD:?set DBDESK_SERVER_PASSWORD}"
+      # Off by default on a server: both are safe on your own Mac, not on a host
+      # other people can reach.
+      DBDESK_ALLOW_TUNNELS: "${DBDESK_ALLOW_TUNNELS:-0}"
+      DBDESK_ALLOW_LOCAL_FILES: "${DBDESK_ALLOW_LOCAL_FILES:-0}"
+    volumes:
+      - dbdesk-data:/data
+    ports:
+      # Bind to loopback and let the reverse proxy reach it, or publish on a
+      # private interface — never 0.0.0.0 on a host with a public IP unless the
+      # proxy is the only thing that can reach the port.
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  dbdesk-data:

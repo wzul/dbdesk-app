@@ -84,6 +84,19 @@ npm run app             # desktop shell (Rust + Tauri)
 Tests: `.venv/bin/python -m unittest discover -s tests`. See
 [Development](docs/development.md).
 
+## Self-hosted server
+
+The same app runs in a container behind a login, for a browser on another machine:
+
+```bash
+export DBDESK_SERVER_PASSWORD='pick-something-long'
+docker compose -f server/docker-compose.yml up -d --build
+```
+
+Server mode adds session auth, CSRF on writes and login throttling, and turns off
+the two features that only make sense on a machine you own (SSH tunnels, local
+SQLite paths). See [server/README.md](server/README.md).
+
 ## Website
 
 The marketing site at **dbdesk.app** lives in [`website/`](website/) — plain
