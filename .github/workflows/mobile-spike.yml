@@ -22,8 +22,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Android SDK + NDK
-        uses: android-actions/setup-android@v3
+      # The runner image already ships the SDK (ANDROID_HOME=/usr/local/lib/android/sdk);
+      # android-actions/setup-android cannot be used here because it tries to install the
+      # legacy 'tools' package, which current cmdline-tools no longer publish.
+      - name: Android SDK packages
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          sdkmanager --list_installed | head -20
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -37,7 +42,7 @@ jobs:
 
       - name: Install the NDK
         run: |
-          yes | sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+          yes | sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" | tail -3
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
       - name: Install the Tauri CLI
