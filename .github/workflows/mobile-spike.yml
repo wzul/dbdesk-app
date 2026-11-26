@@ -47,8 +47,8 @@ jobs:
 
       - name: Install the Tauri CLI
         run: |
-          npm --prefix mobile ci
-          npm --prefix mobile install
+          npm --prefix mobile install --no-audit --no-fund
+          npx --prefix mobile tauri --version
 
       - name: Initialise the Android project
         env:
