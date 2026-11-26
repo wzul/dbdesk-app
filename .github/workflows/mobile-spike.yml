@@ -77,12 +77,18 @@ jobs:
 
       - name: Build the APK
         run: |
+          # pipefail matters: `| tail` alone turns a failed build into a green step,
+          # which is exactly how the first run "succeeded" with no APK to upload.
+          set -o pipefail
           cd mobile
-          npx tauri android build --apk --target aarch64 2>&1 | tail -40
+          npx tauri android build --apk --target aarch64 2>&1 | tee /tmp/android-build.log | tail -60
 
       - name: Collect the APK
         run: |
+          set -e
           find mobile/src-tauri/gen/android -name '*.apk' -printf '%p %s bytes\n'
+          test -n "$(find mobile/src-tauri/gen/android -name '*.apk' -print -quit)"
+          echo "--- build log tail"; tail -25 /tmp/android-build.log
 
       - uses: actions/upload-artifact@v7
         with:
