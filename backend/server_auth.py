@@ -363,10 +363,10 @@ LOGIN_HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DB Desk — sign in</title>
 <style>
-  :root{color-scheme:light dark;--bg:#fff;--fg:#0f172a;--muted:#64748b;--stroke:#e2e8f0;
-        --primary:#2563eb;--danger:#dc2626;--card:#f8fafc}
-  @media (prefers-color-scheme: dark){:root{--bg:#0f1115;--fg:#e8ecf3;--muted:#94a3b8;
-        --stroke:#252b38;--primary:#6aa5ff;--danger:#f87171;--card:#141821}}
+  :root{color-scheme:light dark;--bg:#fff;--fg:#0f172a;--muted:#475569;--faint:#64748b;
+        --stroke:#e2e8f0;--primary:#2563eb;--danger:#dc2626;--card:#f8fafc}
+  @media (prefers-color-scheme: dark){:root{--bg:#0f1115;--fg:#e8ecf3;--muted:#c2cad8;
+        --faint:#94a3b8;--stroke:#252b38;--primary:#6aa5ff;--danger:#f87171;--card:#141821}}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);
        color:var(--fg);font:15px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}
@@ -376,8 +376,14 @@ LOGIN_HTML = """<!doctype html>
   .mark{width:26px;height:26px;border-radius:8px;background:var(--primary);display:grid;place-items:center;color:#fff}
   p.hint{margin:0;color:var(--muted);font-size:12.5px}
   label{display:grid;gap:6px;font-size:12.5px;color:var(--muted)}
-  input{height:38px;padding:0 10px;border-radius:6px;border:1px solid var(--stroke);
-        background:var(--bg);color:var(--fg);font:inherit}
+  .field{position:relative;display:flex}
+  input{flex:1;height:38px;padding:0 10px;border-radius:6px;border:1px solid var(--stroke);
+        background:var(--bg);color:var(--fg);font:inherit;appearance:none}
+  input:focus{outline:none;border-color:var(--primary);
+              box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent)}
+  .reveal{position:relative;margin-left:-34px;width:34px;border:0;background:transparent;
+          color:var(--faint);font:inherit;font-size:11px;cursor:pointer}
+  .reveal:hover{color:var(--muted)}
   button{height:38px;border:0;border-radius:6px;background:var(--primary);color:#fff;
          font:inherit;font-weight:600;cursor:pointer}
   button:disabled{opacity:.6;cursor:default}
@@ -387,11 +393,25 @@ LOGIN_HTML = """<!doctype html>
 <form id="f">
   <div class="brand"><span class="mark">▤</span> DB Desk</div>
   <p class="hint">This server holds database connections. Sign in to continue.</p>
-  <label>Password<input id="p" type="password" autocomplete="current-password" required autofocus></label>
+  <label>Password
+    <span class="field">
+      <input id="p" type="password" autocomplete="current-password" required autofocus>
+      <button class="reveal" id="r" type="button" aria-label="Show password">show</button>
+    </span>
+  </label>
   <p class="error" id="e"></p>
   <button id="b" type="submit">Sign in</button>
 </form>
 <script>
+  const field = document.getElementById('p');
+  const reveal = document.getElementById('r');
+  reveal.addEventListener('click', () => {
+    const hidden = field.type === 'password';
+    field.type = hidden ? 'text' : 'password';
+    reveal.textContent = hidden ? 'hide' : 'show';
+    reveal.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+    field.focus();
+  });
   const form = document.getElementById('f');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
