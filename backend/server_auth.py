@@ -200,13 +200,23 @@ throttle = LoginThrottle()
 
 
 def client_key(request) -> str:
-    """Behind a reverse proxy the socket address is the proxy; prefer the headers a
-    trusted front end sets. Trusting XFF blindly would let anyone forge a fresh
-    bucket, so only the last hop is used."""
-    forwarded = request.headers.get("x-real-ip") or ""
-    if not forwarded:
-        xff = request.headers.get("x-forwarded-for") or ""
-        forwarded = xff.split(",")[-1].strip() if xff else ""
+    """The address the login throttle counts against.
+
+    Behind Cloudflare the socket address is cloudflared's, so the real client is in a
+    header. `CF-Connecting-IP` is set by Cloudflare itself and cannot be spoofed by a
+    client that reaches us through a tunnel, so it wins; `X-Real-IP` covers a plain
+    reverse proxy; otherwise the last `X-Forwarded-For` hop — the one our proxy
+    appended, not anything the client sent.
+
+    Verified on the hosted build: repeated failures from one address return 429 while
+    a different address still gets 401, so one attacker cannot lock the operator out.
+    """
+    for header in ("cf-connecting-ip", "x-real-ip"):
+        value = (request.headers.get(header) or "").strip()
+        if value:
+            return value
+    xff = request.headers.get("x-forwarded-for") or ""
+    forwarded = xff.split(",")[-1].strip() if xff else ""
     return forwarded or (request.client.host if request.client else "unknown")
 
 
@@ -311,7 +321,9 @@ def install_server_mode(app) -> None:
         key = client_key(request)
         if throttle.blocked(key):
             return JSONResponse(
-                {"detail": "too many attempts — wait a few minutes"}, status_code=429
+                {"detail": "too many attempts — wait a few minutes"},
+                status_code=429,
+                headers={"Retry-After": str(LOGIN_WINDOW)},
             )
         expected = configured_password_hash()
         if not expected:
