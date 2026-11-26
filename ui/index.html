@@ -5,7 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>DB Desk</title>
-    <meta name="description" content="DB Desk — a TablePlus-style database browser for macOS. dbdesk.app" />
+    <meta name="description" content="DB Desk — a TablePlus-style database browser for macOS, Windows and Linux. dbdesk.app" />
+
+    <!-- Installable when served over http(s) (the hosted build); the desktop app
+         ignores all of this. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="DB Desk" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

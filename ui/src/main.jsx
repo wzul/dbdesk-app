@@ -12,6 +12,7 @@ import Launcher from './launcher.jsx'
 import SettingsDialog from './settings-dialog.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
 import { HOMEPAGE_URL, openExternal } from './open-link.js'
+import { registerServiceWorker } from './pwa.js'
 import UpdatePill from './update-pill.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
@@ -393,6 +394,8 @@ function Shell() {
     </>
   )
 }
+
+registerServiceWorker()
 
 createRoot(document.getElementById('root')).render(
   <>

@@ -361,7 +361,14 @@ def install_server_mode(app) -> None:
 LOGIN_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>DB Desk — sign in</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="DB Desk">
 <style>
   :root{color-scheme:light dark;--bg:#fff;--fg:#0f172a;--muted:#475569;--faint:#64748b;
         --stroke:#e2e8f0;--primary:#2563eb;--danger:#dc2626;--card:#f8fafc}
@@ -403,6 +410,13 @@ LOGIN_HTML = """<!doctype html>
   <button id="b" type="submit">Sign in</button>
 </form>
 <script>
+  // Installable straight from the sign-in screen: the worker caches this page, so
+  // the installed app opens even before there is a session.
+  if ('serviceWorker' in navigator) {
+    const start = () => navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if (document.readyState === 'complete') start();
+    else window.addEventListener('load', start, { once: true });
+  }
   const field = document.getElementById('p');
   const reveal = document.getElementById('r');
   reveal.addEventListener('click', () => {

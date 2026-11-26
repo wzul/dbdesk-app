@@ -87,6 +87,28 @@ async def health() -> dict[str, object]:
 if (UI_DIR / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=UI_DIR / "assets"), name="assets")
 
+if (UI_DIR / "icons").is_dir():
+    app.mount("/icons", StaticFiles(directory=UI_DIR / "icons"), name="icons")
+
+
+# Python's mimetypes has no entry for .webmanifest, and a manifest served as
+# text/plain is ignored by the browser — which silently means "not installable".
+@app.get("/manifest.webmanifest")
+async def manifest():
+    path = UI_DIR / "manifest.webmanifest"
+    if not path.is_file():
+        return JSONResponse({"detail": "manifest missing"}, status_code=404)
+    return FileResponse(path, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    path = UI_DIR / "sw.js"
+    if not path.is_file():
+        return JSONResponse({"detail": "service worker missing"}, status_code=404)
+    # The worker must never be cached, or a new build waits behind an old script.
+    return FileResponse(path, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
 
 @app.get("/{path:path}")
 async def spa(path: str):
