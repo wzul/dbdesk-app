@@ -1,0 +1,100 @@
+name: mobile-spike
+
+# Phase 3 spike: can the thin client produce an Android APK in CI?
+# Not wired into release.yml — no store signing, artifact only.
+on:
+  workflow_dispatch:
+  push:
+    branches: [spike/mobile]
+
+jobs:
+  android:
+    runs-on: ubuntu-26.04
+    env:
+      # The runner image exports this in its own profile, which a step-level `env:`
+      # block then shadows with an empty string — which is how NDK_HOME collapsed to
+      # /ndk/27.0.12077973 and the build refused to start. Declare it once, here.
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The runner image already ships the SDK (ANDROID_HOME=/usr/local/lib/android/sdk);
+      # android-actions/setup-android cannot be used here because it tries to install the
+      # legacy 'tools' package, which current cmdline-tools no longer publish.
+      - name: Put sdkmanager on PATH
+        run: |
+          # The image keeps cmdline-tools under the SDK root but does not add it to
+          # PATH, so a bare `sdkmanager` is command-not-found and the NDK never lands.
+          CMDBIN=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin 2>/dev/null | head -1)
+          echo "cmdline-tools: $CMDBIN"
+          echo "$CMDBIN" >> "$GITHUB_PATH"
+          "$CMDBIN/sdkmanager" --version
+
+      - name: Android SDK packages
+        run: sdkmanager --list_installed | head -20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Toolchain versions
+        run: |
+          node --version; java -version 2>&1 | head -1
+          sdkmanager --list_installed 2>/dev/null | head -12 || true
+          rustup target list --installed
+
+      - name: Install the NDK
+        run: |
+          yes | sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" | tail -3
+          if [ ! -d "$ANDROID_HOME/ndk/27.0.12077973" ]; then
+            echo "requested NDK missing; installed versions:"; ls "$ANDROID_HOME/ndk" 2>/dev/null
+            sdkmanager --list | grep -oE 'ndk;[0-9.]+' | sort -u
+            exit 1
+          fi
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Install the Tauri CLI
+        run: |
+          npm --prefix mobile install --no-audit --no-fund
+          npx --prefix mobile tauri --version
+
+      - name: Initialise the Android project
+        run: |
+          echo "NDK_HOME=$NDK_HOME"; ls "$NDK_HOME" | head -3
+          cd mobile
+          npx tauri android init --ci
+          ls -R src-tauri/gen/android | head -30
+
+      - name: Build the APK
+        run: |
+          # pipefail matters: `| tail` alone turns a failed build into a green step,
+          # which is exactly how the first run "succeeded" with no APK to upload.
+          set -o pipefail
+          cd mobile
+          # A debug build is signed with the throwaway debug key, so it installs on a
+          # real phone; the release APK from this workflow is unsigned and Android
+          # refuses to install it.
+          npx tauri android build --debug --apk --target aarch64 2>&1 | tee /tmp/android-build.log | tail -60
+
+      - name: Collect the APK
+        run: |
+          set -e
+          find mobile/src-tauri/gen/android -name '*.apk' -printf '%p %s bytes\n'
+          test -n "$(find mobile/src-tauri/gen/android -name '*.apk' -print -quit)"
+          echo "--- build log tail"; tail -25 /tmp/android-build.log
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dbdesk-mobile-android
+          path: mobile/src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
