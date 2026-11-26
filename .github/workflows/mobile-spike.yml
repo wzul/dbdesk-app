@@ -81,7 +81,10 @@ jobs:
           # which is exactly how the first run "succeeded" with no APK to upload.
           set -o pipefail
           cd mobile
-          npx tauri android build --apk --target aarch64 2>&1 | tee /tmp/android-build.log | tail -60
+          # A debug build is signed with the throwaway debug key, so it installs on a
+          # real phone; the release APK from this workflow is unsigned and Android
+          # refuses to install it.
+          npx tauri android build --debug --apk --target aarch64 2>&1 | tee /tmp/android-build.log | tail -60
 
       - name: Collect the APK
         run: |
