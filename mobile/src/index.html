@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DB Desk</title>
+<style>
+  :root{color-scheme:light dark;--bg:#fff;--fg:#0f172a;--muted:#475569;--stroke:#e2e8f0;
+        --primary:#2563eb;--danger:#dc2626;--card:#f8fafc}
+  @media (prefers-color-scheme: dark){:root{--bg:#0f1115;--fg:#e8ecf3;--muted:#c2cad8;
+        --stroke:#252b38;--primary:#6aa5ff;--danger:#f87171;--card:#141821}}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg);
+       color:var(--fg);font:15px/1.55 ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}
+  form{width:100%;max-width:360px;display:grid;gap:14px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:660;font-size:18px}
+  .mark{width:30px;height:30px;border-radius:9px;background:var(--primary);display:grid;place-items:center;color:#fff}
+  p{margin:0;color:var(--muted);font-size:13px}
+  label{display:grid;gap:6px;font-size:12.5px;color:var(--muted)}
+  input{height:44px;padding:0 12px;border-radius:8px;border:1px solid var(--stroke);background:var(--card);
+        color:var(--fg);font:inherit;appearance:none}
+  input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent)}
+  button{height:44px;border:0;border-radius:8px;background:var(--primary);color:#fff;font:inherit;font-weight:600}
+  button:disabled{opacity:.55}
+  .error{color:var(--danger);font-size:12.5px;min-height:16px}
+  .hint{font-size:12px}
+</style>
+</head>
+<body>
+<form id="f">
+  <div class="brand"><span class="mark">▤</span> DB Desk</div>
+  <p>This app is a client. Point it at the DB Desk server that holds your connections — your own host, or <b>app.dbdesk.app</b>.</p>
+  <label>Server address
+    <input id="u" type="url" inputmode="url" autocapitalize="off" autocorrect="off"
+           placeholder="https://app.dbdesk.app" required>
+  </label>
+  <p class="error" id="e"></p>
+  <button id="b" type="submit">Connect</button>
+  <p class="hint">The address is remembered on this device. Database credentials stay on the server; nothing is stored here.</p>
+</form>
+<script>
+  const KEY = 'dbdesk.server';
+  const input = document.getElementById('u');
+  const error = document.getElementById('e');
+  const saved = localStorage.getItem(KEY);
+  if (saved) input.value = saved;
+
+  document.getElementById('f').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    let url;
+    try {
+      url = new URL(input.value.trim());
+      if (!/^https?:$/.test(url.protocol)) throw new Error('scheme');
+    } catch {
+      error.textContent = 'Enter a full address, for example https://app.dbdesk.app';
+      return;
+    }
+    // HTTPS is required: the session cookie is Secure, and a plain-HTTP server on a
+    // phone network would be readable by anyone on the same Wi-Fi.
+    if (url.protocol !== 'https:') {
+      error.textContent = 'Use https:// — a phone is rarely on a network you trust.';
+      return;
+    }
+    const target = url.origin + (url.pathname === '/' ? '/' : url.pathname);
+    localStorage.setItem(KEY, target);
+    // Reachability check before we leave the connect screen, so a typo does not look
+    // like a crash.
+    try {
+      const response = await fetch(target + 'health', { mode: 'cors' });
+      if (!response.ok) throw new Error(String(response.status));
+    } catch {
+      error.textContent = 'No DB Desk server answered at that address.';
+      return;
+    }
+    location.replace(target);
+  });
+</script>
+</body>
+</html>

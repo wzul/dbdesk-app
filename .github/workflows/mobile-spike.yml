@@ -1,0 +1,71 @@
+name: mobile-spike
+
+# Phase 3 spike: can the thin client produce an Android APK in CI?
+# Not wired into release.yml — no store signing, artifact only.
+on:
+  workflow_dispatch:
+  push:
+    branches: [spike/mobile]
+
+jobs:
+  android:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK + NDK
+        uses: android-actions/setup-android@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Toolchain versions
+        run: |
+          node --version; java -version 2>&1 | head -1
+          sdkmanager --list_installed 2>/dev/null | head -12 || true
+          rustup target list --installed
+
+      - name: Install the NDK
+        run: |
+          yes | sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Install the Tauri CLI
+        run: |
+          npm --prefix mobile ci
+          npm --prefix mobile install
+
+      - name: Initialise the Android project
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+        run: |
+          cd mobile
+          npx tauri android init --ci
+          ls -R src-tauri/gen/android | head -30
+
+      - name: Build the APK
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+        run: |
+          cd mobile
+          npx tauri android build --apk --target aarch64 2>&1 | tail -40
+
+      - name: Collect the APK
+        run: |
+          find mobile/src-tauri/gen/android -name '*.apk' -printf '%p %s bytes\n'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dbdesk-mobile-android
+          path: mobile/src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          if-no-files-found: warn

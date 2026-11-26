@@ -1,0 +1,18 @@
+[package]
+name = "dbdesk-mobile"
+version = "0.1.0"
+description = "DB Desk on a phone: a thin client for your own DB Desk server"
+edition = "2021"
+rust-version = "1.90"
+
+[build-dependencies]
+tauri-build = { version = "2.7.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.7", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lib]
+name = "dbdesk_mobile_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
