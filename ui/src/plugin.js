@@ -8845,10 +8845,21 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                               jsx(Codicon, { key: 'i', name: 'database', className: 'text-3xl opacity-40' }),
                               jsx('div', {
                                 key: 't',
+                                className: 'text-center',
                                 children: active
-                                  ? 'Pick a table on the left, or switch to SQL.'
+                                  ? 'Pick a table from the list, or switch to SQL.'
                                   : 'Add a connection to get started.'
-                              })
+                              }),
+                              active
+                                ? jsx('button', {
+                                    key: 'browse',
+                                    type: 'button',
+                                    className:
+                                      'dbd-tree-toggle items-center gap-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2.5 py-1 text-[11px] font-medium text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)',
+                                    onClick: () => setTreeOpen(true),
+                                    children: 'Browse tables'
+                                  })
+                                : null
                             ]
                           }),
                       jsxs('div', {

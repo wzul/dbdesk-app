@@ -144,8 +144,24 @@ export async function writeClipboardText(text) {
 /* REST                                                                      */
 /* ------------------------------------------------------------------------- */
 
+/**
+ * The hosted build hands out a `dbdesk_csrf` cookie at login; every write has to
+ * echo it in a header (a cookie alone is not proof the request came from our page).
+ * Harmless in the desktop app, where the cookie never exists.
+ */
+function csrfToken() {
+  if (typeof document === 'undefined') return ''
+  const match = document.cookie.match(/(?:^|;\s*)dbdesk_csrf=([^;]+)/)
+  return match ? decodeURIComponent(match[1]) : ''
+}
+
 export async function rest(path, opts = {}) {
-  const init = { method: opts.method || 'GET', headers: {} }
+  const method = (opts.method || 'GET').toUpperCase()
+  const init = { method, headers: {} }
+  if (method !== 'GET' && method !== 'HEAD') {
+    const token = csrfToken()
+    if (token) init.headers['X-DBDesk-CSRF'] = token
+  }
   if (opts.body !== undefined) {
     init.headers['Content-Type'] = 'application/json'
     init.body = JSON.stringify(opts.body)

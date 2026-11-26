@@ -84,15 +84,19 @@ function StatusBar({ connection }) {
           {connection ? 'Connected' : 'No connection'}
         </span>
       </span>
-      {connection ? <span className="truncate">{connection.name}</span> : null}
+      {/* Name, engine and the write mode are the first things to go when the bar has
+          390px to work with — "Connected" plus the version is what has to survive. */}
+      {connection ? <span className="hidden truncate sm:inline">{connection.name}</span> : null}
       {connection ? (
-        <span className="truncate">
+        <span className="hidden truncate sm:inline">
           {KIND_LABELS[connection.flavor === 'mariadb' ? 'mariadb' : connection.kind] ||
             connection.kind}
         </span>
       ) : null}
       {connection ? (
-        <span>{connection.readonly ? 'read-only' : 'writes allowed'}</span>
+        <span className="hidden whitespace-nowrap sm:inline">
+          {connection.readonly ? 'read-only' : 'writes allowed'}
+        </span>
       ) : null}
       <span className="flex-1" />
       <span>
