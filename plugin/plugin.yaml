@@ -1,0 +1,8 @@
+name: dbdesk
+version: "0.8.12"
+description: "DB Desk — a TablePlus-style browser for PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite, MongoDB, Redis/Valkey, MongoDB and Redis/Valkey: connections, SSH tunnels, schema tree, data grid with typed editors, SQL runner, CSV import/export, saved views and read-only agent tools."
+author: "Hermes (Wan)"
+provides_tools:
+  - db_connections
+  - db_query
+provides_hooks: []

@@ -26,6 +26,14 @@ jobs:
       - name: Run smoke tests
         run: python -m unittest discover -s tests -v
 
+      # plugin/ is generated from the app sources; a stale copy is how the two
+      # releases drifted apart before they shared a repository.
+      - name: Check the generated plugin is current
+        run: python scripts/build-plugin.py --check
+
+      - name: Run the plugin's own test suite
+        run: cd plugin && bash tests/run.sh
+
   macos:
     needs: backend
     strategy:

@@ -1,0 +1,31 @@
+name: dbdesk-server
+
+# Self-hosted DB Desk on the web host. The tunnel is the only way in: no published
+# port, no public IP, and the container joins the same docker network cloudflared
+# already sits on.
+services:
+  dbdesk:
+    build:
+      context: ./src
+      dockerfile: server/Dockerfile
+    image: dbdesk-server:latest
+    container_name: dbdesk-server
+    restart: unless-stopped
+    environment:
+      DBDESK_SERVER: "1"
+      DBDESK_SERVER_PASSWORD: "${DBDESK_SERVER_PASSWORD:?set DBDESK_SERVER_PASSWORD in .env}"
+      DBDESK_ALLOW_TUNNELS: "${DBDESK_ALLOW_TUNNELS:-0}"
+      DBDESK_ALLOW_LOCAL_FILES: "${DBDESK_ALLOW_LOCAL_FILES:-0}"
+    volumes:
+      - dbdesk-data:/data
+    networks:
+      edge:
+        aliases: [dbdesk]
+
+volumes:
+  dbdesk-data:
+
+networks:
+  edge:
+    external: true
+    name: dbdesk-web_edge

@@ -1,0 +1,13 @@
+# Keep the image build context to what the container actually needs.
+.git
+.github
+node_modules
+ui/node_modules
+src-tauri
+dist-sidecar
+build-sidecar
+website
+docs
+tests
+*.md
+!server/README.md

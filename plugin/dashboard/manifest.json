@@ -1,0 +1,14 @@
+{
+  "name": "dbdesk",
+  "label": "DB Desk",
+  "description": "TablePlus-style PostgreSQL browser — connections, schema tree, data grid and SQL runner.",
+  "icon": "Database",
+  "version": "0.8.12",
+  "tab": {
+    "path": "/dbdesk",
+    "position": "end",
+    "hidden": true
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

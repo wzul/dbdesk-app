@@ -85,6 +85,13 @@ jobs:
             cp "${appimage}.sig"                      "out/DB.Desk_${VERSION}_${arch}.AppImage.sig"
           done
 
+          # The Hermes plugin, packaged from the same repository.
+          PLUGIN_VERSION=$(sed -n 's/^version: *"\(.*\)"/\1/p' plugin/plugin.yaml | head -1)
+          (cd plugin && zip -qr "../out/dbdesk-plugin-${PLUGIN_VERSION}.zip" \
+             plugin.yaml requirements.txt __init__.py README.md LICENSE \
+             desktop dashboard docs tests)
+          echo "PLUGIN_VERSION=${PLUGIN_VERSION}" >> "$GITHUB_ENV"
+
           (cd out && sha256sum ./* > SHA256SUMS.txt)
           ls -lh out
 
@@ -129,4 +136,5 @@ jobs:
             out/DB.Desk_*-setup.exe out/DB.Desk_*-setup.exe.sig \
             out/DB.Desk_*.deb out/DB.Desk_*.rpm \
             out/DB.Desk_*.AppImage out/DB.Desk_*.AppImage.sig \
+            out/dbdesk-plugin-*.zip \
             out/latest.json out/SHA256SUMS.txt
