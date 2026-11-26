@@ -21,21 +21,20 @@ services:
   # Mirrors the release manifest same-origin: GitHub's asset host sends no CORS
   # headers, so the page cannot read it cross-origin. Atomic rename keeps nginx
   # from ever serving a half-written file.
+  #
+  # The refresh loop lives in manifest-refresh.sh rather than in `command:` — Compose
+  # interpolates $VAR inside a command string, which silently emptied the URL and left
+  # the old manifest in place. A mounted script has no interpolation to trip over.
   manifest:
     image: alpine:3.22
     container_name: dbdesk-manifest
     restart: unless-stopped
-    command:
-      - /bin/sh
-      - -c
-      - >-
-        while :; do
-        wget -q -O /out/.latest.json.new https://github.com/wzul/dbdesk-app/releases/latest/download/latest.json
-        && mv /out/.latest.json.new /out/latest.json
-        || rm -f /out/.latest.json.new;
-        sleep 900; done
+    entrypoint: ["/bin/sh", "/usr/local/bin/manifest-refresh.sh"]
+    environment:
+      APK_ADD: "curl jq"
     volumes:
       - ./site/release:/out
+      - ./manifest-refresh.sh:/usr/local/bin/manifest-refresh.sh:ro
     networks: [edge]
 
   tunnel:

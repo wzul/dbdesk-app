@@ -24,6 +24,9 @@ rsync -az --delete \
 echo "== syncing nginx config"
 rsync -az "$HERE/deploy/nginx/" "${HOST}:${REMOTE_DIR}/nginx/"
 
+echo "== syncing the manifest refresh loop"
+rsync -az "$HERE/deploy/manifest-refresh.sh" "${HOST}:${REMOTE_DIR}/manifest-refresh.sh"
+
 echo "== recreating web container"
 ssh "$HOST" "cd ${REMOTE_DIR} && docker compose up -d --force-recreate web && docker compose ps"
 

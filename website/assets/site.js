@@ -24,7 +24,7 @@
     // Safari send the same string. Default to Apple silicon, and keep both macOS
     // buttons visible in the download block so nobody is stuck.
     if (/mac|darwin/.test(ua)) return 'darwin-aarch64';
-    if (/windows|win32|win64/.test(ua)) return 'windows-x86_64';
+    if (/windows|win32|win64/.test(ua)) return arm ? 'windows-aarch64' : 'windows-x86_64';
     if (/linux|x11/.test(ua)) return arm ? 'linux-aarch64' : 'linux-x86_64';
     return 'darwin-aarch64';
   }
@@ -33,19 +33,23 @@
     'darwin-aarch64': 'macOS · Apple silicon',
     'darwin-x86_64': 'macOS · Intel',
     'windows-x86_64': 'Windows · x64',
+    'windows-aarch64': 'Windows · arm64',
     'linux-x86_64': 'Linux · x64',
     'linux-aarch64': 'Linux · arm64'
   };
 
   function shortLabel(key) {
     if (key === 'windows-x86_64') return 'Download for Windows (x64)';
+    if (key === 'windows-aarch64') return 'Download for Windows (arm64)';
     if (key === 'linux-x86_64') return 'Download for Linux (x64)';
     if (key === 'linux-aarch64') return 'Download for Linux (arm64)';
     if (key === 'darwin-aarch64') return 'Download for macOS (Apple silicon)';
     return 'Download for macOS (Intel)';
   }
 
-  fetch(MANIFEST, { cache: 'no-store' })
+  // The manifest is cacheable for five minutes at the edge; the query string keeps a
+  // freshly published release from being hidden behind an older copy.
+  fetch(MANIFEST + '?t=' + Date.now(), { cache: 'no-store' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (m) {
       if (!m || !m.version || !m.platforms) return;
