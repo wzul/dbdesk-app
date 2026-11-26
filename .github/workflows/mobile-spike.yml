@@ -10,6 +10,12 @@ on:
 jobs:
   android:
     runs-on: ubuntu-26.04
+    env:
+      # The runner image exports this in its own profile, which a step-level `env:`
+      # block then shadows with an empty string — which is how NDK_HOME collapsed to
+      # /ndk/27.0.12077973 and the build refused to start. Declare it once, here.
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v7
 
@@ -51,16 +57,13 @@ jobs:
           npx --prefix mobile tauri --version
 
       - name: Initialise the Android project
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
         run: |
+          echo "NDK_HOME=$NDK_HOME"; ls "$NDK_HOME" | head -3
           cd mobile
           npx tauri android init --ci
           ls -R src-tauri/gen/android | head -30
 
       - name: Build the APK
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
         run: |
           cd mobile
           npx tauri android build --apk --target aarch64 2>&1 | tail -40
