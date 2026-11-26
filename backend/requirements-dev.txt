@@ -1,5 +1,7 @@
 -r requirements.txt
 httpx>=0.28.1
+# so CI exercises the Windows-on-ARM fallback path on every platform
+pycryptodome>=4.6.0
 pyinstaller>=6.22.3
 mongomock>=4.3.0
 fakeredis>=2.41.0

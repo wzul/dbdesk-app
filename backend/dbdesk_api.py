@@ -50,10 +50,48 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 
-try:  # available in the gateway's runtime; used only for credential encryption
+try:  # preferred: OpenSSL-backed, and the only implementation on Linux/macOS
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except Exception:  # pragma: no cover - surfaces on save with a clear error
     AESGCM = None
+
+
+def _aesgcm_from_pycryptodome():
+    """Fallback for Windows on ARM.
+
+    `cryptography` stopped publishing win_arm64 wheels after 46.0.1, and that version
+    sits inside several CVE ranges, so the ARM64 requirement would otherwise be pinned
+    to a known-vulnerable build. pycryptodome ships win_arm64 wheels and speaks AES-GCM
+    on the same wire format — ciphertext||tag with a 12-byte nonce and optional AAD —
+    so a vault written on one platform still opens on the other.
+    """
+    try:
+        from Crypto.Cipher import AES as _AES  # pycryptodome
+    except Exception:  # pragma: no cover - no crypto at all
+        return None
+
+    class _AESGCM:
+        def __init__(self, key: bytes) -> None:
+            self._key = key
+
+        def encrypt(self, nonce: bytes, data: bytes, aad: bytes | None = None) -> bytes:
+            cipher = _AES.new(self._key, _AES.MODE_GCM, nonce=nonce)
+            if aad:
+                cipher.update(aad)
+            ciphertext, tag = cipher.encrypt_and_digest(data)
+            return ciphertext + tag
+
+        def decrypt(self, nonce: bytes, data: bytes, aad: bytes | None = None) -> bytes:
+            cipher = _AES.new(self._key, _AES.MODE_GCM, nonce=nonce)
+            if aad:
+                cipher.update(aad)
+            return cipher.decrypt_and_verify(data[:-16], data[-16:])
+
+    return _AESGCM
+
+
+if AESGCM is None:  # pragma: no cover - exercised only on Windows on ARM
+    AESGCM = _aesgcm_from_pycryptodome()
 
 try:  # optional AES-CBC support for Laravel-style encrypted columns
     from cryptography.hazmat.primitives import padding as _sym_padding
