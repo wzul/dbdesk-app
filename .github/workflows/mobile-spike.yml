@@ -31,10 +31,17 @@ jobs:
       # The runner image already ships the SDK (ANDROID_HOME=/usr/local/lib/android/sdk);
       # android-actions/setup-android cannot be used here because it tries to install the
       # legacy 'tools' package, which current cmdline-tools no longer publish.
-      - name: Android SDK packages
+      - name: Put sdkmanager on PATH
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          sdkmanager --list_installed | head -20
+          # The image keeps cmdline-tools under the SDK root but does not add it to
+          # PATH, so a bare `sdkmanager` is command-not-found and the NDK never lands.
+          CMDBIN=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin 2>/dev/null | head -1)
+          echo "cmdline-tools: $CMDBIN"
+          echo "$CMDBIN" >> "$GITHUB_PATH"
+          "$CMDBIN/sdkmanager" --version
+
+      - name: Android SDK packages
+        run: sdkmanager --list_installed | head -20
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -49,6 +56,11 @@ jobs:
       - name: Install the NDK
         run: |
           yes | sdkmanager --install "ndk;27.0.12077973" "platforms;android-35" "build-tools;35.0.0" | tail -3
+          if [ ! -d "$ANDROID_HOME/ndk/27.0.12077973" ]; then
+            echo "requested NDK missing; installed versions:"; ls "$ANDROID_HOME/ndk" 2>/dev/null
+            sdkmanager --list | grep -oE 'ndk;[0-9.]+' | sort -u
+            exit 1
+          fi
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
       - name: Install the Tauri CLI
