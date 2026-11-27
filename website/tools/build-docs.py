@@ -68,8 +68,8 @@ TAGLINE = (
 ENGINES = [
     "PostgreSQL", "Amazon Redshift", "CockroachDB", "Greenplum",
     "MySQL", "MariaDB", "SingleStore", "Microsoft SQL Server",
-    "ClickHouse", "SQLite", "DuckDB", "MongoDB", "Redis / Valkey",
-    "MCP servers", "HTTP SQL gateways",
+    "ClickHouse", "SQLite", "DuckDB", "Elasticsearch", "InfluxDB 3", "libSQL",
+    "Cloudflare D1", "MongoDB", "Redis / Valkey", "MCP servers", "HTTP SQL gateways",
 ]
 
 NAV = """<header class="nav">

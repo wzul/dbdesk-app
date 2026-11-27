@@ -71,12 +71,33 @@ that differ are the parts people notice:
 - SQL Server has no read-only transaction mode to switch on, so read-only here means
   the statement guard plus, ideally, a login whose grants cannot write.
 
-- **New connection type cards** — the connection form shows real logos for
-  PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, ClickHouse, MongoDB, Redis,
-  SQLite, MCP and HTTP;
-  choosing a card sets the default port. MariaDB is stored as MySQL with a
+- **New connection type cards** — the connection form shows a card per engine and
+  sets the default port when you pick one. MariaDB is stored as MySQL with a
   `mariadb` flavor. MongoDB has SRV and auth-source options; Redis has a
   database index.
+
+  Engines that speak a protocol DB Desk already speaks are names, not new
+  drivers: **PostgreSQL** and everything on the PostgreSQL wire — **Amazon
+  Redshift** (5439), **CockroachDB** (26257), **Greenplum**; **MySQL**,
+  **MariaDB** and **SingleStore**; **Microsoft SQL Server** (bundled FreeTDS, no
+  ODBC driver to install); **ClickHouse**; **SQLite** and **DuckDB** by file;
+  **MongoDB**; **Redis / Valkey**.
+
+  Four engines are reached over HTTP instead, with no driver at all: put the base
+  URL in **Host** and the token in **Password**.
+  - **Elasticsearch** — indices appear as tables, the mapping as columns, documents
+    as rows (nested fields flattened to `a.b`, `_id` shown). The Query tab uses the
+    `_sql` endpoint, which some distributions do not ship.
+  - **InfluxDB 3** — database name plus a token; measurements appear as tables and
+    the Query tab runs SQL. The `system` schema is hidden. `time` is treated as the
+    default sort column.
+  - **libSQL / Turso** — `libsql://` (or the https URL) plus a token; a SQLite-shaped
+    database, so tables, `pragma table_info`, DDL and SQL all work as expected.
+  - **Cloudflare D1** — account id in **User**, database id in **Database**, API token
+    in **Password**.
+
+  Read-only applies to all of them: a write statement is refused before it leaves
+  the process, because a token that can write has no server-side grant to fall back on.
 - **MongoDB document browser** — collections appear in the tree; the data grid
   pages documents, the filter panel accepts column filters or a raw Mongo
   filter object (`{"age": {"$gt": 18}}`), and the Query tab runs JSON commands
@@ -158,9 +179,10 @@ that differ are the parts people notice:
   MCP agent through `queries_list` / `query_save` / `query_delete`.
 - Everything the plugin page does:
 
-- connections (Postgres, MySQL/MariaDB, SQL Server, ClickHouse, SQLite, MongoDB,
-  Redis/Valkey) with SSH tunnels, custom tunnel commands, MCP query tools and
-  HTTP gateways
+- connections (PostgreSQL, Redshift, CockroachDB, Greenplum, MySQL/MariaDB,
+  SingleStore, SQL Server, ClickHouse, SQLite, DuckDB, Elasticsearch, InfluxDB 3,
+  libSQL, Cloudflare D1, MongoDB, Redis/Valkey) with SSH tunnels, custom tunnel
+  commands, MCP query tools and HTTP gateways
 - schema tree, typed data grid, inline editing, filters, tabs, saved views
 - SQL runner, autocomplete, formatter, history, saved queries, charts
 - structure grid (columns + indexes) with on-demand DDL, cross-connection diff,

@@ -2,7 +2,7 @@
 
 > A native, keyboard-first database browser for macOS, Windows and Linux. Read-only until you say otherwise, credentials encrypted on your machine, one window for every engine you touch.
 
-Engines: PostgreSQL, Amazon Redshift, CockroachDB, Greenplum, MySQL, MariaDB, SingleStore, Microsoft SQL Server, ClickHouse, SQLite, DuckDB, MongoDB, Redis / Valkey, MCP servers, HTTP SQL gateways.
+Engines: PostgreSQL, Amazon Redshift, CockroachDB, Greenplum, MySQL, MariaDB, SingleStore, Microsoft SQL Server, ClickHouse, SQLite, DuckDB, Elasticsearch, InfluxDB 3, libSQL, Cloudflare D1, MongoDB, Redis / Valkey, MCP servers, HTTP SQL gateways.
 
 Read-only by default; writes need an explicit toggle, and production connections need a single-use approval bound to a hash of the exact statement. Credentials are encrypted at rest on the user's machine, and the AI features send schema and SQL, never rows, values or keys.
 

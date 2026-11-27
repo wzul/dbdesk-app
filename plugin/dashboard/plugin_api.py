@@ -38,6 +38,7 @@ import socket
 import sqlite3
 
 import duckdb_kind
+import rest_kinds
 import ssl
 import subprocess
 import threading
@@ -126,6 +127,8 @@ PG_KINDS = {"postgres", "redshift", "cockroachdb", "greenplum"}
 MY_KINDS = {"mysql", "singlestore"}
 KINDS = PG_KINDS | MY_KINDS | {
     "sqlserver", "clickhouse", "mongodb", "redis", "mcp", "http", "sqlite", "duckdb",
+    # REST engines: no driver, no wire protocol — see backend/rest_kinds.py
+    "elasticsearch", "influxdb3", "d1", "libsql",
 }
 
 # Kinds that are a local file rather than a server: no host, no port, no tunnel.
@@ -136,6 +139,7 @@ DEFAULT_PORTS = {
     "postgres": 5432, "redshift": 5439, "cockroachdb": 26257, "greenplum": 5432,
     "mysql": 3306, "singlestore": 3306, "sqlserver": 1433, "clickhouse": 8123,
     "mongodb": 27017, "redis": 6379,
+    "elasticsearch": 9200, "influxdb3": 8181, "d1": 443, "libsql": 443,
 }
 
 
@@ -1782,6 +1786,8 @@ def _ddl(conn: dict[str, Any], schema: str, table: str) -> str:
         return _sqlite_ddl(conn, schema, table)
     if kind == "duckdb":
         return duckdb_kind.ddl(conn, schema, table)
+    if rest_kinds.handles(kind):
+        return rest_kinds.ENGINES[kind]["ddl"](conn, schema, table)
     if kind in MY_KINDS:
         return _my_ddl(conn, schema, table)
     if kind == "sqlserver":
@@ -5435,6 +5441,53 @@ def _redis_ddl(conn: dict[str, Any], schema: str, table: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
+def _where_clause_rest(kind: str, filters: Any, columns: Any, conn: dict[str, Any]) -> str:
+    """Filters for the REST engines.
+
+    D1 and libSQL store SQLite, so they reuse the SQLite builder. Elasticsearch takes a
+    Lucene/query_string fragment, and InfluxDB 3 is a SQL dialect with double quotes, so
+    both accept the raw fragment and leave the operator syntax to the user rather than
+    pretending to translate it.
+    """
+    if kind in ("d1", "libsql"):
+        return _where_clause("sqlite", filters, columns, conn)
+    if not isinstance(filters, list):
+        return ""
+    parts: list[str] = []
+    for item in filters[:8]:
+        if not isinstance(item, dict) or item.get("enabled") is False:
+            continue
+        raw = str(item.get("raw") or "").strip().rstrip(";")
+        if raw:
+            parts.append(f"({raw})")
+            continue
+        column = str(item.get("column") or "").strip()
+        operator = str(item.get("operator") or "eq").lower()
+        value = item.get("value")
+        if not column:
+            continue
+        quoted = _ident(column) if kind == "influxdb3" else column
+        if operator in ("is null", "isnull", "null"):
+            parts.append(f"{quoted} IS NULL")
+        elif operator in ("is not null", "notnull"):
+            parts.append(f"{quoted} IS NOT NULL")
+        elif operator in ("contains", "startswith", "endswith", "like"):
+            escaped = str(value or "").replace("'", "''")
+            pattern = {"contains": f"%{escaped}%", "startswith": f"{escaped}%",
+                       "endswith": f"%{escaped}", "like": escaped}[operator]
+            parts.append(f"{quoted} LIKE '{pattern}'")
+        elif operator in ("in", "not in") and isinstance(value, list):
+            if not value:
+                continue
+            joined = ", ".join(_lit(item) for item in value[:200])
+            parts.append(f"{quoted} {'IN' if operator == 'in' else 'NOT IN'} ({joined})")
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            parts.append(f"{quoted} {_FILTER_OPS.get(operator, '=')} {value}")
+        else:
+            parts.append(f"{quoted} {_FILTER_OPS.get(operator, '=')} '{str(value or '').replace(chr(39), chr(39) * 2)}'")
+    return " AND ".join(parts)
+
+
 def _kind(conn: dict[str, Any]) -> str:
     kind = str(conn.get("kind") or "postgres")
     return kind if kind in KINDS else "postgres"
@@ -5450,6 +5503,8 @@ def _test(conn: dict[str, Any]) -> dict[str, Any]:
         return _sqlite_test(conn)
     if kind == "duckdb":
         return duckdb_kind.test(conn)
+    if rest_kinds.handles(kind):
+        return rest_kinds.ENGINES[kind]["test"](conn)
     if kind == "mongodb":
         return _mongo_test(conn)
     if kind == "redis":
@@ -5473,6 +5528,8 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
         return _sqlite_tree(conn)
     if kind == "duckdb":
         return duckdb_kind.tree(conn)
+    if rest_kinds.handles(kind):
+        return rest_kinds.ENGINES[kind]["tree"](conn)
     if kind == "mongodb":
         return _mongo_tree(conn)
     if kind == "redis":
@@ -5496,6 +5553,8 @@ def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[st
         return _sqlite_columns(conn, schema, table)
     if kind == "duckdb":
         return duckdb_kind.columns(conn, schema, table)
+    if rest_kinds.handles(kind):
+        return rest_kinds.ENGINES[kind]["columns"](conn, schema, table)
     if kind == "mongodb":
         return _mongo_columns(conn, schema, table)
     if kind == "redis":
@@ -5565,6 +5624,13 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
         return _http_rows(conn, schema, table, limit, offset, order_by, direction, filters)
     if kind == "sqlite":
         result = _sqlite_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    elif rest_kinds.handles(kind):
+        columns_meta = _columns(conn, schema, table)
+        result = rest_kinds.ENGINES[kind]["rows"](
+            conn, schema, table, limit, offset, order_by, direction, filters,
+            where=_where_clause_rest(kind, filters, columns_meta, conn),
+            columns_meta=columns_meta,
+        )
     elif kind == "duckdb":
         columns_meta = _columns(conn, schema, table)
         result = duckdb_kind.rows(
@@ -5608,6 +5674,8 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
     elif kind == "duckdb":
         _guard_readonly(conn, sql)
         result = duckdb_kind.query(conn, sql, limit, readonly)
+    elif rest_kinds.handles(kind):
+        result = rest_kinds.ENGINES[kind]["query"](conn, sql, limit, readonly)
     elif kind in MY_KINDS:
         result = _my_query(conn, sql, limit, readonly)
     elif kind == "sqlserver":
@@ -6670,7 +6738,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     )
     dbname = (body.get("dbname") or (existing or {}).get("dbname") or "").strip()
     user = (body.get("user") or (existing or {}).get("user") or "").strip()
-    if not dbname:
+    if not dbname and kind not in ("mcp", "http", "elasticsearch", "libsql"):
         raise HTTPException(400, "database name is required")
     if kind in FILE_KINDS:
         dbname = os.path.expanduser(dbname)
@@ -6680,6 +6748,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
             "greenplum": "gpadmin", "mysql": "root", "singlestore": "root",
             "clickhouse": "default", "mongodb": "", "redis": "",
             "mcp": "mcp", "http": "http", "sqlite": "sqlite", "duckdb": "duckdb",
+            "elasticsearch": "elastic", "influxdb3": "token", "d1": "", "libsql": "token",
         }.get(kind, "postgres")
     mcp_url = str(pick("mcp_url", "")).strip()
     mcp_server = str(pick("mcp_server", "")).strip()
@@ -7265,7 +7334,7 @@ async def test_connection(body: dict[str, Any]) -> dict[str, Any]:
         ):
             if conn.get(key) in (None, ""):
                 conn[key] = saved.get(key)
-    if not conn.get("dbname"):
+    if not conn.get("dbname") and _kind(conn) not in ("mcp", "http", "elasticsearch", "libsql"):
         raise HTTPException(400, "database name is required")
     if str(conn.get("tunnel_command") or "").strip():
         _command_tunnel(conn)
@@ -7274,9 +7343,12 @@ async def test_connection(body: dict[str, Any]) -> dict[str, Any]:
     if not conn.get("user"):
         conn["user"] = {
             "postgres": "postgres", "mysql": "root", "clickhouse": "default",
-            "mcp": "mcp", "http": "http", "sqlite": "sqlite",
+            "mcp": "mcp", "http": "http", "sqlite": "sqlite", "duckdb": "duckdb",
+            "redshift": "awsuser", "cockroachdb": "root", "greenplum": "gpadmin",
+            "singlestore": "root", "elasticsearch": "elastic", "influxdb3": "token",
+            "d1": "", "libsql": "token",
         }.get(_kind(conn), "postgres")
-    if _kind(conn) == "sqlite":
+    if _kind(conn) in FILE_KINDS:
         conn["dbname"] = os.path.expanduser(str(conn.get("dbname") or ""))
     return {"ok": True, "server": _test(conn)}
 
@@ -8174,6 +8246,10 @@ def _run_mutation(conn, sql: str) -> None:
         _sqlite_mutation(conn, sql)
     elif kind == "duckdb":
         duckdb_kind.run(conn, [sql])
+    elif kind == "d1":
+        rest_kinds.d1_query(conn, sql, 1, False)
+    elif kind == "libsql":
+        rest_kinds.libsql_query(conn, sql, 1, False)
     elif kind in MY_KINDS:
         _my_mutation(conn, sql)
     elif kind == "sqlserver":

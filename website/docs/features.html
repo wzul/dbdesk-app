@@ -143,100 +143,117 @@ that differ are the parts people notice:</p>
   the statement guard plus, ideally, a login whose grants cannot write.</p>
 </li>
 <li>
-<p><strong>New connection type cards</strong> — the connection form shows real logos for
-  PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, ClickHouse, MongoDB, Redis,
-  SQLite, MCP and HTTP;
-  choosing a card sets the default port. MariaDB is stored as MySQL with a
+<p><strong>New connection type cards</strong> — the connection form shows a card per engine and
+  sets the default port when you pick one. MariaDB is stored as MySQL with a
   <code>mariadb</code> flavor. MongoDB has SRV and auth-source options; Redis has a
   database index.</p>
 </li>
-<li><strong>MongoDB document browser</strong> — collections appear in the tree; the data grid
+</ul>
+<p>Engines that speak a protocol DB Desk already speaks are names, not new
+  drivers: <strong>PostgreSQL</strong> and everything on the PostgreSQL wire — <strong>Amazon
+  Redshift</strong> (5439), <strong>CockroachDB</strong> (26257), <strong>Greenplum</strong>; <strong>MySQL</strong>,
+  <strong>MariaDB</strong> and <strong>SingleStore</strong>; <strong>Microsoft SQL Server</strong> (bundled FreeTDS, no
+  ODBC driver to install); <strong>ClickHouse</strong>; <strong>SQLite</strong> and <strong>DuckDB</strong> by file;
+  <strong>MongoDB</strong>; <strong>Redis / Valkey</strong>.</p>
+<p>Four engines are reached over HTTP instead, with no driver at all: put the base
+  URL in <strong>Host</strong> and the token in <strong>Password</strong>.
+  - <strong>Elasticsearch</strong> — indices appear as tables, the mapping as columns, documents
+    as rows (nested fields flattened to <code>a.b</code>, <code>_id</code> shown). The Query tab uses the
+    <code>_sql</code> endpoint, which some distributions do not ship.
+  - <strong>InfluxDB 3</strong> — database name plus a token; measurements appear as tables and
+    the Query tab runs SQL. The <code>system</code> schema is hidden. <code>time</code> is treated as the
+    default sort column.
+  - <strong>libSQL / Turso</strong> — <code>libsql://</code> (or the https URL) plus a token; a SQLite-shaped
+    database, so tables, <code>pragma table_info</code>, DDL and SQL all work as expected.
+  - <strong>Cloudflare D1</strong> — account id in <strong>User</strong>, database id in <strong>Database</strong>, API token
+    in <strong>Password</strong>.</p>
+<p>Read-only applies to all of them: a write statement is refused before it leaves
+  the process, because a token that can write has no server-side grant to fall back on.
+- <strong>MongoDB document browser</strong> — collections appear in the tree; the data grid
   pages documents, the filter panel accepts column filters or a raw Mongo
   filter object (<code>{"age": {"$gt": 18}}</code>), and the Query tab runs JSON commands
   (<code>{"collection": "users", "find": {...}, "sort": {...}, "limit": 50}</code> or
   <code>aggregate</code>). Double-click a cell to edit a field, <strong>+ Row</strong> inserts a
   document, and row actions delete. Nested objects/arrays show as compact JSON.
   Reads use the sampled field list; production writes go through the approval
-  drawer.</li>
-<li><strong>Redis / Valkey browser</strong> — the tree lists the logical databases, the grid
+  drawer.
+- <strong>Redis / Valkey browser</strong> — the tree lists the logical databases, the grid
   scans keys (<code>key</code>, <code>type</code>, <code>ttl</code>, <code>size</code>) with a <code>MATCH</code> pattern filter, and
   clicking a key opens a value drawer for strings, hashes, lists, sets, sorted
   sets and streams. The <strong>Console</strong> tab runs any command (<code>GET</code>, <code>HGETALL</code>,
   <code>SCAN</code>, ...); read-only connections refuse writes, and production writes ask
-  for approval first.</li>
-<li><strong>Connection picker</strong> — the app opens on a TablePlus-style list: search,
+  for approval first.
+- <strong>Connection picker</strong> — the app opens on a TablePlus-style list: search,
   groups, type icons, read-only/PROD badges; pick a connection, then the full
   browser opens. Right-click a connection for <strong>Open / Edit / Clone / Test /
   Export / Delete</strong>; Clone duplicates the encrypted credentials too. <strong>New connection</strong> goes straight to the form, and the chevron
-  in the header returns to the list.</li>
-<li><strong>Connection rail</strong> — when more than one connection is open, a slim rail
+  in the header returns to the list.
+- <strong>Connection rail</strong> — when more than one connection is open, a slim rail
   appears on the left. Right-click an icon for <strong>Open / Edit connection / Close
   connection / Close other connections / Close all connections</strong>. With a
-  single connection open the rail hides itself.</li>
-<li><strong>Resume last connection</strong> — after you click the back chevron (or relaunch
+  single connection open the rail hides itself.
+- <strong>Resume last connection</strong> — after you click the back chevron (or relaunch
   the app), the picker shows a <strong>Continue where you left off</strong> banner for the
-  last connection you opened. One click returns to that explorer.</li>
-<li><strong>Import / export &amp; QR</strong> — export one connection from the share icon or all of
+  last connection you opened. One click returns to that explorer.
+- <strong>Import / export &amp; QR</strong> — export one connection from the share icon or all of
   them from the picker as a <code>.dbdesk</code> bundle. Passwords are left out by default;
   tick <strong>Include passwords</strong> to encrypt them with a passphrase (scrypt +
   AES-GCM). Import accepts a file, pasted bundle or <code>dbdesk://</code> link, shows a
   preview, then merges with new ids. <strong>Show QR</strong> renders a scannable code for a
   single connection (QR capacity is limited, so large bundles fall back to the
-  file/copy).</li>
-<li><strong>Backup &amp; restore (migration)</strong> — Settings → <strong>Backup all</strong> writes one file
+  file/copy).
+- <strong>Backup &amp; restore (migration)</strong> — Settings → <strong>Backup all</strong> writes one file
   with every connection, saved view and saved query. Passwords are optional and
   encrypted (scrypt + AES-GCM). On the new Mac, <strong>Restore</strong> previews the file,
   creates the connections, remaps views/queries to the new ids and leaves
-  passwords blank when they were not included.</li>
-<li><strong>Structure grid</strong> — the Structure tab (bottom switcher) shows a TablePlus-style structure
+  passwords blank when they were not included.
+- <strong>Structure grid</strong> — the Structure tab (bottom switcher) shows a TablePlus-style structure
   grid: <code>#</code>, column, data type, character set, collation, nullable, default,
   extra (auto-increment/identity), foreign key and comment, plus an index grid
   (<code>index_name</code>, algorithm, unique, column). DDL is still available from the
-  <strong>DDL</strong> button but no longer the default view.</li>
-<li><strong>SQL query tabs</strong> — <strong>SQL</strong> (or <strong>⌘T</strong>) opens a dedicated query tab next to
+  <strong>DDL</strong> button but no longer the default view.
+- <strong>SQL query tabs</strong> — <strong>SQL</strong> (or <strong>⌘T</strong>) opens a dedicated query tab next to
   the table tabs. Each tab keeps its own SQL text and result set, so a second
-  query does not overwrite the first; close a tab when you are done.</li>
-<li><strong>Bottom data toolbar</strong> — Run, Limit, Filter, row metadata, view/SQL/column
-  actions, More menu and pagination sit under the grid, like TablePlus.</li>
-<li><strong>TablePlus-style filters</strong> — each row has a checkbox, a <strong>Raw SQL / column</strong>
+  query does not overwrite the first; close a tab when you are done.
+- <strong>Bottom data toolbar</strong> — Run, Limit, Filter, row metadata, view/SQL/column
+  actions, More menu and pagination sit under the grid, like TablePlus.
+- <strong>TablePlus-style filters</strong> — each row has a checkbox, a <strong>Raw SQL / column</strong>
   picker, a full-width pattern, <strong>Apply</strong>, <strong>−</strong> and <strong>+</strong>. Raw SQL rows append
   a WHERE expression; column rows keep the operator/value controls. <strong>Apply
   all</strong> enables every valid row, <strong>Clear</strong> unapplies the filters but keeps
   their values (press Apply to re-enable), and <strong>SQL</strong> turns the active filters
-  into a SELECT. Saved views keep the flags.</li>
-<li><strong>Flexible export</strong> — export the current table as <strong>CSV</strong>, <strong>JSON</strong> or <strong>SQL
+  into a SELECT. Saved views keep the flags.
+- <strong>Flexible export</strong> — export the current table as <strong>CSV</strong>, <strong>JSON</strong> or <strong>SQL
   INSERTs</strong> from the table right-click menu or the <strong>More</strong> menu. The export
-  respects the active filters and sort and caps at 50k rows (200k server cap).</li>
-<li><strong>Quick panel (⌘P / Ctrl+P)</strong> — jump to a table, view, schema, function or
+  respects the active filters and sort and caps at 50k rows (200k server cap).
+- <strong>Quick panel (⌘P / Ctrl+P)</strong> — jump to a table, view, schema, function or
   connection, or run actions such as <strong>New SQL tab</strong>, <strong>Toggle theme</strong>,
-  <strong>Settings</strong> and <strong>Close connection</strong>. Arrow keys + Enter work.</li>
-<li><strong>SQL editor</strong> — syntax highlighting for keywords, strings, numbers, comments
+  <strong>Settings</strong> and <strong>Close connection</strong>. Arrow keys + Enter work.
+- <strong>SQL editor</strong> — syntax highlighting for keywords, strings, numbers, comments
   and function calls. Autocomplete is <strong>alias-aware</strong> (<code>c.</code> lists the columns of
   the table aliased <code>c</code>), knows every table referenced in <code>FROM</code>/<code>JOIN</code>, includes
   table names, columns and functions, and supports fuzzy matching with a source
   label. <code>⌘Space</code> / <code>Ctrl+Space</code> opens the list manually; <code>↑</code>/<code>↓</code> + <code>Tab</code>/<code>Enter</code>
-  accepts.</li>
-<li><strong>JSON editor</strong> — double-click a JSON/JSONB cell for a large modal with
-  <strong>Format</strong>, <strong>NULL</strong>, Cancel and Save; invalid JSON is rejected.</li>
-<li><strong>AI autocomplete (on by default)</strong> — once an AI provider is configured,
+  accepts.
+- <strong>JSON editor</strong> — double-click a JSON/JSONB cell for a large modal with
+  <strong>Format</strong>, <strong>NULL</strong>, Cancel and Save; invalid JSON is rejected.
+- <strong>AI autocomplete (on by default)</strong> — once an AI provider is configured,
   press <strong>⌘I</strong> / <strong>Ctrl+I</strong> in the SQL editor; turn it off under
   <strong>Settings → AI provider</strong> if you prefer. The configured model returns
   a continuation at the caret; <strong>Tab</strong> inserts it and <strong>Esc</strong> dismisses it. Only
-  the SQL text and schema metadata are sent — never rows or secrets.</li>
-<li><strong>Model detection</strong> — in <strong>Settings → AI provider</strong>, enter the base URL and
+  the SQL text and schema metadata are sent — never rows or secrets.
+- <strong>Model detection</strong> — in <strong>Settings → AI provider</strong>, enter the base URL and
   API key and press <strong>Detect models</strong>. The model field turns into a picker of
-  the models the provider reports, with <strong>Type</strong> to go back to a custom name.</li>
-<li><strong>Saved query buttons</strong> — the SQL toolbar has <strong>Save</strong> (name + current SQL)
+  the models the provider reports, with <strong>Type</strong> to go back to a custom name.
+- <strong>Saved query buttons</strong> — the SQL toolbar has <strong>Save</strong> (name + current SQL)
   and <strong>Saved</strong> (opens the snippet list); the same snippets are available to the
-  MCP agent through <code>queries_list</code> / <code>query_save</code> / <code>query_delete</code>.</li>
-<li>
-<p>Everything the plugin page does:</p>
-</li>
-<li>
-<p>connections (Postgres, MySQL/MariaDB, SQL Server, ClickHouse, SQLite, MongoDB,
-  Redis/Valkey) with SSH tunnels, custom tunnel commands, MCP query tools and
-  HTTP gateways</p>
-</li>
+  MCP agent through <code>queries_list</code> / <code>query_save</code> / <code>query_delete</code>.
+- Everything the plugin page does:</p>
+<ul>
+<li>connections (PostgreSQL, Redshift, CockroachDB, Greenplum, MySQL/MariaDB,
+  SingleStore, SQL Server, ClickHouse, SQLite, DuckDB, Elasticsearch, InfluxDB 3,
+  libSQL, Cloudflare D1, MongoDB, Redis/Valkey) with SSH tunnels, custom tunnel
+  commands, MCP query tools and HTTP gateways</li>
 <li>schema tree, typed data grid, inline editing, filters, tabs, saved views</li>
 <li>SQL runner, autocomplete, formatter, history, saved queries, charts</li>
 <li>structure grid (columns + indexes) with on-demand DDL, cross-connection diff,

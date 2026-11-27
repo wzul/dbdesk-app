@@ -72,6 +72,10 @@ const KIND_LABELS = {
   clickhouse: 'ClickHouse',
   sqlite: 'SQLite',
   duckdb: 'DuckDB',
+  elasticsearch: 'Elasticsearch',
+  influxdb3: 'InfluxDB 3',
+  libsql: 'libSQL',
+  d1: 'Cloudflare D1',
   mcp: 'MCP',
   http: 'HTTP gateway'
 }

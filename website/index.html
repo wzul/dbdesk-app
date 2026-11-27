@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DB Desk — a TablePlus-style database browser for macOS, Windows and Linux</title>
-<meta name="description" content="DB Desk is a native database browser for macOS, Windows and Linux, covering PostgreSQL, MySQL/MariaDB, Microsoft SQL Server, ClickHouse, SQLite, MongoDB and Redis/Valkey. Read-only by default, encrypted credentials stay on your machine, and an MCP server puts your databases in reach of local agents.">
+<meta name="description" content="DB Desk is a native database browser for macOS, Windows and Linux, covering PostgreSQL, Amazon Redshift, CockroachDB, Greenplum, MySQL, MariaDB, SingleStore, Microsoft SQL Server, ClickHouse, SQLite, DuckDB, MongoDB and Redis/Valkey. Read-only by default, encrypted credentials stay on your machine, and an MCP server puts your databases in reach of local agents.">
 <link rel="canonical" href="https://dbdesk.app/">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -13,13 +13,13 @@
 <meta property="og:url" content="https://dbdesk.app/">
 <meta property="og:site_name" content="DB Desk">
 <meta property="og:title" content="DB Desk — a TablePlus-style database browser for macOS, Windows and Linux">
-<meta property="og:description" content="PostgreSQL, MySQL/MariaDB, Microsoft SQL Server, ClickHouse, SQLite, MongoDB and Redis/Valkey in one native desktop app. AI that only ever sees your schema. An MCP server for local agents. Nothing leaves your machine.">
+<meta property="og:description" content="PostgreSQL, Redshift, CockroachDB, Greenplum, MySQL/MariaDB, SingleStore, Microsoft SQL Server, ClickHouse, SQLite, DuckDB, MongoDB and Redis/Valkey in one native desktop app. AI that only ever sees your schema. An MCP server for local agents. Nothing leaves your machine.">
 <meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="DB Desk — a TablePlus-style database browser for macOS, Windows and Linux">
-<meta name="twitter:description" content="One native desktop app for PostgreSQL, MySQL, SQL Server, ClickHouse, SQLite, MongoDB and Redis. Read-only by default, credentials encrypted on your machine.">
+<meta name="twitter:description" content="One native desktop app for PostgreSQL, MySQL, SQL Server, ClickHouse, SQLite, DuckDB, MongoDB and Redis. Read-only by default, credentials encrypted on your machine.">
 <meta name="twitter:image" content="https://dbdesk.app/assets/img/og.png">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/assets/favicon.svg">
@@ -35,7 +35,7 @@
   "operatingSystem": "macOS 13+, Windows 10/11, Linux",
   "url": "https://dbdesk.app/",
   "downloadUrl": "https://github.com/wzul/dbdesk-app/releases/latest",
-  "description": "A TablePlus-style database browser for macOS, Windows and Linux covering PostgreSQL, MySQL/MariaDB, Microsoft SQL Server, ClickHouse, SQLite, MongoDB and Redis/Valkey, with AI assistance and an MCP server for local agents.",
+  "description": "A TablePlus-style database browser for macOS, Windows and Linux covering PostgreSQL, Redshift, CockroachDB, Greenplum, MySQL/MariaDB, SingleStore, Microsoft SQL Server, ClickHouse, SQLite, DuckDB, MongoDB and Redis/Valkey, with AI assistance and an MCP server for local agents.",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
@@ -169,11 +169,16 @@
       <p class="dbs-label">One window for all of them</p>
       <div class="dbs-row">
         <span class="chip"><svg><use href="#i-db"/></svg> PostgreSQL</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> Redshift</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> CockroachDB</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> Greenplum</span>
         <span class="chip"><svg><use href="#i-db"/></svg> MySQL</span>
         <span class="chip"><svg><use href="#i-db"/></svg> MariaDB</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> SingleStore</span>
         <span class="chip"><svg><use href="#i-db"/></svg> SQL Server</span>
         <span class="chip"><svg><use href="#i-db"/></svg> ClickHouse</span>
         <span class="chip"><svg><use href="#i-db"/></svg> SQLite</span>
+        <span class="chip"><svg><use href="#i-db"/></svg> DuckDB</span>
         <span class="chip"><svg><use href="#i-db"/></svg> MongoDB</span>
         <span class="chip"><svg><use href="#i-db"/></svg> Redis / Valkey</span>
         <span class="chip"><svg><use href="#i-plug"/></svg> MCP</span>

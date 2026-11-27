@@ -19,6 +19,10 @@ const KINDS = {
   redis: { label: 'Redis / Valkey', icon: 'database', tone: 'text-red-600 dark:text-red-400' },
   sqlite: { label: 'SQLite', icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
   duckdb: { label: 'DuckDB', icon: 'graph', tone: 'text-yellow-700 dark:text-yellow-300' },
+  elasticsearch: { label: 'Elasticsearch', icon: 'search', tone: 'text-cyan-600 dark:text-cyan-400' },
+  influxdb3: { label: 'InfluxDB 3', icon: 'graph', tone: 'text-purple-600 dark:text-purple-400' },
+  libsql: { label: 'libSQL', icon: 'cloud', tone: 'text-teal-600 dark:text-teal-400' },
+  d1: { label: 'Cloudflare D1', icon: 'cloud', tone: 'text-orange-600 dark:text-orange-400' },
   mcp: { label: 'MCP', icon: 'plug', tone: 'text-purple-600 dark:text-purple-400' },
   http: { label: 'HTTP gateway', icon: 'cloud', tone: 'text-blue-600 dark:text-blue-400' }
 }

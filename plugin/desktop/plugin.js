@@ -3732,6 +3732,10 @@ const DB_KIND_CARDS = [
   { kind: 'redis', label: 'Redis', port: 6379 },
   { kind: 'sqlite', label: 'SQLite', port: 0 },
   { kind: 'duckdb', label: 'DuckDB', port: 0 },
+  { kind: 'elasticsearch', label: 'Elasticsearch', port: 9200 },
+  { kind: 'influxdb3', label: 'InfluxDB 3', port: 8181 },
+  { kind: 'libsql', label: 'libSQL', port: 443 },
+  { kind: 'd1', label: 'Cloudflare D1', port: 443 },
   { kind: 'mcp', label: 'MCP', port: 0 },
   { kind: 'http', label: 'HTTP', port: 0 }
 ]
@@ -5722,6 +5726,10 @@ const CONNECTION_META = {
   clickhouse: { icon: 'graph', tone: 'text-yellow-600 dark:text-yellow-400' },
   sqlite: { icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
   duckdb: { icon: 'graph', tone: 'text-yellow-700 dark:text-yellow-300' },
+  elasticsearch: { icon: 'search', tone: 'text-cyan-600 dark:text-cyan-400' },
+  influxdb3: { icon: 'graph', tone: 'text-purple-600 dark:text-purple-400' },
+  libsql: { icon: 'cloud', tone: 'text-teal-600 dark:text-teal-400' },
+  d1: { icon: 'cloud', tone: 'text-orange-600 dark:text-orange-400' },
   mongodb: { icon: 'database', tone: 'text-green-600 dark:text-green-400' },
   redis: { icon: 'key', tone: 'text-rose-600 dark:text-rose-400' },
   mcp: { icon: 'plug', tone: 'text-purple-600 dark:text-purple-400' },
@@ -8161,6 +8169,10 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         redis: 'Redis',
                         sqlite: 'SQLite',
                         duckdb: 'DuckDB',
+                        elasticsearch: 'ES',
+                        influxdb3: 'Influx',
+                        libsql: 'libSQL',
+                        d1: 'D1',
                         mcp: 'MCP',
                         http: 'HTTP'
                       }[active.kind || 'postgres'] || 'PG'
