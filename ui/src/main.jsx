@@ -17,7 +17,7 @@ import UpdatePill from './update-pill.jsx'
 import { rest, onNotify } from './sdk-shim.jsx'
 
 const ACTIVE_KEY = 'dbdesk.activeConnection'
-const APP_VERSION = '0.14.0'
+const APP_VERSION = '0.14.1'
 const ZOOM_KEY = 'dbdesk.zoom'
 const ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 

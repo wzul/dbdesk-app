@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { Badge, Button, Codicon, Input, cn, rest } from './sdk-shim.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
+import { chord } from './platform.js'
 import { HOMEPAGE_URL, REPO_URL, openExternal } from './open-link.js'
 import { autoUpdateEnabled, setAutoUpdateEnabled } from './updates.js'
 
@@ -777,7 +778,7 @@ export default function SettingsDialog({ open, onClose, version }) {
                   checked={aiComplete}
                   onChange={(event) => setAiComplete(event.target.checked)}
                 />
-                AI autocomplete (⌘I, on by default)
+                AI autocomplete ({chord('I')}, on by default)
               </label>
               {config && config.configured ? (
                 <Badge variant="outline" size="xs">

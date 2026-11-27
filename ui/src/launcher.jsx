@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Badge, Button, Codicon, cn, host, rest } from './sdk-shim.jsx'
+import { chord } from './platform.js'
 import { ExportDialog, ImportDialog } from './bundle-dialogs.jsx'
 import SetupDialog from './setup-dialog.jsx'
 
@@ -8,6 +9,7 @@ const KINDS = {
   postgres: { label: 'PostgreSQL', icon: 'database', tone: 'text-sky-600 dark:text-sky-400' },
   mysql: { label: 'MySQL', icon: 'database', tone: 'text-amber-600 dark:text-amber-400' },
   mariadb: { label: 'MariaDB', icon: 'database', tone: 'text-teal-600 dark:text-teal-400' },
+  sqlserver: { label: 'SQL Server', icon: 'database', tone: 'text-red-600 dark:text-red-400' },
   clickhouse: { label: 'ClickHouse', icon: 'graph', tone: 'text-yellow-600 dark:text-yellow-400' },
   mongodb: { label: 'MongoDB', icon: 'database', tone: 'text-green-600 dark:text-green-400' },
   redis: { label: 'Redis / Valkey', icon: 'database', tone: 'text-red-600 dark:text-red-400' },
@@ -21,7 +23,9 @@ function kindOf(connection) {
     connection.flavor === 'mariadb'
       ? 'mariadb'
       : connection.kind || 'postgres'
-  return KINDS[key] || KINDS.postgres
+  // Falling back to PostgreSQL mislabelled every new engine until its label was added
+  // here; show the raw kind instead, so a gap looks like a gap.
+  return KINDS[key] || { label: key, icon: 'database', tone: 'text-(--ui-text-tertiary)' }
 }
 
 function targetOf(connection) {
@@ -373,7 +377,7 @@ export default function Launcher({
           <button
             type="button"
             onClick={onSettings}
-            title="Settings (⌘,)"
+            title={`Settings (${chord(',')})`}
             className={cn(
               'flex size-8 items-center justify-center rounded-[4px] border border-(--ui-stroke-secondary)',
               'bg-transparent text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)'
@@ -535,7 +539,8 @@ export default function Launcher({
             <Codicon name="database" className="text-2xl text-(--ui-text-tertiary)" />
             <div className="text-[13px] font-medium">No connections yet</div>
             <div className="text-[11.5px] text-(--ui-text-tertiary)">
-              Add PostgreSQL, MySQL/MariaDB, ClickHouse, MongoDB, Redis/Valkey or a local SQLite file.
+              Add PostgreSQL, MySQL/MariaDB, SQL Server, ClickHouse, MongoDB, Redis/Valkey or a
+              local SQLite file.
             </div>
             <button
               type="button"

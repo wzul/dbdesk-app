@@ -125,4 +125,29 @@
       }
     })
     .catch(function () { /* keep the release-page links */ });
+  // Shortcut labels are written as ⌘ in the markup because that is the idiom on a Mac.
+  // A Windows or Linux visitor would be told to press a key they do not have, so swap
+  // the symbol in place — text nodes only, so no markup or attributes are touched, and
+  // the page still reads ⌘ when scripting is off.
+  // navigator.platform is non-empty on every browser, so the UA fallback below it never
+  // ran; prefer the modern hint and only then the deprecated one.
+  var isMac = navigator.userAgentData && navigator.userAgentData.platform
+    ? /mac/i.test(navigator.userAgentData.platform)
+    : /mac/i.test(navigator.platform || navigator.userAgent || '');
+  if (!isMac && document.body) {
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        var parent = node.parentNode && node.parentNode.nodeName;
+        if (parent === 'SCRIPT' || parent === 'STYLE') return NodeFilter.FILTER_REJECT;
+        return node.nodeValue && node.nodeValue.indexOf('\u2318') !== -1
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_SKIP;
+      }
+    });
+    var hits = [];
+    while (walker.nextNode()) hits.push(walker.currentNode);
+    hits.forEach(function (node) {
+      node.nodeValue = node.nodeValue.replace(/\u2318\s*/g, 'Ctrl+');
+    });
+  }
 })();

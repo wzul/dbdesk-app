@@ -20,6 +20,44 @@ import {
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+// Shortcut labels follow the platform: ⌘ on macOS, Ctrl everywhere else. This file is
+// also copied verbatim into the Hermes plugin, so the helpers live here rather than in
+// a shared module that the plugin build could not resolve.
+function isMacPlatform() {
+  if (typeof navigator === 'undefined') return false
+  // navigator.platform is non-empty on every browser, so it can never fall back to the
+  // user agent — check the modern hint first, then platform, then the UA string.
+  const data = navigator.userAgentData
+  if (data && typeof data.platform === 'string' && data.platform) {
+    return /mac/i.test(data.platform)
+  }
+  if (navigator.platform) return /mac/i.test(navigator.platform)
+  return /mac/i.test(navigator.userAgent || '')
+}
+
+// In a browser tab Ctrl+T and Ctrl+W belong to the browser and cannot be intercepted,
+// so the "new SQL tab" shortcut moves to Alt+T whenever we are not inside the Tauri
+// shell (the hosted server mode).
+function inBrowserTab() {
+  return typeof window !== 'undefined' && !window.__TAURI_INTERNALS__
+}
+
+// "⌘F" on macOS, "Ctrl+F" elsewhere — the separator differs too, so build the whole
+// chord rather than pasting a modifier in front of a symbol.
+function chord(keys) {
+  return (isMacPlatform() ? '\u2318' : 'Ctrl+') + keys
+}
+
+function zoomKey() {
+  return isMacPlatform() ? '\u2318 + / \u2212 / 0' : 'Ctrl + / \u2212 / 0'
+}
+
+function newTabKey() {
+  // ⌘T/Ctrl+T is the browser's own new-tab shortcut and cannot be cancelled by a page.
+  if (inBrowserTab()) return isMacPlatform() ? '\u2325T' : 'Alt+T'
+  return chord('T')
+}
+
 let rest = null
 const call = (path, opts) => rest(path, opts)
 
@@ -5528,7 +5566,9 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
                         checked: aiComplete,
                         onChange: (event) => setAiComplete(event.target.checked)
                       }),
-                      jsx('span', { children: 'AI autocomplete (⌘I, on by default)' })
+                      jsx('span', {
+                        children: `AI autocomplete (${chord('I')}, on by default)`
+                      })
                     ]
                   }),
                   jsx('span', {
@@ -7472,8 +7512,21 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
           return
         }
       }
-      if (!mod) return
       const key = event.key
+      // In a browser tab Ctrl/Cmd+T is the browser's own new-tab shortcut and a page
+      // cannot cancel it, so the hosted build binds Alt+T instead — which means this one
+      // has to be checked before the modifier guard below.
+      if ((key === 't' || key === 'T') && inBrowserTab() && event.altKey) {
+        event.preventDefault()
+        newSqlTab()
+        return
+      }
+      if (!mod) return
+      if ((key === 't' || key === 'T') && !event.altKey) {
+        event.preventDefault()
+        newSqlTab()
+        return
+      }
       if (key === 'f' || key === 'F') {
         event.preventDefault()
         if (tab === 'data' && selected) {
@@ -7512,11 +7565,6 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
         event.preventDefault()
         if (key === '2') newSqlTab()
         else setTab({ '1': 'data', '3': 'schema', '4': 'site' }[key])
-        return
-      }
-      if (key === 't' || key === 'T') {
-        event.preventDefault()
-        newSqlTab()
         return
       }
       if (key === 'p' || key === 'P') {
@@ -8162,7 +8210,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                 key: 'settings',
                 variant: 'ghost',
                 size: 'icon-xs',
-                title: 'Settings (⌘,)',
+                title: `Settings (${chord(',')})`,
                 onClick: onSettings,
                 children: jsx(Codicon, { name: 'settings-gear' })
               })
@@ -8184,7 +8232,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
             key: 'refresh',
             variant: 'ghost',
             size: 'icon-xs',
-            title: 'Refresh tree and the current view (⌘R)',
+            title: `Refresh tree and the current view (${chord('R')})`,
             onClick: () => {
               setTreeVersion((v) => v + 1)
               if (!selected) return
@@ -8555,7 +8603,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         {
                           key: 'new-sql-tab',
                           type: 'button',
-                          title: 'New SQL query tab (⌘T)',
+                          title: `New SQL query tab (${newTabKey()})`,
                           onClick: () => newSqlTab(),
                           className:
                             'ml-1 flex shrink-0 items-center gap-1 self-center rounded-[3px] border border-dashed border-(--ui-stroke-secondary) px-2 py-1 text-[10.5px] text-(--ui-text-tertiary) hover:bg-(--ui-bg-secondary) hover:text-(--ui-text-primary)',
@@ -9323,6 +9371,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                   return
                                 }
                               }
+                              // Ctrl/Cmd+Space. Alt is allowed through as an alias
+                              // because some Windows input methods swallow Ctrl+Space
+                              // to switch IME and never deliver the key to the page.
                               if ((event.metaKey || event.ctrlKey) && event.key === ' ') {
                                 event.preventDefault()
                                 setSuggestPrefix('')
@@ -9433,7 +9484,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                           jsx('span', {
                             key: 'hint',
                             className: 'text-[11px] text-(--ui-text-tertiary)',
-                            children: '⌘/Ctrl + Enter'
+                            children: `${chord('Enter')} to run`
                           }),
                           query && query.columns
                             ? jsx(Button, {
@@ -10560,27 +10611,27 @@ jsxs('div', {
                     ]
                   }),
                   ...[
-                    ['⌘ F', 'Filter the current table / search tables'],
-                    ['⌘ R', 'Refresh the current view'],
-                    ['⌘ ⏎', 'Run the query / reload rows'],
-                    ['⌘ S', 'Save the current SQL'],
-                    ['⌘ 1 / 3 / 4', 'Data / Structure / Site'],
-                    ['⌘ 2 / ⌘ T', 'New SQL query tab'],
-                    ['⌘ I', 'AI autocomplete at the caret (opt-in)'],
-                    ['⌘ P', 'Quick panel — jump to a table or run an action'],
-                    ['⌘ + / − / 0', 'Zoom in / out / reset'],
-                    ['⌘ ,', 'Settings'],
-                    ['⌘ /', 'This list'],
+                    [chord('F'), 'Filter the current table / search tables'],
+                    [chord('R'), 'Refresh the current view'],
+                    [chord('⏎'), 'Run the query / reload rows'],
+                    [chord('S'), 'Save the current SQL'],
+                    [chord('1 / 3 / 4'), 'Data / Structure / Site'],
+                    [`${chord('2')} / ${newTabKey()}`, 'New SQL query tab'],
+                    [chord('I'), 'AI autocomplete at the caret (opt-in)'],
+                    [chord('Space'), 'Complete at the caret (also Ctrl Alt Space, for IMEs)'],
+                    [chord('P'), 'Quick panel — jump to a table or run an action'],
+                    [zoomKey(), 'Zoom in / out / reset'],
+                    [chord(','), 'Settings'],
+                    [chord('/'), 'This list'],
                     ['Esc', 'Close the filter panel or this list']
                   ].map(([keys, label]) =>
-                    jsxs(
-                      'div',
-                      {
-                        key: keys,
-                        className:
-                          'flex items-center gap-3 rounded-[3px] px-1 py-1 text-[11.5px]'
-                      },
-                      [
+                    // jsxs(type, props, key) takes the key third: children belong in
+                    // props, or React renders an empty row.
+                    jsxs('div', {
+                      key: keys,
+                      className:
+                        'flex items-center gap-3 rounded-[3px] px-1 py-1 text-[11.5px]',
+                      children: [
                         jsx('kbd', {
                           key: 'k',
                           className:
@@ -10593,7 +10644,7 @@ jsxs('div', {
                           children: label
                         })
                       ]
-                    )
+                    })
                   )
                 ]
               })
