@@ -3720,8 +3720,12 @@ function DatabaseLogo({ kind, flavor, size = 22 }) {
 
 const DB_KIND_CARDS = [
   { kind: 'postgres', label: 'PostgreSQL', port: 5432 },
+  { kind: 'redshift', label: 'Amazon Redshift', port: 5439 },
+  { kind: 'cockroachdb', label: 'CockroachDB', port: 26257 },
+  { kind: 'greenplum', label: 'Greenplum', port: 5432 },
   { kind: 'mysql', flavor: 'mysql', label: 'MySQL', port: 3306 },
   { kind: 'mysql', flavor: 'mariadb', label: 'MariaDB', port: 3306 },
+  { kind: 'singlestore', label: 'SingleStore', port: 3306 },
   { kind: 'sqlserver', label: 'SQL Server', port: 1433 },
   { kind: 'clickhouse', label: 'ClickHouse', port: 8123 },
   { kind: 'mongodb', label: 'MongoDB', port: 27017 },
@@ -5709,6 +5713,10 @@ function AiPanel({ connectionId, database, schema, table, onClose, onUseSql }) {
 
 const CONNECTION_META = {
   postgres: { icon: 'database', tone: 'text-sky-600 dark:text-sky-400' },
+  redshift: { icon: 'cloud', tone: 'text-indigo-600 dark:text-indigo-400' },
+  cockroachdb: { icon: 'database', tone: 'text-lime-600 dark:text-lime-400' },
+  greenplum: { icon: 'database', tone: 'text-emerald-700 dark:text-emerald-300' },
+  singlestore: { icon: 'database', tone: 'text-fuchsia-600 dark:text-fuchsia-400' },
   mysql: { icon: 'database', tone: 'text-amber-600 dark:text-amber-400' },
   clickhouse: { icon: 'graph', tone: 'text-yellow-600 dark:text-yellow-400' },
   sqlite: { icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
@@ -8140,6 +8148,10 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                     children:
                       {
                         postgres: 'PG',
+                        redshift: 'RS',
+                        cockroachdb: 'CRDB',
+                        greenplum: 'GP',
+                        singlestore: 'S2',
                         mysql: active.flavor === 'mariadb' ? 'MariaDB' : 'MySQL',
                         sqlserver: 'MSSQL',
                         clickhouse: 'CH',

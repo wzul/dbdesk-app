@@ -62,8 +62,12 @@ function stepZoom(direction) {
 
 const KIND_LABELS = {
   postgres: 'PostgreSQL',
+  redshift: 'Amazon Redshift',
+  cockroachdb: 'CockroachDB',
+  greenplum: 'Greenplum',
   mysql: 'MySQL / MariaDB',
   mariadb: 'MariaDB',
+  singlestore: 'SingleStore',
   sqlserver: 'SQL Server',
   clickhouse: 'ClickHouse',
   sqlite: 'SQLite',

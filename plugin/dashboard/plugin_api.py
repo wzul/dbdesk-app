@@ -116,10 +116,25 @@ MYSQL = shutil.which("mysql") or shutil.which("mariadb") or "/usr/bin/mysql"
 NULL_SENTINEL = "\u2400"
 QUERY_TIMEOUT = 30
 MAX_ROWS = 1000
-KINDS = {
-    "postgres", "mysql", "sqlserver", "clickhouse", "mongodb", "redis",
-    "mcp", "http", "sqlite",
+# Kinds are grouped by wire protocol wherever that is honest: a server that speaks the
+# PostgreSQL or MySQL protocol needs no new driver, only a name and the right defaults.
+# `_kind()` falls through to the PostgreSQL path for anything it does not recognise, so
+# only add a kind here once its path exists.
+PG_KINDS = {"postgres", "redshift", "cockroachdb", "greenplum"}
+MY_KINDS = {"mysql", "singlestore"}
+KINDS = PG_KINDS | MY_KINDS | {
+    "sqlserver", "clickhouse", "mongodb", "redis", "mcp", "http", "sqlite",
 }
+
+# Default port per kind, used when a connection leaves the port blank.
+DEFAULT_PORTS = {
+    "postgres": 5432, "redshift": 5439, "cockroachdb": 26257, "greenplum": 5432,
+    "mysql": 3306, "singlestore": 3306, "sqlserver": 1433, "clickhouse": 8123,
+}
+
+
+def default_port(kind: str, fallback: int = 5432) -> int:
+    return DEFAULT_PORTS.get(kind, fallback)
 _SSH_TUNNELS: dict[str, dict[str, Any]] = {}
 
 
@@ -664,7 +679,7 @@ def _where_clause(
                 # whatever the server or database default happens to be.
                 collate = " COLLATE Latin1_General_100_CI_AS" if insensitive else " COLLATE Latin1_General_100_CS_AS"
                 clauses.append(f"CAST({target} AS nvarchar(max)){collate} LIKE {literal(pattern)}")
-            elif kind == "mysql":
+            elif kind in MY_KINDS:
                 if insensitive:
                     clauses.append(
                         f"LOWER(CAST({target} AS CHAR)) LIKE LOWER({literal(pattern)})"
@@ -710,6 +725,7 @@ def _csv_from(columns: list[dict[str, Any]], rows: list[list[Any]]) -> str:
 
 def _pg_run_csv(conn: dict[str, Any], sql: str) -> str:
     """CSV with NULLs as empty fields (no sentinel marker)."""
+    kind = _kind(conn)
     if psycopg is not None:
         columns, rows = _pg_native_exec(conn, sql, readonly=True)
         rows = [
@@ -720,7 +736,7 @@ def _pg_run_csv(conn: dict[str, Any], sql: str) -> str:
     cmd = [
         PSQL, "-X", "-q", "--csv",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-p", str(conn.get("port") or 5432),
+        "-p", str(default_port(kind)),
         "-U", str(conn.get("user") or "postgres"),
         "-d", str(conn.get("dbname") or "postgres"),
     ]
@@ -1491,10 +1507,11 @@ def _pg_type_name(code: Any) -> str:
 
 
 def _pg_open_native(conn: dict[str, Any]):
+    kind = _kind(conn)
     readonly = bool(conn.get("readonly", True))
     db = psycopg.connect(
         host=conn.get("host") or "127.0.0.1",
-        port=int(conn.get("port") or 5432),
+        port=int(conn.get("port") or default_port(kind)),
         dbname=conn.get("dbname") or "postgres",
         user=conn.get("user") or "postgres",
         password=conn.get("password") or "",
@@ -1558,10 +1575,11 @@ _MY_TYPE_NAMES = {
 
 
 def _my_open_native(conn: dict[str, Any]):
+    kind = _kind(conn)
     readonly = bool(conn.get("readonly", True))
     db = pymysql.connect(
         host=conn.get("host") or "127.0.0.1",
-        port=int(conn.get("port") or 3306),
+        port=int(conn.get("port") or default_port(kind, 3306)),
         user=conn.get("user") or "root",
         password=conn.get("password") or "",
         database=conn.get("dbname") or None,
@@ -1646,10 +1664,11 @@ def _pg_env(conn: dict[str, Any], readonly: bool) -> dict[str, str]:
 
 
 def _pg_run(conn: dict[str, Any], script: str, *, readonly: bool = True, timeout: int = QUERY_TIMEOUT) -> str:
+    kind = _kind(conn)
     cmd = [
         PSQL, "-X", "-q", "--csv", "-P", f"null={NULL_SENTINEL}", "-v", "ON_ERROR_STOP=1",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-p", str(conn.get("port") or 5432),
+        "-p", str(default_port(kind)),
         "-U", str(conn.get("user") or "postgres"),
         "-d", str(conn.get("dbname") or "postgres"),
     ]
@@ -1669,10 +1688,11 @@ def _pg_run(conn: dict[str, Any], script: str, *, readonly: bool = True, timeout
 
 def _pg_raw(conn: dict[str, Any], script: str) -> str:
     """Unformatted psql output (for ``\\d+`` and other meta-command reports)."""
+    kind = _kind(conn)
     cmd = [
         PSQL, "-X", "-q", "-P", "pager=off",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-p", str(conn.get("port") or 5432),
+        "-p", str(default_port(kind)),
         "-U", str(conn.get("user") or "postgres"),
         "-d", str(conn.get("dbname") or "postgres"),
     ]
@@ -1754,7 +1774,7 @@ def _ddl(conn: dict[str, Any], schema: str, table: str) -> str:
         return _http_ddl(conn, schema, table)
     if kind == "sqlite":
         return _sqlite_ddl(conn, schema, table)
-    if kind == "mysql":
+    if kind in MY_KINDS:
         return _my_ddl(conn, schema, table)
     if kind == "sqlserver":
         return _ms_ddl(conn, schema, table)
@@ -2015,10 +2035,11 @@ def _my_env(conn: dict[str, Any]) -> dict[str, str]:
 
 
 def _my_exec(conn: dict[str, Any], sql: str, *, init: str | None = None, timeout: int = QUERY_TIMEOUT) -> str:
+    kind = _kind(conn)
     cmd = [
         MYSQL, "--batch", "--connect-timeout=8",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-P", str(conn.get("port") or 3306),
+        "-P", str(default_port(kind, 3306)),
         "-u", str(conn.get("user") or "root"),
         "-D", str(conn.get("dbname") or ""),
     ]
@@ -2286,6 +2307,7 @@ def _ms_encryption(value: Any) -> str:
 
 
 def _ms_open(conn: dict[str, Any]):
+    kind = _kind(conn)
     if pymssql is None:
         raise HTTPException(
             500,
@@ -2293,7 +2315,7 @@ def _ms_open(conn: dict[str, Any]):
         )
     kwargs: dict[str, Any] = {
         "server": str(conn.get("host") or "127.0.0.1"),
-        "port": str(int(conn.get("port") or 1433)),
+        "port": str(int(conn.get("port") or default_port(kind, 1433))),
         "user": str(conn.get("user") or "sa"),
         "password": str(conn.get("password") or ""),
         "database": str(conn.get("dbname") or ""),
@@ -2626,11 +2648,12 @@ def _parse_ch_headers(raw: Any, *, strict: bool = False) -> dict[str, str]:
 
 def _ch_target(conn: dict[str, Any]) -> tuple[str, str, str, str]:
     """Resolve scheme/host/port/path, accepting a full URL in the host field."""
+    kind = _kind(conn)
     raw = str(conn.get("host") or "127.0.0.1").strip()
     sslmode = str(conn.get("sslmode") or "").lower()
     scheme = "https" if sslmode in ("require", "verify-ca", "verify-full") else "http"
     explicit_scheme = ""
-    port = str(conn.get("port") or 8123)
+    port = str(conn.get("port") or default_port(kind, 8123))
     path = str(conn.get("ch_path") or "/").strip() or "/"
     if "://" in raw:
         parts = urllib.parse.urlsplit(raw if raw.startswith(("http://", "https://")) else "//" + raw)
@@ -3125,7 +3148,7 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
         return _mongo_indexes(conn, schema, table)
     if kind == "sqlserver":
         return _ms_indexes(conn, schema, table)
-    if kind == "mysql":
+    if kind in MY_KINDS:
         rows = _my_rows_sql(
             conn,
             "SELECT index_name, non_unique, index_type, "
@@ -3186,7 +3209,7 @@ def _activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if kind == "sqlserver":
         return _ms_activity(conn)
-    if kind == "mysql":
+    if kind in MY_KINDS:
         out = _my_run(
             conn,
             "SELECT id, user, db, command, time, state, LEFT(info, 500) "
@@ -3206,7 +3229,7 @@ def _activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
             }
             for r in rows
         ]
-    if kind == "mysql" and pymysql is not None:
+    if kind in MY_KINDS and pymysql is not None:
         _, rows = _my_native_exec(
             conn,
             "SELECT id, user, db, command, time, state, LEFT(info, 500) "
@@ -5419,7 +5442,7 @@ def _test(conn: dict[str, Any]) -> dict[str, Any]:
         return _mongo_test(conn)
     if kind == "redis":
         return _redis_test(conn)
-    if kind == "mysql":
+    if kind in MY_KINDS:
         return _my_test(conn)
     if kind == "sqlserver":
         return _ms_test(conn)
@@ -5440,7 +5463,7 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
         return _mongo_tree(conn)
     if kind == "redis":
         return _redis_tree(conn)
-    if kind == "mysql":
+    if kind in MY_KINDS:
         return _my_tree(conn)
     if kind == "sqlserver":
         return _ms_tree(conn)
@@ -5461,7 +5484,7 @@ def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[st
         return _mongo_columns(conn, schema, table)
     if kind == "redis":
         return _redis_columns(conn, schema, table)
-    if kind == "mysql":
+    if kind in MY_KINDS:
         return _my_columns(conn, schema, table)
     if kind == "sqlserver":
         return _ms_columns(conn, schema, table)
@@ -5526,7 +5549,7 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
         return _http_rows(conn, schema, table, limit, offset, order_by, direction, filters)
     if kind == "sqlite":
         result = _sqlite_rows(conn, schema, table, limit, offset, order_by, direction, filters)
-    elif kind == "mysql":
+    elif kind in MY_KINDS:
         result = _my_rows(
             conn, schema, table, limit, offset, order_by, direction,
             _columns(conn, schema, table), filters,
@@ -5559,7 +5582,7 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
         return _redis_query(conn, sql, limit, readonly)
     if kind == "sqlite":
         result = _sqlite_query(conn, sql, limit, readonly)
-    elif kind == "mysql":
+    elif kind in MY_KINDS:
         result = _my_query(conn, sql, limit, readonly)
     elif kind == "sqlserver":
         result = _ms_query(conn, sql, limit, readonly)
@@ -7267,7 +7290,7 @@ async def connection_databases(conn_id: str) -> dict[str, Any]:
         names = ["main"]
     elif kind == "sqlserver":
         names = _ms_databases(conn)
-    elif kind == "mysql":
+    elif kind in MY_KINDS:
         rows = _my_rows_sql(conn, "SHOW DATABASES")
         names = [
             r[0] for r in rows
@@ -7474,7 +7497,7 @@ async def table_index(body: dict[str, Any]) -> dict[str, Any]:
                 f"CREATE {'UNIQUE ' if unique else ''}INDEX {_sqlite_ident(name)} "
                 f"ON {_sqlite_ident(table)} ({cols})"
             )
-        elif kind == "mysql":
+        elif kind in MY_KINDS:
             cols = ", ".join(_my_ident(column) for column in columns)
             sql = (
                 f"CREATE {'UNIQUE ' if unique else ''}INDEX {_my_ident(name)} "
@@ -7489,7 +7512,7 @@ async def table_index(body: dict[str, Any]) -> dict[str, Any]:
     elif action == "drop":
         if kind == "sqlite":
             sql = f"DROP INDEX {_sqlite_ident(name)}"
-        elif kind == "mysql":
+        elif kind in MY_KINDS:
             sql = (
                 f"ALTER TABLE {_my_ident(schema)}.{_my_ident(table)} "
                 f"DROP INDEX {_my_ident(name)}"
@@ -7721,7 +7744,7 @@ async def connection_functions(conn_id: str, database: str = "") -> dict[str, An
                 "ORDER BY 1, 2",
             )
             functions = [{"schema": str(r[0]), "name": str(r[1]), "args": str(r[2] or "")} for r in rows if r and r[0] and r[1]]
-        elif kind == "mysql":
+        elif kind in MY_KINDS:
             rows = _my_rows_sql(
                 conn,
                 "SELECT routine_schema, routine_name, routine_type "
@@ -8051,7 +8074,7 @@ def _build_update(conn, schema, table, pk, changes) -> tuple[str, bool]:
         sets = ", ".join(f"{_sqlite_ident(k)} = {_sqlite_lit(v)}" for k, v in changes.items())
         where = _predicate(_sqlite_ident, _sqlite_lit, pk)
         return f"UPDATE {_sqlite_ident(table)} SET {sets} WHERE {where}", False
-    if kind == "mysql":
+    if kind in MY_KINDS:
         sets = ", ".join(f"{_my_ident(k)} = {_my_lit(v)}" for k, v in changes.items())
         where = _predicate(_my_ident, _my_lit, pk)
         return f"UPDATE {_my_ident(schema)}.{_my_ident(table)} SET {sets} WHERE {where}", False
@@ -8072,7 +8095,7 @@ def _build_delete(conn, schema, table, pk) -> tuple[str, bool]:
     if kind == "sqlite":
         where = _predicate(_sqlite_ident, _sqlite_lit, pk)
         return f"DELETE FROM {_sqlite_ident(table)} WHERE {where}", False
-    if kind == "mysql":
+    if kind in MY_KINDS:
         where = _predicate(_my_ident, _my_lit, pk)
         return f"DELETE FROM {_my_ident(schema)}.{_my_ident(table)} WHERE {where}", False
     if kind == "clickhouse":
@@ -8088,7 +8111,7 @@ def _build_insert(conn, schema, table, values) -> tuple[str, bool]:
         cols = ", ".join(_sqlite_ident(k) for k in values)
         vals = ", ".join("NULL" if v is None else _sqlite_lit(v) for v in values.values())
         return f"INSERT INTO {_sqlite_ident(table)} ({cols}) VALUES ({vals})", False
-    if kind == "mysql":
+    if kind in MY_KINDS:
         cols = ", ".join(_my_ident(k) for k in values)
         vals = ", ".join("NULL" if v is None else _my_lit(v) for v in values.values())
         return f"INSERT INTO {_my_ident(schema)}.{_my_ident(table)} ({cols}) VALUES ({vals})", False
@@ -8125,7 +8148,7 @@ def _run_mutation(conn, sql: str) -> None:
     kind = _kind(conn)
     if kind == "sqlite":
         _sqlite_mutation(conn, sql)
-    elif kind == "mysql":
+    elif kind in MY_KINDS:
         _my_mutation(conn, sql)
     elif kind == "sqlserver":
         _ms_mutation(conn, sql)
@@ -8186,7 +8209,7 @@ async def alter_table(body: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(400, "invalid column type")
         nullable = bool(body.get("nullable", True))
         default = body.get("default")
-        if kind == "mysql":
+        if kind in MY_KINDS:
             sql = f"ALTER TABLE {target} ADD COLUMN {quote(name)} {column_type} " + (
                 "NULL" if nullable else "NOT NULL"
             )
@@ -8326,7 +8349,7 @@ async def delete_rows_bulk(body: dict[str, Any]) -> dict[str, Any]:
     kind = _kind(conn)
     if kind == "sqlite":
         _sqlite_exec(conn, statements)
-    elif kind == "mysql":
+    elif kind in MY_KINDS:
         if pymysql is not None:
             _my_native_script(conn, statements)
         else:
@@ -8413,7 +8436,7 @@ async def import_rows(body: dict[str, Any]) -> dict[str, Any]:
     elif kind == "clickhouse":
         for statement in statements:
             _ch_mutation(conn, statement)
-    elif kind == "mysql":
+    elif kind in MY_KINDS:
         if pymysql is not None:
             _my_native_script(conn, statements)
         else:
