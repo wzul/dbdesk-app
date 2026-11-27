@@ -51,7 +51,10 @@ done
 for asset in "${ASSETS[@]}"; do
   [ -f "$HERE/$asset" ] || continue
   STAMP="$(sha256sum "$HERE/$asset" | cut -c1-10)"
-  find "$STAGE" -name '*.html' -print0 | xargs -0 sed -i "s#/$asset#/$asset?v=$STAMP#g"
+  # Replace an existing stamp rather than appending a second one: a URL that already carries
+  # ?v=… would otherwise become ?v=new?v=old, which still serves but defeats the cache.
+  find "$STAGE" -name '*.html' -print0 \
+    | xargs -0 sed -i "s#/$asset\(?v=[0-9a-f]\{6,\}\)\{0,1\}#/$asset?v=$STAMP#g"
   echo "   $asset -> ?v=$STAMP"
 done
 
