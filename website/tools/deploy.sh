@@ -19,6 +19,19 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 # look half-styled rather than obviously stale. Stamping the asset URL with a hash of
 # the file gives every change a URL nobody has cached yet. The rewrite happens in a
 # staging copy, so the repository keeps plain paths.
+# The docs pages, sitemap, robots.txt and llms.txt are generated from docs/*.md: the
+# markdown in the repository is the only copy, so a page cannot drift from the code it
+# documents. Needs `pip install markdown` on the machine doing the deploy.
+if python3 -c 'import markdown' 2>/dev/null; then
+  PY=python3
+elif [ -x "$HERE/../.venv/bin/python" ]; then
+  PY="$HERE/../.venv/bin/python"
+else
+  echo "build-docs.py needs the markdown package: pip install markdown" >&2
+  exit 1
+fi
+"$PY" "$HERE/tools/build-docs.py"
+
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 cp -a "$HERE/." "$STAGE/"

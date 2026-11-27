@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security — DB Desk docs</title>
+<meta name="description" content="What DB Desk reaches, what leaves your machine, threat model.">
+<link rel="canonical" href="https://dbdesk.app/docs/security.html">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://dbdesk.app/docs/security.html">
+<meta property="og:site_name" content="DB Desk">
+<meta property="og:title" content="Security — DB Desk docs">
+<meta property="og:description" content="What DB Desk reaches, what leaves your machine, threat model.">
+<meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/favicon.svg">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"DB Desk","item":"https://dbdesk.app/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://dbdesk.app/docs/"},{"@type":"ListItem","position":3,"name":"Security","item":"https://dbdesk.app/docs/security.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Security","description":"What DB Desk reaches, what leaves your machine, threat model.","url":"https://dbdesk.app/docs/security.html","isPartOf":{"@type":"WebSite","name":"DB Desk","url":"https://dbdesk.app/"},"publisher":{"@type":"Organization","name":"DB Desk"}}</script>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" opacity=".12"/>
+      <ellipse cx="12" cy="7.4" rx="5.1" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 7.4v9.2c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2V7.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 12c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.7.6-3.3-1.2-3.3-1.2-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.3-1.1.6-1.4-2.2-.3-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.3 4.6-4.5 4.9.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      DB Desk
+    </a>
+    <nav class="nav-links">
+      <a href="/#features">Features</a>
+      <a href="/#databases">Databases</a>
+      <a href="/#ai">AI</a>
+      <a href="/#mcp">MCP</a>
+      <a href="/security/">Security</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="/#download">Download</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
+        <svg><use href="#i-github"/></svg> GitHub
+      </a>
+      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main class="docs">
+  <div class="wrap docs-grid">
+    <nav class="docs-nav" aria-label="Documentation">
+      <a class="docs-nav-item" href="/docs/">Overview</a>
+      <a class="docs-nav-item" href="/docs/getting-started.html">Getting started</a><a class="docs-nav-item" href="/docs/features.html">Features</a><a class="docs-nav-item" href="/docs/mcp.html">MCP server</a><a class="docs-nav-item is-active" href="/docs/security.html">Security</a><a class="docs-nav-item" href="/docs/development.html">Development</a><a class="docs-nav-item" href="/docs/signing.html">Signing</a><a class="docs-nav-item" href="/docs/troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <article class="docs-body prose">
+      <h1>Security</h1>
+<p><a href="#what-leaves-your-machine-measured">What leaves your machine</a> ·
+<a href="https://github.com/wzul/dbdesk-app/blob/main/SECURITY.md">Report a vulnerability</a> · <a href="https://github.com/wzul/dbdesk-app/blob/main/PRIVACY.md">Privacy statement</a></p>
+<p>A reader-facing summary lives at <a href="https://dbdesk.app/security/">https://dbdesk.app/security/</a>; this file is the
+technical version, and it lists the gaps as well as the controls.</p>
+<h2 id="ai-privacy">AI privacy</h2>
+<ul>
+<li><strong>Prompts are built from allowlists, not connection records.</strong> Data questions
+  send table/column names, the question and previous SQL only — never rows,
+  passwords, tokens, SSH keys, headers or tunnel env. The agent catalog carries
+  only id, display name, group, kind and database name; hosts and users are
+  omitted.</li>
+<li><strong>Cross-database rows stay local.</strong> Result sets are loaded into in-memory
+  SQLite and joined on this Mac. The join query and row counts are visible to
+  the model; the cell values are not.</li>
+<li><strong>AI setup</strong> sends only your message and generic instructions. The returned
+  draft is sanitized: keys containing <code>password</code>, <code>token</code>, <code>secret</code>, <code>key</code>,
+  <code>header</code>, <code>env</code>, <code>auth</code> or <code>cookie</code> are dropped.</li>
+<li><strong>AI autocomplete</strong> is <strong>on by default</strong> once an AI provider is configured;
+  turn it off at <strong>Settings → AI provider → AI autocomplete</strong>. When you press
+  <strong>⌘I</strong>, it sends the SQL text around the caret plus dialect,
+  database name and the table/column names and types referenced in the query.
+  It never sends rows, result sets, passwords, API keys, SSH material or tunnel
+  env, and the server rejects the request unless the toggle is on.</li>
+<li><strong>Model detection</strong> calls <code>GET &lt;base URL&gt;/models</code> with your API key to list
+  model names. The key stays on this Mac; only the model IDs are shown.</li>
+<li><strong>Secrets at rest</strong> stay AES-GCM encrypted and are decrypted only to open the
+  database connection.</li>
+<li><strong>Local-only option</strong>: point the base URL at Ollama/LM Studio on
+  <code>127.0.0.1</code> and nothing leaves the Mac.</li>
+<li>The test suite asserts that a saved password never appears in an AI payload
+  and that setup drafts cannot carry secrets.</li>
+</ul>
+<h2 id="what-leaves-your-machine-measured">What leaves your machine (measured)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>What you do</th>
+<th>Outbound network</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Open the app, browse the tree, view tables</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Run a query, edit a row, export CSV</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Save or edit a connection</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Use AI (only once a provider key is configured)</td>
+<td>your endpoint: <code>api.openai.com</code>, your own gateway, or Ollama on <code>127.0.0.1</code></td>
+</tr>
+<tr>
+<td>Check for updates</td>
+<td><code>github.com</code>, for the signed release manifest</td>
+</tr>
+</tbody>
+</table></div>
+<p>Measured against 0.13.12 with <code>scripts/egress-check.py</code>: a session that created a
+connection, opened a table, ran an aggregate query and opened Settings issued <strong>35 HTTP
+requests, all to <code>127.0.0.1</code></strong>, and the backend held <strong>no outbound TCP connection</strong>. The
+script drives the real UI, so the measurement can be repeated on any build.</p>
+<h2 id="threat-model">Threat model</h2>
+<p><strong>What DB Desk is trusted with.</strong> Database credentials; the authority of the user the
+database connection runs as; whatever the user types into the SQL editor; a shell command
+if an SSH tunnel is configured.</p>
+<p><strong>Trust boundaries.</strong></p>
+<ol>
+<li><em>Your machine</em> — everything under the app data folder is readable by your user, and so
+   is the vault key next to it. Encryption at rest protects a copied file, a stray backup
+   or a sync client; it does not protect against code running as you.</li>
+<li><em>The UI</em> — treated as untrusted by the backend. Read-only, statement limits and
+   production approvals are enforced in the API, not in the browser. The UI is served
+   over loopback and, in server mode, behind a login with CSRF tokens.</li>
+<li><em>Outbound</em> — the database, an optional AI endpoint, and the updater. Nothing else; see
+   the table above.</li>
+<li><em>The model provider</em> — sees schema, SQL and your question. Never rows, never secrets.</li>
+</ol>
+<p><strong>In scope for an attacker model.</strong> A malicious database or a hostile server on the other
+end of a connection (crafted table names, absurd column counts, slow queries); a stolen
+laptop with the data folder on it; a compromised AI endpoint returning malicious drafts; a
+tampered update manifest.</p>
+<p><strong>Explicitly not defended against.</strong> Malware already running as your user (it can read the
+vault key and the audit log); an operator pasting <code>DROP TABLE</code> into a connection whose user
+has the right to run it; a database user with more privilege than the task needs.</p>
+<h2 id="security">Security</h2>
+<p>DB Desk executes SQL with the credentials you configure, and a custom tunnel
+command is a shell command you supply. Treat a connection as code execution on
+this machine. Read-only is the default and enforced by the backend, but it is a
+guardrail, not a sandbox. The strongest control available to you is the database user
+itself: a <code>GRANT SELECT</code>-only role makes every guardrail above redundant, and the app runs
+normally that way.</p>
+      <p class="docs-edit"><a href="https://github.com/wzul/dbdesk-app/blob/main/docs/security.md" target="_blank" rel="noopener">Edit this page on GitHub</a></p>
+    </article>
+    <aside class="docs-toc"><p class="docs-toc-title">On this page</p><a class="docs-toc-l2" href="#ai-privacy">AI privacy</a><a class="docs-toc-l2" href="#what-leaves-your-machine-measured">What leaves your machine (measured)</a><a class="docs-toc-l2" href="#threat-model">Threat model</a><a class="docs-toc-l2" href="#security">Security</a></aside>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <div class="foot-brand">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      <span>DB Desk · dbdesk.app — a native database browser for macOS, Windows and Linux</span>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="https://github.com/wzul/dbdesk-app/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="/security/">Security</a>
+      <a href="https://github.com/wzul/dbdesk-app/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <div>© <span id="year">2026</span> DB Desk</div>
+  </div>
+</footer>
+
+</body>
+</html>

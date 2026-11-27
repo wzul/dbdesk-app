@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started — DB Desk docs</title>
+<meta name="description" content="Install DB Desk and connect a database.">
+<link rel="canonical" href="https://dbdesk.app/docs/getting-started.html">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://dbdesk.app/docs/getting-started.html">
+<meta property="og:site_name" content="DB Desk">
+<meta property="og:title" content="Getting started — DB Desk docs">
+<meta property="og:description" content="Install DB Desk and connect a database.">
+<meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/favicon.svg">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"DB Desk","item":"https://dbdesk.app/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://dbdesk.app/docs/"},{"@type":"ListItem","position":3,"name":"Getting started","item":"https://dbdesk.app/docs/getting-started.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Getting started","description":"Install DB Desk and connect a database.","url":"https://dbdesk.app/docs/getting-started.html","isPartOf":{"@type":"WebSite","name":"DB Desk","url":"https://dbdesk.app/"},"publisher":{"@type":"Organization","name":"DB Desk"}}</script>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" opacity=".12"/>
+      <ellipse cx="12" cy="7.4" rx="5.1" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 7.4v9.2c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2V7.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 12c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.7.6-3.3-1.2-3.3-1.2-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.3-1.1.6-1.4-2.2-.3-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.3 4.6-4.5 4.9.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      DB Desk
+    </a>
+    <nav class="nav-links">
+      <a href="/#features">Features</a>
+      <a href="/#databases">Databases</a>
+      <a href="/#ai">AI</a>
+      <a href="/#mcp">MCP</a>
+      <a href="/security/">Security</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="/#download">Download</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
+        <svg><use href="#i-github"/></svg> GitHub
+      </a>
+      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main class="docs">
+  <div class="wrap docs-grid">
+    <nav class="docs-nav" aria-label="Documentation">
+      <a class="docs-nav-item" href="/docs/">Overview</a>
+      <a class="docs-nav-item is-active" href="/docs/getting-started.html">Getting started</a><a class="docs-nav-item" href="/docs/features.html">Features</a><a class="docs-nav-item" href="/docs/mcp.html">MCP server</a><a class="docs-nav-item" href="/docs/security.html">Security</a><a class="docs-nav-item" href="/docs/development.html">Development</a><a class="docs-nav-item" href="/docs/signing.html">Signing</a><a class="docs-nav-item" href="/docs/troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <article class="docs-body prose">
+      <h1>Getting started</h1>
+<p><img alt="Connection picker" src="/assets/img/connection-picker.webp" /></p>
+<h2 id="requirements">Requirements</h2>
+<ul>
+<li><strong>Node.js 26 LTS</strong> (or any 22.12+; the repo ships <code>.nvmrc</code>)</li>
+<li><strong>Python 3.11+</strong></li>
+<li><strong>Rust stable</strong> (1.77+) and Xcode Command Line Tools on macOS</li>
+<li><code>psql</code> and/or <code>mysql</code> clients for those connection types (SQLite uses the
+  Python standard library)</li>
+</ul>
+<p>The server binds to <code>127.0.0.1</code> only. Credentials are encrypted at rest with
+AES-GCM in the app-data directory (see <em>Data</em> below) and are never returned to
+the UI.</p>
+<h2 id="run-from-source">Run from source</h2>
+<pre><code class="language-bash"># dependencies
+make install            # root npm, ui npm, backend pip
+
+# build the page and start the server (opens http://127.0.0.1:8765)
+make server
+
+# or run the desktop shell in development (spawns the Python server itself)
+npm run app
+</code></pre>
+<p><code>npm run app</code> needs Rust and the Tauri system dependencies. On macOS that is
+Xcode Command Line Tools; on Linux see the Tauri prerequisites.</p>
+<h3 id="ui-only-development">UI-only development</h3>
+<pre><code class="language-bash">python backend/app.py              # terminal 1 — API on :8765
+npm --prefix ui run dev            # terminal 2 — Vite on :5173, proxies /api
+</code></pre>
+<h2 id="build-the-macos-app">Build the macOS app</h2>
+<pre><code class="language-bash">make sidecar        # PyInstaller one-file server -&gt; src-tauri/binaries/
+npm --prefix ui run build
+npm run tauri build # -&gt; src-tauri/target/release/bundle/dmg/*.dmg
+</code></pre>
+<p>The sidecar is a PyInstaller <strong>onedir</strong> tree (no unpack on launch). Tauri ships
+it as a bundle resource, so it lands in
+<code>DB Desk.app/Contents/Resources/sidecar/dbdesk-server/</code>. The Rust shell shows a
+splash window immediately, starts the sidecar on a free localhost port, waits
+until it accepts connections, then navigates the same window to it. The child is
+killed on exit. The splash is <code>ui/public/splash.html</code>.</p>
+<p>The GitHub Actions workflow builds both architectures on every push:</p>
+<ul>
+<li><code>macos-13</code> → <code>x86_64-apple-darwin</code> (Intel)</li>
+<li><code>macos-14</code> → <code>aarch64-apple-darwin</code> (Apple Silicon)</li>
+</ul>
+<p>Unsigned DMGs run after a right-click → <strong>Open</strong>. For distribution, add the
+usual signing/notarization secrets (<code>APPLE_CERTIFICATE</code>,
+<code>APPLE_CERTIFICATE_PASSWORD</code>, <code>APPLE_SIGNING_IDENTITY</code>, <code>APPLE_ID</code>,
+<code>APPLE_PASSWORD</code>, <code>APPLE_TEAM_ID</code>); Tauri picks them up automatically.</p>
+<h2 id="updates">Updates</h2>
+<p>The app checks GitHub Releases for a signed update manifest when it opens.
+When a newer version exists, the picker shows <strong>Update available — vX</strong>;
+<strong>Update now</strong> downloads the <code>.app.tar.gz</code>, verifies the minisign signature,
+replaces the bundle and relaunches.</p>
+<ul>
+<li>No Apple Developer account is involved: the updater uses its own minisign
+  keypair. The public key is in <code>src-tauri/tauri.conf.json</code>; the private key
+  lives only in the <code>TAURI_SIGNING_PRIVATE_KEY</code> CI secret.</li>
+<li>Releases are published by <code>.github/workflows/release.yml</code> when a <code>v*</code> tag is
+  pushed; it reuses the successful <code>main</code> build and writes <code>latest.json</code>.</li>
+<li>The first build with the updater (0.7.1) must be installed manually once;
+  later versions update in place.</li>
+<li>Manifest URL:
+  <code>https://github.com/wzul/dbdesk-app/releases/latest/download/latest.json</code></li>
+</ul>
+<h2 id="data">Data</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>macOS</td>
+<td><code>~/Library/Application Support/DB Desk/data</code></td>
+</tr>
+<tr>
+<td>Linux</td>
+<td><code>~/.local/share/dbdesk/data</code> (<code>$XDG_DATA_HOME</code>)</td>
+</tr>
+<tr>
+<td>Windows</td>
+<td><code>%APPDATA%\DB Desk\data</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Set <code>DBDESK_HOME</code> to override. The directory contains:</p>
+<ul>
+<li><code>connections.json</code> — connections, passwords AES-GCM encrypted</li>
+<li><code>vault.key</code> — the 32-byte key (0600)</li>
+<li><code>audit.jsonl</code>, <code>approvals.json</code>, <code>queries.json</code>, <code>views.json</code></li>
+</ul>
+      <p class="docs-edit"><a href="https://github.com/wzul/dbdesk-app/blob/main/docs/getting-started.md" target="_blank" rel="noopener">Edit this page on GitHub</a></p>
+    </article>
+    <aside class="docs-toc"><p class="docs-toc-title">On this page</p><a class="docs-toc-l2" href="#requirements">Requirements</a><a class="docs-toc-l2" href="#run-from-source">Run from source</a><a class="docs-toc-l2" href="#build-the-macos-app">Build the macOS app</a><a class="docs-toc-l2" href="#updates">Updates</a><a class="docs-toc-l2" href="#data">Data</a></aside>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <div class="foot-brand">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      <span>DB Desk · dbdesk.app — a native database browser for macOS, Windows and Linux</span>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="https://github.com/wzul/dbdesk-app/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="/security/">Security</a>
+      <a href="https://github.com/wzul/dbdesk-app/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <div>© <span id="year">2026</span> DB Desk</div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signing — DB Desk docs</title>
+<meta name="description" content="Sign and notarize a release.">
+<link rel="canonical" href="https://dbdesk.app/docs/signing.html">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://dbdesk.app/docs/signing.html">
+<meta property="og:site_name" content="DB Desk">
+<meta property="og:title" content="Signing — DB Desk docs">
+<meta property="og:description" content="Sign and notarize a release.">
+<meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/favicon.svg">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"DB Desk","item":"https://dbdesk.app/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://dbdesk.app/docs/"},{"@type":"ListItem","position":3,"name":"Signing","item":"https://dbdesk.app/docs/signing.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Signing","description":"Sign and notarize a release.","url":"https://dbdesk.app/docs/signing.html","isPartOf":{"@type":"WebSite","name":"DB Desk","url":"https://dbdesk.app/"},"publisher":{"@type":"Organization","name":"DB Desk"}}</script>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" opacity=".12"/>
+      <ellipse cx="12" cy="7.4" rx="5.1" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 7.4v9.2c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2V7.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 12c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.7.6-3.3-1.2-3.3-1.2-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.3-1.1.6-1.4-2.2-.3-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.3 4.6-4.5 4.9.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      DB Desk
+    </a>
+    <nav class="nav-links">
+      <a href="/#features">Features</a>
+      <a href="/#databases">Databases</a>
+      <a href="/#ai">AI</a>
+      <a href="/#mcp">MCP</a>
+      <a href="/security/">Security</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="/#download">Download</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
+        <svg><use href="#i-github"/></svg> GitHub
+      </a>
+      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main class="docs">
+  <div class="wrap docs-grid">
+    <nav class="docs-nav" aria-label="Documentation">
+      <a class="docs-nav-item" href="/docs/">Overview</a>
+      <a class="docs-nav-item" href="/docs/getting-started.html">Getting started</a><a class="docs-nav-item" href="/docs/features.html">Features</a><a class="docs-nav-item" href="/docs/mcp.html">MCP server</a><a class="docs-nav-item" href="/docs/security.html">Security</a><a class="docs-nav-item" href="/docs/development.html">Development</a><a class="docs-nav-item is-active" href="/docs/signing.html">Signing</a><a class="docs-nav-item" href="/docs/troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <article class="docs-body prose">
+      <h1>Signing</h1>
+<p>The default CI builds are <strong>unsigned</strong> and free: they run on your own Mac after
+the steps below. Signing + notarization is only needed for clean distribution to
+other people, and requires a paid Apple Developer account.</p>
+<h3 id="install-an-unsigned-build-no-apple-developer-account">Install an unsigned build (no Apple Developer account)</h3>
+<p><strong>Build it on the Mac that will run it</strong> — locally built apps are not
+quarantined, so Gatekeeper does not complain at all:</p>
+<pre><code class="language-bash">git clone https://github.com/wzul/dbdesk-app
+cd dbdesk-app
+make install          # Node, Python deps
+make bundle           # Python + Rust toolchain required
+open &quot;src-tauri/target/release/bundle/macos/DB Desk.app&quot;
+</code></pre>
+<p><strong>Or download the CI DMG</strong>, drag <strong>DB Desk</strong> to Applications, then:</p>
+<ul>
+<li>macOS 15+: open it once, then <strong>System Settings → Privacy &amp; Security → Open
+  Anyway</strong>; or</li>
+<li>remove the quarantine flag:</li>
+</ul>
+<p><code>bash
+  xattr -dr com.apple.quarantine "/Applications/DB Desk.app"</code></p>
+<p>Only do this for a build you trust (this repository's CI or your own).</p>
+<h3 id="what-you-need">What you need</h3>
+<ol>
+<li><strong>Apple Developer Program</strong> membership (paid, currently US$99/year).</li>
+<li>A <strong>Developer ID Application</strong> certificate — not “Apple Development”.</li>
+<li>Your <strong>Team ID</strong> (developer.apple.com → Membership).</li>
+<li>Notarization credentials: either an <strong>app-specific password</strong> for your Apple
+   ID, or an <strong>App Store Connect API key</strong>.</li>
+</ol>
+<h3 id="create-the-certificate">Create the certificate</h3>
+<p>On a Mac, either:</p>
+<ul>
+<li>Xcode → Settings → Accounts → select your team → <strong>Manage Certificates</strong> → <strong>+</strong>
+  → <strong>Developer ID Application</strong>, or</li>
+<li>developer.apple.com → Certificates, Identifiers &amp; Profiles → <strong>+</strong> →
+  <strong>Developer ID Application</strong> (upload a CSR made with Keychain Access).</li>
+</ul>
+<p>Then export it: Keychain Access → <strong>My Certificates</strong> → right-click
+<code>Developer ID Application: …</code> → <strong>Export</strong> → <code>.p12</code> with a password.</p>
+<pre><code class="language-bash">security find-identity -v -p codesigning
+# &quot;Developer ID Application: Your Name (ABCDE12345)&quot;
+</code></pre>
+<h3 id="add-the-github-secrets">Add the GitHub secrets</h3>
+<pre><code class="language-bash"># certificate (.p12) as base64
+base64 -i DeveloperID.p12 | gh secret set APPLE_CERTIFICATE
+gh secret set APPLE_CERTIFICATE_PASSWORD   # the .p12 password
+gh secret set APPLE_SIGNING_IDENTITY --body &quot;Developer ID Application: Your Name (ABCDE12345)&quot;
+gh secret set APPLE_TEAM_ID --body &quot;ABCDE12345&quot;
+
+# notarization: Apple ID + app-specific password (appleid.apple.com → Sign-in
+# and Security → App-Specific Passwords)
+gh secret set APPLE_ID --body &quot;you@example.com&quot;
+gh secret set APPLE_PASSWORD
+</code></pre>
+<p>API-key alternative (better for CI, no password/2FA):</p>
+<pre><code class="language-bash">gh secret set APPLE_API_ISSUER --body &quot;&lt;issuer-uuid&gt;&quot;
+gh secret set APPLE_API_KEY --body &quot;&lt;key-id&gt;&quot;
+# write AuthKey_&lt;key-id&gt;.p8 from a secret to a file before the build step
+</code></pre>
+<p>Tauri reads these environment variables directly; the workflow already passes
+them through, and only signs when <code>APPLE_SIGNING_IDENTITY</code> is set.</p>
+<h3 id="what-the-workflow-does">What the workflow does</h3>
+<ol>
+<li>Imports the <code>.p12</code> and signs <code>dbdesk-server</code> on its own with hardened runtime
+   and the entitlements below (nested binaries must be signed before notarizing
+   the app).</li>
+<li><code>tauri build</code> signs <code>DB Desk.app</code> (hardened runtime), notarizes it with
+   <code>notarytool</code>, and staples the ticket.</li>
+<li>Verifies with <code>codesign</code> and <code>spctl</code>.</li>
+<li>Produces <code>DB Desk_&lt;version&gt;_&lt;arch&gt;.dmg</code>.</li>
+</ol>
+<h3 id="entitlements">Entitlements</h3>
+<p><code>src-tauri/entitlements.plist</code> disables <strong>library validation</strong>:</p>
+<pre><code class="language-xml">&lt;key&gt;com.apple.security.cs.disable-library-validation&lt;/key&gt;
+&lt;true/&gt;
+</code></pre>
+<p>The Python sidecar is a PyInstaller one-file binary. On launch it extracts its
+dylibs to a temp directory and <code>dlopen()</code>s them. Hardened runtime (required for
+notarization) refuses to load libraries not signed by the same Team ID, so
+without this entitlement the notarized app starts and then the backend dies.
+<code>com.apple.security.cs.allow-unsigned-executable-memory</code> covers Python
+extensions that map executable memory at runtime.</p>
+<h3 id="verify-a-build">Verify a build</h3>
+<pre><code class="language-bash">codesign --verify --deep --strict --verbose=2 &quot;DB Desk.app&quot;
+codesign -dv --verbose=4 &quot;DB Desk.app&quot;     # TeamIdentifier + hardened runtime
+spctl --assess --type execute --verbose=2 &quot;DB Desk.app&quot;   # accepted / notarized
+xcrun stapler validate &quot;DB Desk.app&quot;
+</code></pre>
+<p>If the DMG itself is not stapled (the app inside is), submit and staple it once:</p>
+<pre><code class="language-bash">xcrun notarytool submit &quot;DB Desk_0.1.0_aarch64.dmg&quot; \
+  --apple-id &quot;$APPLE_ID&quot; --team-id &quot;$APPLE_TEAM_ID&quot; --password &quot;$APPLE_PASSWORD&quot; --wait
+xcrun stapler staple &quot;DB Desk_0.1.0_aarch64.dmg&quot;
+</code></pre>
+<h3 id="local-signed-build">Local signed build</h3>
+<pre><code class="language-bash">export APPLE_SIGNING_IDENTITY=&quot;Developer ID Application: Your Name (ABCDE12345)&quot;
+export APPLE_ID=&quot;you@example.com&quot; APPLE_PASSWORD=&quot;app-specific-password&quot; APPLE_TEAM_ID=&quot;ABCDE12345&quot;
+make bundle
+</code></pre>
+<p>Keep the <code>.p12</code> and passwords out of the repo; the certificate can be revoked
+from developer.apple.com if it leaks.</p>
+<h2 id="verifying-a-release">Verifying a release</h2>
+<p>Every release publishes <code>SHA256SUMS.txt</code>, a Sigstore bundle for it
+(<code>SHA256SUMS.txt.bundle</code>), and a build-provenance attestation stored by GitHub.
+Nothing here asks you to trust a key we hold: the signature names the workflow that
+produced the file.</p>
+<pre><code class="language-bash">TAG=v0.13.12
+BASE=https://github.com/wzul/dbdesk-app/releases/download/$TAG
+
+# 1. checksums and signature
+curl -LO &quot;$BASE/SHA256SUMS.txt&quot; -LO &quot;$BASE/SHA256SUMS.txt.bundle&quot;
+
+# 2. which workflow signed it — keyless, so this is the whole identity
+cosign verify-blob \
+  --bundle SHA256SUMS.txt.bundle \
+  --certificate-identity-regexp '^https://github.com/wzul/dbdesk-app/.github/workflows/release.yml@refs/.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS.txt
+
+# 3. the asset you downloaded matches the signed list
+sha256sum --ignore-missing -c SHA256SUMS.txt
+
+# 4. and where it was built
+gh attestation verify DB.Desk_${TAG#v}_aarch64.dmg --repo wzul/dbdesk-app
+</code></pre>
+<p>If step 2 prints <code>Verified OK</code>, the checksum list came from this repository's release
+workflow and has not been altered since. If step 3 prints <code>OK</code> for your file, the file
+is the one that list describes.</p>
+<p>A dry run of the same steps without publishing a release:</p>
+<pre><code class="language-bash">gh workflow run release.yml --repo wzul/dbdesk-app     # workflow_dispatch, dry_run=true
+</code></pre>
+      <p class="docs-edit"><a href="https://github.com/wzul/dbdesk-app/blob/main/docs/signing.md" target="_blank" rel="noopener">Edit this page on GitHub</a></p>
+    </article>
+    <aside class="docs-toc"><p class="docs-toc-title">On this page</p><a class="docs-toc-l3" href="#install-an-unsigned-build-no-apple-developer-account">Install an unsigned build (no Apple Developer account)</a><a class="docs-toc-l3" href="#what-you-need">What you need</a><a class="docs-toc-l3" href="#create-the-certificate">Create the certificate</a><a class="docs-toc-l3" href="#add-the-github-secrets">Add the GitHub secrets</a><a class="docs-toc-l3" href="#what-the-workflow-does">What the workflow does</a><a class="docs-toc-l3" href="#entitlements">Entitlements</a><a class="docs-toc-l3" href="#verify-a-build">Verify a build</a><a class="docs-toc-l3" href="#local-signed-build">Local signed build</a><a class="docs-toc-l2" href="#verifying-a-release">Verifying a release</a></aside>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <div class="foot-brand">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      <span>DB Desk · dbdesk.app — a native database browser for macOS, Windows and Linux</span>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="https://github.com/wzul/dbdesk-app/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="/security/">Security</a>
+      <a href="https://github.com/wzul/dbdesk-app/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <div>© <span id="year">2026</span> DB Desk</div>
+  </div>
+</footer>
+
+</body>
+</html>

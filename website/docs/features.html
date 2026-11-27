@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Features — DB Desk docs</title>
+<meta name="description" content="Everything in the app, screen by screen.">
+<link rel="canonical" href="https://dbdesk.app/docs/features.html">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://dbdesk.app/docs/features.html">
+<meta property="og:site_name" content="DB Desk">
+<meta property="og:title" content="Features — DB Desk docs">
+<meta property="og:description" content="Everything in the app, screen by screen.">
+<meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/favicon.svg">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"DB Desk","item":"https://dbdesk.app/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://dbdesk.app/docs/"},{"@type":"ListItem","position":3,"name":"Features","item":"https://dbdesk.app/docs/features.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Features","description":"Everything in the app, screen by screen.","url":"https://dbdesk.app/docs/features.html","isPartOf":{"@type":"WebSite","name":"DB Desk","url":"https://dbdesk.app/"},"publisher":{"@type":"Organization","name":"DB Desk"}}</script>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" opacity=".12"/>
+      <ellipse cx="12" cy="7.4" rx="5.1" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 7.4v9.2c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2V7.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 12c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.7.6-3.3-1.2-3.3-1.2-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.3-1.1.6-1.4-2.2-.3-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.3 4.6-4.5 4.9.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      DB Desk
+    </a>
+    <nav class="nav-links">
+      <a href="/#features">Features</a>
+      <a href="/#databases">Databases</a>
+      <a href="/#ai">AI</a>
+      <a href="/#mcp">MCP</a>
+      <a href="/security/">Security</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="/#download">Download</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
+        <svg><use href="#i-github"/></svg> GitHub
+      </a>
+      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main class="docs">
+  <div class="wrap docs-grid">
+    <nav class="docs-nav" aria-label="Documentation">
+      <a class="docs-nav-item" href="/docs/">Overview</a>
+      <a class="docs-nav-item" href="/docs/getting-started.html">Getting started</a><a class="docs-nav-item is-active" href="/docs/features.html">Features</a><a class="docs-nav-item" href="/docs/mcp.html">MCP server</a><a class="docs-nav-item" href="/docs/security.html">Security</a><a class="docs-nav-item" href="/docs/development.html">Development</a><a class="docs-nav-item" href="/docs/signing.html">Signing</a><a class="docs-nav-item" href="/docs/troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <article class="docs-body prose">
+      <h1>Features</h1>
+<p><img alt="DB Desk data grid" src="/assets/img/standalone.webp" /></p>
+<p><img alt="SQL query tab" src="/assets/img/sql-tab.webp" /></p>
+<ul>
+<li><strong>MCP server for local agents</strong> — Settings → <strong>MCP server</strong> exposes DB Desk
+  to Claude Desktop, Cursor, Hermes or any MCP client over stdio or loopback
+  HTTP. Tools cover connections, databases, tables, columns, indexes, DDL,
+  rows, CSV, SQL and the AI agent. Disabled by default; one toggle generates a
+  bearer token.</li>
+<li><strong>Keyboard shortcuts</strong> — <strong>⌘F</strong> filter/search, <strong>⌘R</strong> refresh, <strong>⌘⏎</strong> run,
+  <strong>⌘S</strong> save SQL, <strong>⌘2 / ⌘T</strong> new SQL tab, <strong>⌘1 / 3 / 4</strong> Data/Structure/Site,
+  <strong>⌘+ / ⌘− / ⌘0</strong> zoom,
+  <strong>⌘/</strong> shortcut list, <strong>⌘,</strong> settings.</li>
+<li><strong>Remembers window size and position</strong> across launches (saved to
+  <code>window.json</code> in the app data folder); if the monitor is gone, the app falls
+  back to the default size instead of opening off-screen.</li>
+<li><strong>Settings (⌘,)</strong> — one preferences window: <strong>Appearance</strong> (System / Light /
+  Dark), updates, native notification toggle + test, MCP server, AI provider
+  (base URL/model/key), backup &amp; restore, application-data path and version.
+  Open it with <strong>⌘,</strong>, the gear on the picker, or the gear in the app header.</li>
+<li><strong>AI setup assistant</strong> — <strong>AI setup</strong> on the picker: describe the database
+  (“MySQL on my VPS behind a bastion”) and the agent returns a field-by-field
+  draft; <strong>Use this setup</strong> opens the form prefilled. Passwords are never sent:
+  the draft is sanitized server-side and the form leaves the password blank.</li>
+<li><strong>Ask AI (read-only)</strong> — the header <strong>AI</strong> button opens a prompt bar. It sends
+  the current table/column names and your question to an OpenAI-compatible
+  endpoint (OpenAI, OpenRouter, Ollama, LM Studio, ...), receives one SELECT,
+  runs it read-only and shows the SQL and rows. The panel is a <strong>chat</strong>: press
+  Enter, read the result, then type a follow-up (“pecahkan ikut bulan”) and the
+  previous SQL/answers are carried into the next request. If a statement fails
+  (for example a wrong column name), the error and the relevant schema are sent
+  back once so the model can correct the query. Server-side rules refuse any non-read
+  statement. Configure base URL, model and API key under the AI
+  settings; the key is encrypted at rest and row data is never sent.</li>
+<li><strong>Multi-database agent</strong> — the AI scope bar defaults to every AI-enabled
+  connection. When a question spans databases (“who is in app-db but not the
+  warehouse?”) the agent first requests the missing schemas, then returns one
+  read-only statement per database plus a join. DB Desk runs each statement
+  against its own database, loads the result sets into an in-memory SQLite
+  database and executes the join <strong>locally</strong>. Only schema names, SQL, row
+  counts and error text go to the provider — never the rows. Each answer shows
+  the per-source SQL (copy, or open in SQL when it is the current connection),
+  the local join, the merged table and a short step log.</li>
+<li><strong>Per-connection AI switches</strong> — in the connection form, turn off <strong>AI can
+  see this schema</strong> to hide a database from the agent entirely, or turn off
+  <strong>AI can run read-only queries</strong> to keep it inspect-only. Statements run by
+  the agent are written to the audit log.</li>
+<li>
+<p><strong>Docked AI and record panels</strong> — the AI chat opens on the right without
+  covering the grid; clicking a row number opens a TablePlus-style <strong>Record</strong>
+  panel on the right with each column name, type and value.
+<strong>Microsoft SQL Server.</strong> T-SQL is not MySQL with different keywords, and the parts
+that differ are the parts people notice:</p>
+</li>
+<li>
+<p>identifiers are bracketed (<code>[dbo].[orders]</code>) and literals are <code>N'…'</code>, so a Unicode
+  value survives the code-page round trip;</p>
+</li>
+<li>paging uses <code>ORDER BY … OFFSET n ROWS FETCH NEXT m ROWS ONLY</code>, which requires an
+  ORDER BY even when you did not pick a column, and TOP cannot be combined with it;</li>
+<li>column types come from the catalog (<code>sys.columns</code>), because the driver only reports
+  five coarse DB-Library categories; <code>timestamp</code> is rendered as <code>rowversion</code> since it
+  is a binary counter, not a date;</li>
+<li><code>contains</code>/<code>startswith</code> pin a collation instead of inheriting the database default,
+  so case-insensitivity does not change per server;</li>
+<li>the driver is <code>pymssql</code>, which ships wheels for every platform including Windows on
+  ARM and bundles FreeTDS — there is no ODBC driver for the user to install. TLS is a
+  connection setting (<code>off</code>, <code>request</code>, <code>require</code>, <code>default</code>); Azure SQL needs
+  <code>require</code>.</li>
+<li>
+<p>SQL Server has no read-only transaction mode to switch on, so read-only here means
+  the statement guard plus, ideally, a login whose grants cannot write.</p>
+</li>
+<li>
+<p><strong>New connection type cards</strong> — the connection form shows real logos for
+  PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, ClickHouse, MongoDB, Redis,
+  SQLite, MCP and HTTP;
+  choosing a card sets the default port. MariaDB is stored as MySQL with a
+  <code>mariadb</code> flavor. MongoDB has SRV and auth-source options; Redis has a
+  database index.</p>
+</li>
+<li><strong>MongoDB document browser</strong> — collections appear in the tree; the data grid
+  pages documents, the filter panel accepts column filters or a raw Mongo
+  filter object (<code>{"age": {"$gt": 18}}</code>), and the Query tab runs JSON commands
+  (<code>{"collection": "users", "find": {...}, "sort": {...}, "limit": 50}</code> or
+  <code>aggregate</code>). Double-click a cell to edit a field, <strong>+ Row</strong> inserts a
+  document, and row actions delete. Nested objects/arrays show as compact JSON.
+  Reads use the sampled field list; production writes go through the approval
+  drawer.</li>
+<li><strong>Redis / Valkey browser</strong> — the tree lists the logical databases, the grid
+  scans keys (<code>key</code>, <code>type</code>, <code>ttl</code>, <code>size</code>) with a <code>MATCH</code> pattern filter, and
+  clicking a key opens a value drawer for strings, hashes, lists, sets, sorted
+  sets and streams. The <strong>Console</strong> tab runs any command (<code>GET</code>, <code>HGETALL</code>,
+  <code>SCAN</code>, ...); read-only connections refuse writes, and production writes ask
+  for approval first.</li>
+<li><strong>Connection picker</strong> — the app opens on a TablePlus-style list: search,
+  groups, type icons, read-only/PROD badges; pick a connection, then the full
+  browser opens. Right-click a connection for <strong>Open / Edit / Clone / Test /
+  Export / Delete</strong>; Clone duplicates the encrypted credentials too. <strong>New connection</strong> goes straight to the form, and the chevron
+  in the header returns to the list.</li>
+<li><strong>Connection rail</strong> — when more than one connection is open, a slim rail
+  appears on the left. Right-click an icon for <strong>Open / Edit connection / Close
+  connection / Close other connections / Close all connections</strong>. With a
+  single connection open the rail hides itself.</li>
+<li><strong>Resume last connection</strong> — after you click the back chevron (or relaunch
+  the app), the picker shows a <strong>Continue where you left off</strong> banner for the
+  last connection you opened. One click returns to that explorer.</li>
+<li><strong>Import / export &amp; QR</strong> — export one connection from the share icon or all of
+  them from the picker as a <code>.dbdesk</code> bundle. Passwords are left out by default;
+  tick <strong>Include passwords</strong> to encrypt them with a passphrase (scrypt +
+  AES-GCM). Import accepts a file, pasted bundle or <code>dbdesk://</code> link, shows a
+  preview, then merges with new ids. <strong>Show QR</strong> renders a scannable code for a
+  single connection (QR capacity is limited, so large bundles fall back to the
+  file/copy).</li>
+<li><strong>Backup &amp; restore (migration)</strong> — Settings → <strong>Backup all</strong> writes one file
+  with every connection, saved view and saved query. Passwords are optional and
+  encrypted (scrypt + AES-GCM). On the new Mac, <strong>Restore</strong> previews the file,
+  creates the connections, remaps views/queries to the new ids and leaves
+  passwords blank when they were not included.</li>
+<li><strong>Structure grid</strong> — the Structure tab (bottom switcher) shows a TablePlus-style structure
+  grid: <code>#</code>, column, data type, character set, collation, nullable, default,
+  extra (auto-increment/identity), foreign key and comment, plus an index grid
+  (<code>index_name</code>, algorithm, unique, column). DDL is still available from the
+  <strong>DDL</strong> button but no longer the default view.</li>
+<li><strong>SQL query tabs</strong> — <strong>SQL</strong> (or <strong>⌘T</strong>) opens a dedicated query tab next to
+  the table tabs. Each tab keeps its own SQL text and result set, so a second
+  query does not overwrite the first; close a tab when you are done.</li>
+<li><strong>Bottom data toolbar</strong> — Run, Limit, Filter, row metadata, view/SQL/column
+  actions, More menu and pagination sit under the grid, like TablePlus.</li>
+<li><strong>TablePlus-style filters</strong> — each row has a checkbox, a <strong>Raw SQL / column</strong>
+  picker, a full-width pattern, <strong>Apply</strong>, <strong>−</strong> and <strong>+</strong>. Raw SQL rows append
+  a WHERE expression; column rows keep the operator/value controls. <strong>Apply
+  all</strong> enables every valid row, <strong>Clear</strong> unapplies the filters but keeps
+  their values (press Apply to re-enable), and <strong>SQL</strong> turns the active filters
+  into a SELECT. Saved views keep the flags.</li>
+<li><strong>Flexible export</strong> — export the current table as <strong>CSV</strong>, <strong>JSON</strong> or <strong>SQL
+  INSERTs</strong> from the table right-click menu or the <strong>More</strong> menu. The export
+  respects the active filters and sort and caps at 50k rows (200k server cap).</li>
+<li><strong>Quick panel (⌘P / Ctrl+P)</strong> — jump to a table, view, schema, function or
+  connection, or run actions such as <strong>New SQL tab</strong>, <strong>Toggle theme</strong>,
+  <strong>Settings</strong> and <strong>Close connection</strong>. Arrow keys + Enter work.</li>
+<li><strong>SQL editor</strong> — syntax highlighting for keywords, strings, numbers, comments
+  and function calls. Autocomplete is <strong>alias-aware</strong> (<code>c.</code> lists the columns of
+  the table aliased <code>c</code>), knows every table referenced in <code>FROM</code>/<code>JOIN</code>, includes
+  table names, columns and functions, and supports fuzzy matching with a source
+  label. <code>⌘Space</code> / <code>Ctrl+Space</code> opens the list manually; <code>↑</code>/<code>↓</code> + <code>Tab</code>/<code>Enter</code>
+  accepts.</li>
+<li><strong>JSON editor</strong> — double-click a JSON/JSONB cell for a large modal with
+  <strong>Format</strong>, <strong>NULL</strong>, Cancel and Save; invalid JSON is rejected.</li>
+<li><strong>AI autocomplete (on by default)</strong> — once an AI provider is configured,
+  press <strong>⌘I</strong> / <strong>Ctrl+I</strong> in the SQL editor; turn it off under
+  <strong>Settings → AI provider</strong> if you prefer. The configured model returns
+  a continuation at the caret; <strong>Tab</strong> inserts it and <strong>Esc</strong> dismisses it. Only
+  the SQL text and schema metadata are sent — never rows or secrets.</li>
+<li><strong>Model detection</strong> — in <strong>Settings → AI provider</strong>, enter the base URL and
+  API key and press <strong>Detect models</strong>. The model field turns into a picker of
+  the models the provider reports, with <strong>Type</strong> to go back to a custom name.</li>
+<li><strong>Saved query buttons</strong> — the SQL toolbar has <strong>Save</strong> (name + current SQL)
+  and <strong>Saved</strong> (opens the snippet list); the same snippets are available to the
+  MCP agent through <code>queries_list</code> / <code>query_save</code> / <code>query_delete</code>.</li>
+<li>
+<p>Everything the plugin page does:</p>
+</li>
+<li>
+<p>connections (Postgres, MySQL/MariaDB, SQL Server, ClickHouse, SQLite, MongoDB,
+  Redis/Valkey) with SSH tunnels, custom tunnel commands, MCP query tools and
+  HTTP gateways</p>
+</li>
+<li>schema tree, typed data grid, inline editing, filters, tabs, saved views</li>
+<li>SQL runner, autocomplete, formatter, history, saved queries, charts</li>
+<li>structure grid (columns + indexes) with on-demand DDL, cross-connection diff,
+  add/drop/rename column, index editor</li>
+<li>CSV import and whole-table export</li>
+<li>serialized-PHP tools and the WordPress Site tab</li>
+<li>read-only guard, production approvals and the write audit log</li>
+<li>Activity drawer</li>
+</ul>
+<p>Notes for the standalone build:</p>
+<ul>
+<li><strong>Native macOS notifications</strong> — approval requests and production writes show
+  a system notification while the app is running. Nothing is sent to Telegram or
+  any external service. Approve writes in the <strong>Approvals</strong> drawer; test with
+  <strong>Settings → Notifications → Test</strong>.
+  Because the build is ad-hoc signed (no Apple Developer ID), macOS ties the
+  notification permission to the current signature and drops it after every
+  update. Open <strong>System Settings → Notifications → DB Desk</strong>, enable it and
+  choose <strong>Alerts</strong>; the Settings panel has a shortcut plus diagnostics. The
+  <strong>Fallback</strong> test posts through Script Editor for setups where native delivery
+  still fails. With a Developer ID build the permission survives updates.</li>
+<li><strong>MCP connections work directly.</strong> Add the streamable-HTTP endpoint
+  (e.g. <code>https://mcp.example.com/mcp</code>), the tool name and SQL argument,
+  then <strong>Authorize</strong>: DB Desk runs OAuth 2.1 with PKCE through a loopback
+  redirect, opens the system browser, stores the tokens encrypted and refreshes
+  them automatically. No token pasting. Unauthenticated MCP servers also work;
+  Hermes-style named MCP servers still work in the plugin.</li>
+<li>SQLite needs the file on this machine (no upload).</li>
+</ul>
+      <p class="docs-edit"><a href="https://github.com/wzul/dbdesk-app/blob/main/docs/features.md" target="_blank" rel="noopener">Edit this page on GitHub</a></p>
+    </article>
+    
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <div class="foot-brand">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      <span>DB Desk · dbdesk.app — a native database browser for macOS, Windows and Linux</span>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="https://github.com/wzul/dbdesk-app/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="/security/">Security</a>
+      <a href="https://github.com/wzul/dbdesk-app/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <div>© <span id="year">2026</span> DB Desk</div>
+  </div>
+</footer>
+
+</body>
+</html>

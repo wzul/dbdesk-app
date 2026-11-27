@@ -1,0 +1,22 @@
+# DB Desk
+
+> A native, keyboard-first database browser for macOS, Windows and Linux. Read-only until you say otherwise, credentials encrypted on your machine, one window for every engine you touch.
+
+Engines: PostgreSQL, Amazon Redshift, CockroachDB, Greenplum, MySQL, MariaDB, SingleStore, Microsoft SQL Server, ClickHouse, SQLite, MongoDB, Redis / Valkey, MCP servers, HTTP SQL gateways.
+
+Read-only by default; writes need an explicit toggle, and production connections need a single-use approval bound to a hash of the exact statement. Credentials are encrypted at rest on the user's machine, and the AI features send schema and SQL, never rows, values or keys.
+
+## Docs
+- [Getting started](https://dbdesk.app/docs/getting-started.html): Install DB Desk and connect a database.
+- [Features](https://dbdesk.app/docs/features.html): Everything in the app, screen by screen.
+- [MCP server](https://dbdesk.app/docs/mcp.html): Expose your databases to local agents over MCP.
+- [Security](https://dbdesk.app/docs/security.html): What DB Desk reaches, what leaves your machine, threat model.
+- [Development](https://dbdesk.app/docs/development.html): Build from source, run the suite, package.
+- [Signing](https://dbdesk.app/docs/signing.html): Sign and notarize a release.
+- [Troubleshooting](https://dbdesk.app/docs/troubleshooting.html): Symptom, cause, fix.
+- [Security model](https://dbdesk.app/security/): what leaves the machine, measured, with the script that reproduces the numbers.
+
+## Machine-readable
+- [llms-full.txt](https://dbdesk.app/llms-full.txt): every docs page in full.
+- [sitemap.xml](https://dbdesk.app/sitemap.xml): all pages.
+- [Source](https://github.com/wzul/dbdesk-app): MIT, public, including the release pipeline and its signing steps.

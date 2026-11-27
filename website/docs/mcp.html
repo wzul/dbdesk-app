@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP server — DB Desk docs</title>
+<meta name="description" content="Expose your databases to local agents over MCP.">
+<link rel="canonical" href="https://dbdesk.app/docs/mcp.html">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://dbdesk.app/docs/mcp.html">
+<meta property="og:site_name" content="DB Desk">
+<meta property="og:title" content="MCP server — DB Desk docs">
+<meta property="og:description" content="Expose your databases to local agents over MCP.">
+<meta property="og:image" content="https://dbdesk.app/assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/favicon.svg">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="stylesheet" href="/assets/styles.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"DB Desk","item":"https://dbdesk.app/"},{"@type":"ListItem","position":2,"name":"Docs","item":"https://dbdesk.app/docs/"},{"@type":"ListItem","position":3,"name":"MCP server","item":"https://dbdesk.app/docs/mcp.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"MCP server","description":"Expose your databases to local agents over MCP.","url":"https://dbdesk.app/docs/mcp.html","isPartOf":{"@type":"WebSite","name":"DB Desk","url":"https://dbdesk.app/"},"publisher":{"@type":"Organization","name":"DB Desk"}}</script>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24">
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" opacity=".12"/>
+      <ellipse cx="12" cy="7.4" rx="5.1" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 7.4v9.2c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2V7.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.9 12c0 1.2 2.3 2.2 5.1 2.2s5.1-1 5.1-2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.2a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.7.6-3.3-1.2-3.3-1.2-.4-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.3-1.1.6-1.4-2.2-.3-4.5-1.1-4.5-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.3 4.6-4.5 4.9.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.2Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      DB Desk
+    </a>
+    <nav class="nav-links">
+      <a href="/#features">Features</a>
+      <a href="/#databases">Databases</a>
+      <a href="/#ai">AI</a>
+      <a href="/#mcp">MCP</a>
+      <a href="/security/">Security</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="/#download">Download</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">
+        <svg><use href="#i-github"/></svg> GitHub
+      </a>
+      <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main class="docs">
+  <div class="wrap docs-grid">
+    <nav class="docs-nav" aria-label="Documentation">
+      <a class="docs-nav-item" href="/docs/">Overview</a>
+      <a class="docs-nav-item" href="/docs/getting-started.html">Getting started</a><a class="docs-nav-item" href="/docs/features.html">Features</a><a class="docs-nav-item is-active" href="/docs/mcp.html">MCP server</a><a class="docs-nav-item" href="/docs/security.html">Security</a><a class="docs-nav-item" href="/docs/development.html">Development</a><a class="docs-nav-item" href="/docs/signing.html">Signing</a><a class="docs-nav-item" href="/docs/troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <article class="docs-body prose">
+      <h1>MCP server</h1>
+<p>DB Desk can act as a Model Context Protocol server so a <strong>local</strong> agent can
+drive the same connections the app uses. Nothing is exposed until you enable it
+in <strong>Settings → MCP server</strong>.</p>
+<h3 id="transports">Transports</h3>
+<p><strong>stdio</strong> (Claude Desktop, Cursor, most clients): the bundled sidecar runs as a
+bridge and talks to the open app.</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;dbdesk&quot;: {
+      &quot;command&quot;: &quot;/Applications/DB Desk.app/Contents/Resources/sidecar/dbdesk-server/dbdesk-server&quot;,
+      &quot;args&quot;: [&quot;mcp&quot;],
+      &quot;env&quot;: { &quot;DBDESK_HOME&quot;: &quot;/Users/you/Library/Application Support/DB Desk&quot; }
+    }
+  }
+}
+</code></pre>
+<p>Use <strong>Copy stdio config</strong> in Settings to get the exact paths for your install.</p>
+<p><strong>HTTP</strong> (Streamable HTTP, JSON-RPC 2.0): <code>POST http://127.0.0.1:&lt;port&gt;/mcp</code>
+with <code>Authorization: Bearer &lt;token&gt;</code>. Use <strong>Copy HTTP config</strong>.</p>
+<p>The app must be open. The bridge discovers the port from
+<code>&lt;app home&gt;/data/runtime.json</code>; the token lives in <code>&lt;app home&gt;/data/mcp.json</code>
+(mode 0600).</p>
+<h3 id="connecting-to-an-mcp-server">Connecting to an MCP server</h3>
+<ol>
+<li>Paste the Streamable-HTTP URL and click <strong>Authorize</strong>.</li>
+<li>Click <strong>Detect tools</strong>. DB Desk calls <code>tools/list</code> and shows the tools that
+   look like SQL runners (usually names ending in <code>_query</code>), with the detected
+   dialect and database name.</li>
+<li>Pick one. DB Desk fills the <strong>SQL argument</strong> (usually <code>sql</code>), the dialect and
+   the <strong>Database label</strong>.</li>
+</ol>
+<p>For an MCP connection the <strong>Database</strong> field is only a display label — the
+tool you pick determines the real database. If the tool itself needs a
+database argument, put it in <strong>Extra arguments</strong>, for example
+<code>{"database":"analytics"}</code>.</p>
+<h3 id="tools">Tools</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>connections_list</code></td>
+<td>saved connections (no passwords or tokens)</td>
+</tr>
+<tr>
+<td><code>databases_list</code></td>
+<td>databases reachable through a connection</td>
+</tr>
+<tr>
+<td><code>tables_list</code></td>
+<td>schemas + tables/views</td>
+</tr>
+<tr>
+<td><code>table_columns</code> / <code>table_indexes</code> / <code>table_ddl</code></td>
+<td>structure</td>
+</tr>
+<tr>
+<td><code>table_rows</code></td>
+<td>rows with filters, order, limit, offset</td>
+</tr>
+<tr>
+<td><code>table_csv</code></td>
+<td>CSV text (capped, reports <code>truncated</code>)</td>
+</tr>
+<tr>
+<td><code>query</code></td>
+<td>one SQL statement, audited as <code>mcp_query</code></td>
+</tr>
+<tr>
+<td><code>ask_data</code></td>
+<td>DB Desk's AI agent, including multi-database local joins</td>
+</tr>
+<tr>
+<td><code>connection_draft</code></td>
+<td>propose a connection; the user reviews it and types the password</td>
+</tr>
+<tr>
+<td><code>connection_update</code></td>
+<td>edit non-secret fields (host, port, db, user, group, SSH)</td>
+</tr>
+<tr>
+<td><code>connection_delete</code></td>
+<td>queue deletion for approval</td>
+</tr>
+<tr>
+<td><code>connection_test</code></td>
+<td>open the saved connection and return server details</td>
+</tr>
+<tr>
+<td><code>views_list</code> / <code>view_create</code> / <code>view_delete</code></td>
+<td>manage saved views</td>
+</tr>
+<tr>
+<td><code>queries_list</code> / <code>query_save</code> / <code>query_delete</code></td>
+<td>manage the SQL snippets in the Queries drawer</td>
+</tr>
+<tr>
+<td><code>app_status</code></td>
+<td>version, data path, counts, AI model, MCP and notification state</td>
+</tr>
+<tr>
+<td><code>settings_update</code></td>
+<td>toggle notifications, set the AI model, turn MCP writes off</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="connection-drafts">Connection drafts</h3>
+<p>An agent cannot receive or send database passwords. <code>connection_draft</code> stores a
+pending draft; the picker shows <strong>Agent drafted “…”</strong> with <strong>Review</strong>. The normal
+connection form opens prefilled, the user types the password, and saving marks
+the draft applied. Drafts never contain secret-like keys.</p>
+<h3 id="destructive-actions">Destructive actions</h3>
+<p><code>connection_delete</code> and production <code>connection_update</code> create entries in
+<strong>Approvals</strong>. Nothing changes until the user approves; the audit log records
+both the request and the result. <code>settings_update</code> cannot enable writes, change
+the AI base URL/key or read the MCP token.</p>
+<h3 id="writes">Writes</h3>
+<ul>
+<li>A <strong>read-only</strong> connection only accepts <code>SELECT</code>/<code>WITH</code>/<code>SHOW</code>/<code>EXPLAIN</code>.</li>
+<li>A writable connection can run writes when <strong>Allow writes</strong> is on (it is on
+  when you first enable MCP; turn it off if the agent should be read-only).</li>
+<li>Production writes use the existing audit + native notification path.</li>
+<li>Every MCP statement is written to the audit log with action <code>mcp_query</code>.</li>
+</ul>
+<h3 id="connection-access-model">Connection access model</h3>
+<p>The connection picker is <strong>not</strong> an access gate. MCP clients talk to the local
+service directly, so when the server is enabled, <strong>every saved connection is
+reachable</strong> — even one you never opened in the picker. A tunnel or pool is
+opened on demand by the backend when a tool first uses that connection. Opening
+a table in the UI and exposing a connection to MCP are separate things.</p>
+<p>To restrict what an agent can touch:</p>
+<ul>
+<li>turn the <strong>MCP server</strong> off when you are not using it;</li>
+<li>keep connections <strong>read-only</strong>, or give their database user limited grants;</li>
+<li>turn <strong>Allow writes</strong> off for an agent that should only read;</li>
+<li>delete connections you do not want exposed;</li>
+<li>quit DB Desk — both stdio and HTTP transports stop immediately.</li>
+</ul>
+<h3 id="writes_1">Writes</h3>
+<ul>
+<li>A <strong>read-only</strong> connection only accepts <code>SELECT</code>/<code>WITH</code>/<code>SHOW</code>/<code>EXPLAIN</code>.</li>
+<li>A writable connection can run writes when <strong>Allow writes</strong> is on.</li>
+<li>Production writes are written to the audit log and send the native
+  notification. They do <strong>not</strong> raise the approval drawer — keep the MCP token
+  private and prefer read-only connections for agents.</li>
+<li>Every MCP statement is written to the audit log with action <code>mcp_query</code>.</li>
+</ul>
+<h3 id="security">Security</h3>
+<ul>
+<li>The HTTP endpoint binds to the app's loopback socket only.</li>
+<li>Requests require the bearer token; rotate it from Settings at any time.</li>
+<li>Tool results never include passwords, API keys or SSH material.</li>
+<li>Disable the server (or quit the app) and both transports stop immediately.</li>
+</ul>
+      <p class="docs-edit"><a href="https://github.com/wzul/dbdesk-app/blob/main/docs/mcp.md" target="_blank" rel="noopener">Edit this page on GitHub</a></p>
+    </article>
+    <aside class="docs-toc"><p class="docs-toc-title">On this page</p><a class="docs-toc-l3" href="#transports">Transports</a><a class="docs-toc-l3" href="#connecting-to-an-mcp-server">Connecting to an MCP server</a><a class="docs-toc-l3" href="#tools">Tools</a><a class="docs-toc-l3" href="#connection-drafts">Connection drafts</a><a class="docs-toc-l3" href="#destructive-actions">Destructive actions</a><a class="docs-toc-l3" href="#writes">Writes</a><a class="docs-toc-l3" href="#connection-access-model">Connection access model</a><a class="docs-toc-l3" href="#writes_1">Writes</a><a class="docs-toc-l3" href="#security">Security</a></aside>
+  </div>
+</main>
+<footer>
+  <div class="wrap foot">
+    <div class="foot-brand">
+      <svg style="color:var(--primary)"><use href="#i-mark"/></svg>
+      <span>DB Desk · dbdesk.app — a native database browser for macOS, Windows and Linux</span>
+    </div>
+    <div class="foot-links">
+      <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="https://github.com/wzul/dbdesk-app/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="/security/">Security</a>
+      <a href="https://github.com/wzul/dbdesk-app/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <div>© <span id="year">2026</span> DB Desk</div>
+  </div>
+</footer>
+
+</body>
+</html>

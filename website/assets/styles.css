@@ -643,3 +643,196 @@ table.data code, .prose code {
 .badge-ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .badge-gap { background: color-mix(in srgb, var(--destructive) 14%, transparent); color: var(--destructive); }
 .badge-neutral { background: var(--quaternary); color: var(--text-3); }
+
+/* ---------- documentation (generated from docs/*.md) ---------- */
+
+/* A three-track grid: sidebar, prose, on-this-page. The sidebar keeps its own scroll so a
+   long page does not scroll it away, and both rails collapse before the prose narrows to
+   the point of reflowing code blocks. */
+.docs { padding: 40px 0 72px; }
+.docs-grid {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 190px;
+  gap: 40px;
+  align-items: start;
+}
+.docs-nav {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-right: 12px;
+  border-right: 1px solid var(--stroke);
+}
+.docs-nav-item {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.docs-nav-item:hover { background: var(--bg-canvas); color: var(--text); }
+.docs-nav-item.is-active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 620;
+}
+
+.docs-toc {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+}
+.docs-toc-title {
+  margin: 0 0 6px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 660;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.docs-toc a { color: var(--text-3); text-decoration: none; line-height: 1.45; }
+.docs-toc a:hover { color: var(--primary); }
+.docs-toc-l3 { padding-left: 10px; font-size: 12px; }
+
+.docs-body { max-width: 760px; min-width: 0; }
+.docs-body h1 { margin: 0 0 4px; font-size: clamp(26px, 3.4vw, 34px); letter-spacing: -0.024em; }
+.docs-body h2 { margin-top: 36px; padding-top: 4px; scroll-margin-top: 84px; }
+.docs-body h3 { scroll-margin-top: 84px; }
+.docs-body h2 code, .docs-body h3 code { font-size: inherit; }
+.docs-body p { color: var(--text-2); }
+.docs-body ol { margin: 12px 0 0; padding-left: 20px; color: var(--text-2); font-size: 15px; line-height: 1.62; }
+.docs-body blockquote {
+  margin: 18px 0 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--stroke-strong);
+  color: var(--text-3);
+  font-size: 14.5px;
+}
+.docs-body pre {
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--bg-canvas);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  tab-size: 2;
+}
+.docs-body pre code { padding: 0; background: none; font-size: inherit; }
+.docs-body table {
+  width: 100%;
+  margin: 16px 0 0;
+  border-collapse: collapse;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  font-size: 13.5px;
+}
+.docs-body th, .docs-body td {
+  padding: 9px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--stroke);
+}
+.docs-body th {
+  background: var(--bg-canvas);
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 660;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.docs-body tr:last-child td { border-bottom: 0; }
+.docs-body hr { margin: 34px 0 0; border: 0; border-top: 1px solid var(--stroke); }
+.docs-edit {
+  margin-top: 40px !important;
+  padding-top: 16px;
+  border-top: 1px solid var(--stroke);
+  font-size: 13px !important;
+}
+
+.docs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.docs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--chrome);
+  text-decoration: none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.docs-card:hover { border-color: var(--stroke-strong); box-shadow: var(--shadow-sm); }
+.docs-card strong { font-size: 14px; color: var(--text); }
+.docs-card span { font-size: 12.5px; color: var(--text-3); line-height: 1.45; }
+
+@media (max-width: 1080px) {
+  .docs-grid { grid-template-columns: 180px minmax(0, 1fr); gap: 28px; }
+  .docs-toc { display: none; }
+}
+@media (max-width: 760px) {
+  .docs { padding-top: 24px; }
+  .docs-grid { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .docs-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 0 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .docs-body pre { font-size: 12px; }
+}
+
+/* Long tokens — a JDBC URL, a file path, a connection string — are the usual cause of a
+   phone-width page that scrolls sideways. Inline code wraps anywhere; a fenced block keeps
+   its own horizontal scroll so the code stays readable. */
+.docs-body code { overflow-wrap: anywhere; }
+.docs-body pre { max-width: 100%; }
+.docs-body .table-wrap { max-width: 100%; }
+
+/* The base `code` rule is nowrap, which is right for a shell command on its own line and
+   wrong for a path or URL sitting inside a sentence: on a phone it pushes the whole page
+   sideways. Inline snippets wrap; fenced blocks keep scrolling. */
+.docs-body :not(pre) > code { white-space: normal; }
+
+/* ---------- docs: give technical content the room it needs ---------- */
+
+/* A 200/1fr/190 split inside 1120px leaves the prose about 650px, which is fine for
+   sentences and tight for shell commands. Trim the rails and let the article breathe. */
+.docs-grid { grid-template-columns: 186px minmax(0, 1fr) 176px; gap: 32px; }
+.docs-body { max-width: 820px; }
+
+/* Overlay scrollbars are invisible until you scroll, which makes a wide command look
+   truncated rather than scrollable. Show a slim one on every code block. */
+.docs-body pre { scrollbar-width: thin; scrollbar-color: var(--stroke-strong) transparent; }
+.docs-body pre::-webkit-scrollbar { height: 9px; }
+.docs-body pre::-webkit-scrollbar-thumb {
+  background: var(--stroke-strong);
+  border-radius: 999px;
+}
+.docs-body pre::-webkit-scrollbar-track { background: transparent; }
+
+/* The header link for the section you are in should read as current. */
+.nav-links a[aria-current="page"] { color: var(--text); font-weight: 620; }
+
+/* The base `code` rule is `white-space: nowrap`, and it wins inside a fenced block: the
+   newlines collapse, four shell commands render as one long clipped line, and the block
+   looks broken. A block keeps its own line breaks and scrolls sideways. */
+.docs-body pre code { white-space: pre; }

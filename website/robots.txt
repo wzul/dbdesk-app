@@ -1,3 +1,5 @@
+# Every page is meant to be read by people and by machines; nothing here is
+# gated. llms.txt is the short map, llms-full.txt the whole thing.
 User-agent: *
 Allow: /
 
