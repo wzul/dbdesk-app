@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 import { relaunch } from '@tauri-apps/plugin-process'
 import { Badge, Button, Codicon, Input, cn, rest } from './sdk-shim.jsx'
 import { isMacOS, sendNativeNotification } from './notify.js'
 import { chord } from './platform.js'
+import { useDialogFocus } from './dialog-focus.js'
 import { HOMEPAGE_URL, REPO_URL, openExternal } from './open-link.js'
 import { autoUpdateEnabled, setAutoUpdateEnabled } from './updates.js'
 
@@ -34,6 +35,8 @@ function Row({ label, hint, children }) {
 }
 
 export default function SettingsDialog({ open, onClose, version }) {
+  const panelRef = useRef(null)
+  useDialogFocus(panelRef, { active: Boolean(open) })
   const [config, setConfig] = useState(null)
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
@@ -401,7 +404,12 @@ export default function SettingsDialog({ open, onClose, version }) {
   return (
     <>
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[8px] border border-(--ui-stroke-secondary) bg-background shadow-2xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        className="flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[8px] border border-(--ui-stroke-secondary) bg-background shadow-2xl">
         <div className="flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-secondary) px-4 py-2.5">
           <Codicon name="settings-gear" className="text-(--ui-text-secondary)" />
           <span className="text-[13px] font-semibold">Settings</span>
