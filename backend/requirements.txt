@@ -16,6 +16,15 @@ PyMySQL>=1.2.4
 # DuckDB: embedded analytics, wheels for every platform (including win_arm64). It reads and
 # writes a single file, so read-only is enforced at connect time rather than by a grant.
 duckdb>=1.4
+# Oracle: the *thin* driver needs no Instant Client and no ORACLE_HOME; wheels for every
+# platform we ship, so an Oracle connection is a dialog, not an installation.
+oracledb>=4.0
+# Vertica speaks its own protocol and its driver is pure Python.
+vertica-python>=1.4
+# Cassandra: CQL. Same shape as psycopg above — cassandra-driver publishes no win_arm64
+# wheel, and building it there needs MSVC plus libev, so Windows on ARM gets every other
+# engine and a clear "not installed" message for Cassandra instead of a broken installer.
+cassandra-driver>=3.29; platform_machine != "ARM64"
 certifi>=2026.11.20
 pymongo>=4.20.2
 redis>=8.2.0

@@ -3718,6 +3718,27 @@ function DatabaseLogo({ kind, flavor, size = 22 }) {
   })
 }
 
+// The cloud warehouses are reached over HTTPS with a signed request, so each one needs a
+// couple of settings the generic host/port/user fields cannot carry.
+const CLOUD_OPTIONS = {
+  athena: {
+    hint: 'Region, and the S3 prefix Athena writes every result set to.',
+    placeholder: '{"region": "ap-southeast-1", "output": "s3://my-bucket/athena/"}'
+  },
+  dynamodb: {
+    hint: 'Region. Add "endpoint" for DynamoDB Local or a VPC endpoint.',
+    placeholder: '{"region": "ap-southeast-1"}'
+  },
+  bigquery: {
+    hint: 'Project and dataset. The user is the service-account e-mail, the password its PEM key.',
+    placeholder: '{"project": "my-project", "dataset": "demo"}'
+  },
+  snowflake: {
+    hint: 'Warehouse, role and schema. The host is your account URL.',
+    placeholder: '{"warehouse": "COMPUTE_WH", "role": "SYSADMIN", "schema": "PUBLIC"}'
+  }
+};
+
 const DB_KIND_CARDS = [
   { kind: 'postgres', label: 'PostgreSQL', port: 5432 },
   { kind: 'redshift', label: 'Amazon Redshift', port: 5439 },
@@ -3736,6 +3757,13 @@ const DB_KIND_CARDS = [
   { kind: 'influxdb3', label: 'InfluxDB 3', port: 8181 },
   { kind: 'libsql', label: 'libSQL', port: 443 },
   { kind: 'd1', label: 'Cloudflare D1', port: 443 },
+  { kind: 'oracle', label: 'Oracle', port: 1521 },
+  { kind: 'vertica', label: 'Vertica', port: 5433 },
+  { kind: 'cassandra', label: 'Cassandra', port: 9042 },
+  { kind: 'athena', label: 'Amazon Athena', port: 443 },
+  { kind: 'dynamodb', label: 'DynamoDB', port: 443 },
+  { kind: 'bigquery', label: 'BigQuery', port: 443 },
+  { kind: 'snowflake', label: 'Snowflake', port: 443 },
   { kind: 'mcp', label: 'MCP', port: 0 },
   { kind: 'http', label: 'HTTP', port: 0 }
 ]
@@ -4487,7 +4515,8 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                     })
                   })
                 : null,
-              !['mysql', 'mcp', 'http', 'sqlite', 'sqlserver'].includes(draft.kind || 'postgres')
+              !['mysql', 'mcp', 'http', 'sqlite', 'sqlserver',
+                'athena', 'dynamodb', 'bigquery', 'snowflake'].includes(draft.kind || 'postgres')
                 ? jsx(Field, {
                 label: 'SSL mode',
                 children: jsxs('select', {
@@ -4499,6 +4528,18 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                   )
                 })
               })
+                : null,
+              CLOUD_OPTIONS[draft.kind || 'postgres']
+                ? jsx(Field, {
+                    key: 'engine-options',
+                    label: 'Options (JSON)',
+                    hint: CLOUD_OPTIONS[draft.kind || 'postgres'].hint,
+                    children: jsx(Input, {
+                      value: draft.options || '',
+                      placeholder: CLOUD_OPTIONS[draft.kind || 'postgres'].placeholder,
+                      onChange: set('options')
+                    })
+                  })
                 : null,
               (draft.kind || 'postgres') === 'clickhouse'
                 ? jsxs('div', {

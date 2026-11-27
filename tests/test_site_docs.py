@@ -9,6 +9,7 @@ builder.
 
 import pathlib
 import re
+import sys
 import unittest
 from xml.etree import ElementTree
 
@@ -75,6 +76,29 @@ class DocsSiteTest(unittest.TestCase):
         robots = (SITE / "robots.txt").read_text()
         self.assertIn("Sitemap: https://dbdesk.app/sitemap.xml", robots)
         self.assertIn("Allow: /", robots)
+
+    def test_llms_index_names_every_engine_the_backend_has(self):
+        """llms.txt is the file an assistant reads first: a missing engine is a missing answer."""
+        sys.path.insert(0, str(ROOT / "backend"))
+        import dbdesk_api
+
+        # kind -> how the site spells it; the site may be prettier, never quieter
+        spellings = {
+            "postgres": "PostgreSQL", "redshift": "Redshift", "cockroachdb": "CockroachDB",
+            "greenplum": "Greenplum", "mysql": "MySQL", "singlestore": "SingleStore",
+            "sqlserver": "SQL Server", "clickhouse": "ClickHouse", "sqlite": "SQLite",
+            "duckdb": "DuckDB", "elasticsearch": "Elasticsearch", "influxdb3": "InfluxDB 3",
+            "libsql": "libSQL", "d1": "Cloudflare D1", "oracle": "Oracle", "vertica": "Vertica",
+            "cassandra": "Cassandra", "athena": "Athena", "dynamodb": "DynamoDB",
+            "bigquery": "BigQuery", "snowflake": "Snowflake", "mongodb": "MongoDB",
+            "redis": "Redis",
+        }
+        index = (SITE / "llms.txt").read_text()
+        missing = [
+            kind for kind in dbdesk_api.KINDS
+            if kind in spellings and spellings[kind] not in index
+        ]
+        self.assertEqual(missing, [], f"llms.txt does not name: {missing}")
 
     def test_llms_txt_indexes_the_docs(self):
         llms = (SITE / "llms.txt").read_text()

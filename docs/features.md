@@ -83,6 +83,47 @@ that differ are the parts people notice:
   ODBC driver to install); **ClickHouse**; **SQLite** and **DuckDB** by file;
   **MongoDB**; **Redis / Valkey**.
 
+  Three more engines have their own protocol and their own module, because a
+  dialect is not the only thing that differs:
+
+  - **Oracle** through `python-oracledb`'s *thin* driver — no Instant Client, no
+    `ORACLE_HOME`, nothing to install. Schemas are the owners you can see, the
+    system owners are hidden, and a table is `OWNER.TABLE` in double quotes.
+    `TIMESTAMP` columns and `CLOB` values are read as text, and DDL comes from
+    `DBMS_METADATA.GET_DDL`, which is what Oracle itself considers canonical.
+  - **Vertica** through `vertica_python`, also pure Python. Vertica has no
+    `CREATE INDEX`: a projection *is* the physical design, so the indexes panel
+    lists the projections that cover the table rather than pretending otherwise,
+    and DDL comes from `EXPORT_OBJECTS()`.
+  - **Cassandra** speaks CQL. There is no `OFFSET`, so the grid shows the first N
+    rows and says so instead of paging wrongly; `ORDER BY` only works on
+    clustering columns and the server rejects anything else; column types are CQL
+    types (`list<uuid>`, `map<text,int>`) shown as they are; and because Cassandra
+    keeps no DDL text, `CREATE TABLE` is reconstructed from `system_schema`,
+    including the composite partition key and any `CLUSTERING ORDER BY … DESC`.
+
+  Four cloud warehouses are reached over their own HTTPS APIs. None of them can be
+  exercised without an account, so they are implemented against the published API and
+  are **not yet proven against a live account** — treat them as available to try, not
+  as tested. They take one extra field, **Options (JSON)**:
+
+  - **Amazon Athena** — user is the access key id, password the secret key,
+    `{"region": "ap-southeast-1", "output": "s3://bucket/prefix"}`. Athena is
+    asynchronous: the query is started, polled and read back, and its result set is
+    written to that S3 prefix, which is why the prefix is required.
+  - **DynamoDB** — `{"region": "ap-southeast-1"}` (plus `endpoint` for DynamoDB
+    Local). A table has no fixed columns, so the attribute list shows the keys and
+    the rows are a `Scan`; the Query tab accepts PartiQL.
+  - **BigQuery** — user is the service-account e-mail and password its private key
+    (PEM), `{"project": "my-project", "dataset": "demo"}`. The JWT is signed locally
+    with `cryptography` and exchanged for a token, so no Google SDK is bundled.
+  - **Snowflake** — host is `account.snowflakecomputing.com`,
+    `{"warehouse": "…", "role": "…", "schema": "…"}`. This one uses Snowflake's own
+    connector, imported only when a Snowflake connection is opened.
+
+  None of the four is signed in with a saved browser session or an OAuth popup: the
+  credential is a key you paste, encrypted with the rest of the vault.
+
   Four engines are reached over HTTP instead, with no driver at all: put the base
   URL in **Host** and the token in **Password**.
   - **Elasticsearch** — indices appear as tables, the mapping as columns, documents
@@ -181,7 +222,8 @@ that differ are the parts people notice:
 
 - connections (PostgreSQL, Redshift, CockroachDB, Greenplum, MySQL/MariaDB,
   SingleStore, SQL Server, ClickHouse, SQLite, DuckDB, Elasticsearch, InfluxDB 3,
-  libSQL, Cloudflare D1, MongoDB, Redis/Valkey) with SSH tunnels, custom tunnel
+  libSQL, Cloudflare D1, Oracle, Vertica, Cassandra, Amazon Athena, DynamoDB,
+  BigQuery, Snowflake, MongoDB, Redis/Valkey) with SSH tunnels, custom tunnel
   commands, MCP query tools and HTTP gateways
 - schema tree, typed data grid, inline editing, filters, tabs, saved views
 - SQL runner, autocomplete, formatter, history, saved queries, charts

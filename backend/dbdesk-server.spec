@@ -18,9 +18,14 @@ def _present(*names):
     return [name for name in names if importlib.util.find_spec(name) is not None]
 
 
+# oracledb's thin driver imports cryptography lazily, deep inside hazmat, so PyInstaller's
+# static analysis never sees it: without these the bundled sidecar says "thin mode cannot be
+# used" on a machine that has the wheel installed.
+crypto_hidden = collect_submodules("cryptography.hazmat") if _present("cryptography") else []
+
 hiddenimports = collect_submodules("uvicorn") + _present(
     "cryptography", "Crypto", "Crypto.Cipher.AES"
-) + [
+) + crypto_hidden + [
     "fastapi",
     "mcp_gateway",
     "mcp_stdio",
@@ -39,7 +44,7 @@ datas += collect_data_files("certifi")
 # Native drivers: psycopg needs its bundled libpq, PyMySQL is pure Python.
 for package in (
     "psycopg", "psycopg_binary", "pymysql", "pymssql", "pymongo", "bson", "redis", "Crypto",
-    "duckdb",
+    "duckdb", "oracledb", "vertica_python", "cassandra",
 ):
     try:
         package_datas, package_binaries, package_hidden = collect_all(package)

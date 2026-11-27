@@ -39,6 +39,10 @@ import sqlite3
 
 import duckdb_kind
 import rest_kinds
+import oracle_kind
+import vertica_kind
+import cassandra_kind
+import cloud_kinds
 import ssl
 import subprocess
 import threading
@@ -129,6 +133,10 @@ KINDS = PG_KINDS | MY_KINDS | {
     "sqlserver", "clickhouse", "mongodb", "redis", "mcp", "http", "sqlite", "duckdb",
     # REST engines: no driver, no wire protocol — see backend/rest_kinds.py
     "elasticsearch", "influxdb3", "d1", "libsql",
+    # Own protocols, own modules: Oracle thin, Vertica, Cassandra (CQL)
+    "oracle", "vertica", "cassandra",
+    # Cloud warehouses — implemented against their APIs, not yet proven against an account
+    "athena", "dynamodb", "bigquery", "snowflake",
 }
 
 # Kinds that are a local file rather than a server: no host, no port, no tunnel.
@@ -140,6 +148,8 @@ DEFAULT_PORTS = {
     "mysql": 3306, "singlestore": 3306, "sqlserver": 1433, "clickhouse": 8123,
     "mongodb": 27017, "redis": 6379,
     "elasticsearch": 9200, "influxdb3": 8181, "d1": 443, "libsql": 443,
+    "oracle": 1521, "vertica": 5433, "cassandra": 9042,
+    "athena": 443, "dynamodb": 443, "bigquery": 443, "snowflake": 443,
 }
 
 
@@ -1791,6 +1801,14 @@ def _ddl(conn: dict[str, Any], schema: str, table: str) -> str:
         return _sqlite_ddl(conn, schema, table)
     if kind == "duckdb":
         return duckdb_kind.ddl(conn, schema, table)
+    if kind == "oracle":
+        return oracle_kind.ddl(conn, schema, table)
+    if kind == "vertica":
+        return vertica_kind.ddl(conn, schema, table)
+    if kind == "cassandra":
+        return cassandra_kind.ddl(conn, schema, table)
+    if cloud_kinds.handles(kind):
+        return cloud_kinds.ENGINES[kind]["ddl"](conn, schema, table)
     if rest_kinds.handles(kind):
         return rest_kinds.ENGINES[kind]["ddl"](conn, schema, table)
     if kind in MY_KINDS:
@@ -3165,6 +3183,14 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
         return _sqlite_indexes(conn, schema, table)
     if kind == "duckdb":
         return duckdb_kind.indexes(conn, schema, table)
+    if kind == "oracle":
+        return oracle_kind.indexes(conn, schema, table)
+    if kind == "vertica":
+        return vertica_kind.indexes(conn, schema, table)
+    if kind == "cassandra":
+        return cassandra_kind.indexes(conn, schema, table)
+    if cloud_kinds.handles(kind):
+        return cloud_kinds.ENGINES[kind]["indexes"](conn, schema, table)
     if kind == "mongodb":
         return _mongo_indexes(conn, schema, table)
     if kind == "sqlserver":
@@ -5508,6 +5534,14 @@ def _test(conn: dict[str, Any]) -> dict[str, Any]:
         return _sqlite_test(conn)
     if kind == "duckdb":
         return duckdb_kind.test(conn)
+    if kind == "oracle":
+        return oracle_kind.test(conn)
+    if kind == "vertica":
+        return vertica_kind.test(conn)
+    if kind == "cassandra":
+        return cassandra_kind.test(conn)
+    if cloud_kinds.handles(kind):
+        return cloud_kinds.ENGINES[kind]["test"](conn)
     if rest_kinds.handles(kind):
         return rest_kinds.ENGINES[kind]["test"](conn)
     if kind == "mongodb":
@@ -5533,6 +5567,14 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
         return _sqlite_tree(conn)
     if kind == "duckdb":
         return duckdb_kind.tree(conn)
+    if kind == "oracle":
+        return oracle_kind.tree(conn)
+    if kind == "vertica":
+        return vertica_kind.tree(conn)
+    if kind == "cassandra":
+        return cassandra_kind.tree(conn)
+    if cloud_kinds.handles(kind):
+        return cloud_kinds.ENGINES[kind]["tree"](conn)
     if rest_kinds.handles(kind):
         return rest_kinds.ENGINES[kind]["tree"](conn)
     if kind == "mongodb":
@@ -5558,6 +5600,14 @@ def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[st
         return _sqlite_columns(conn, schema, table)
     if kind == "duckdb":
         return duckdb_kind.columns(conn, schema, table)
+    if kind == "oracle":
+        return oracle_kind.columns(conn, schema, table)
+    if kind == "vertica":
+        return vertica_kind.columns(conn, schema, table)
+    if kind == "cassandra":
+        return cassandra_kind.columns(conn, schema, table)
+    if cloud_kinds.handles(kind):
+        return cloud_kinds.ENGINES[kind]["columns"](conn, schema, table)
     if rest_kinds.handles(kind):
         return rest_kinds.ENGINES[kind]["columns"](conn, schema, table)
     if kind == "mongodb":
@@ -5636,6 +5686,23 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
             where=_where_clause_rest(kind, filters, columns_meta, conn),
             columns_meta=columns_meta,
         )
+    elif cloud_kinds.handles(kind):
+        columns_meta = _columns(conn, schema, table)
+        dialect = "sqlite" if kind == "dynamodb" else "postgres"
+        result = cloud_kinds.ENGINES[kind]["rows"](
+            conn, schema, table, limit, offset, order_by, direction, filters,
+            where=_where_clause(dialect, filters, columns_meta, conn),
+            columns_meta=columns_meta,
+        )
+    elif kind in ("oracle", "vertica", "cassandra"):
+        columns_meta = _columns(conn, schema, table)
+        module = {"oracle": oracle_kind, "vertica": vertica_kind, "cassandra": cassandra_kind}[kind]
+        dialect = "postgres" if kind != "cassandra" else "sqlite"
+        result = module.rows(
+            conn, schema, table, limit, offset, order_by, direction, filters,
+            where=_where_clause(dialect, filters, columns_meta, conn),
+            columns_meta=columns_meta,
+        )
     elif kind == "duckdb":
         columns_meta = _columns(conn, schema, table)
         result = duckdb_kind.rows(
@@ -5676,6 +5743,21 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
         return _redis_query(conn, sql, limit, readonly)
     if kind == "sqlite":
         result = _sqlite_query(conn, sql, limit, readonly)
+    elif cloud_kinds.handles(kind):
+        columns_meta = _columns(conn, schema, table)
+        dialect = "sqlite" if kind == "dynamodb" else "postgres"
+        result = cloud_kinds.ENGINES[kind]["rows"](
+            conn, schema, table, limit, offset, order_by, direction, filters,
+            where=_where_clause(dialect, filters, columns_meta, conn),
+            columns_meta=columns_meta,
+        )
+    elif cloud_kinds.handles(kind):
+        _guard_readonly(conn, sql)
+        result = cloud_kinds.ENGINES[kind]["query"](conn, sql, limit, readonly)
+    elif kind in ("oracle", "vertica", "cassandra"):
+        _guard_readonly(conn, sql)
+        module = {"oracle": oracle_kind, "vertica": vertica_kind, "cassandra": cassandra_kind}[kind]
+        result = module.query(conn, sql, limit, readonly)
     elif kind == "duckdb":
         _guard_readonly(conn, sql)
         result = duckdb_kind.query(conn, sql, limit, readonly)
@@ -6497,6 +6579,8 @@ def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
             "http_url", "http_method", "http_sql_field", "http_headers",
             "http_body_mode", "http_dialect", "http_timeout",
         ]
+    if kind in ("athena", "dynamodb", "bigquery", "snowflake"):
+        fields += ["options"]
     fields += ["display_tz", "storage_tz"]
     defaults = {
         "readonly": True,
@@ -6671,6 +6755,7 @@ def _record_from_bundle(item: dict[str, Any], record_id: str) -> dict[str, Any]:
         "http_method": str(item.get("http_method") or "POST"),
         "http_sql_field": str(item.get("http_sql_field") or "sql"),
         "http_headers": str(item.get("http_headers") or ""),
+        "options": str(item.get("options") or ""),
         "http_body_mode": str(item.get("http_body_mode") or "json"),
         "http_dialect": str(item.get("http_dialect") or "postgres"),
         "http_timeout": int(item.get("http_timeout") or 30),
@@ -6754,6 +6839,8 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
             "clickhouse": "default", "mongodb": "", "redis": "",
             "mcp": "mcp", "http": "http", "sqlite": "sqlite", "duckdb": "duckdb",
             "elasticsearch": "elastic", "influxdb3": "token", "d1": "", "libsql": "token",
+            "oracle": "system", "vertica": "dbadmin", "cassandra": "cassandra",
+            "athena": "", "dynamodb": "", "bigquery": "", "snowflake": "",
         }.get(kind, "postgres")
     mcp_url = str(pick("mcp_url", "")).strip()
     mcp_server = str(pick("mcp_server", "")).strip()
@@ -6770,6 +6857,16 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
     http_method = str(pick("http_method", "POST")).strip().upper()
     http_sql_field = str(pick("http_sql_field", "sql")).strip() or "sql"
     http_headers = str(pick("http_headers", ""))
+    options = str(pick("options", "")).strip()
+    if options:
+        # Validate here rather than at connect time: a typo in an engine's options should not
+        # surface as a failed connection hours later.
+        try:
+            parsed_options = json.loads(options)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"options must be JSON — {exc}") from exc
+        if not isinstance(parsed_options, dict):
+            raise HTTPException(400, "options must be a JSON object")
     http_body_mode = str(pick("http_body_mode", "json")).strip().lower()
     http_dialect = str(pick("http_dialect", "postgres")).strip().lower()
     http_timeout = int(pick("http_timeout", 30))
@@ -6873,6 +6970,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "http_method": http_method,
         "http_sql_field": http_sql_field,
         "http_headers": http_headers,
+        "options": options,
         "http_body_mode": http_body_mode,
         "http_dialect": http_dialect,
         "http_timeout": http_timeout,
@@ -7333,7 +7431,7 @@ async def test_connection(body: dict[str, Any]) -> dict[str, Any]:
             "ch_headers", "ch_path",
             "ssh_host", "ssh_user", "ssh_port", "ssh_key",
             "mcp_url", "mcp_server", "mcp_tool", "mcp_sql_arg", "mcp_dialect", "mcp_extra_args",
-            "http_url", "http_method", "http_sql_field", "http_headers",
+            "http_url", "http_method", "http_sql_field", "http_headers", "options",
             "http_body_mode", "http_dialect", "http_timeout", "tunnel_command", "tunnel_timeout",
             "tunnel_env",
         ):
@@ -7351,7 +7449,9 @@ async def test_connection(body: dict[str, Any]) -> dict[str, Any]:
             "mcp": "mcp", "http": "http", "sqlite": "sqlite", "duckdb": "duckdb",
             "redshift": "awsuser", "cockroachdb": "root", "greenplum": "gpadmin",
             "singlestore": "root", "elasticsearch": "elastic", "influxdb3": "token",
-            "d1": "", "libsql": "token",
+            "d1": "", "libsql": "token", "oracle": "system", "vertica": "dbadmin",
+            "cassandra": "cassandra", "athena": "", "dynamodb": "", "bigquery": "",
+            "snowflake": "",
         }.get(_kind(conn), "postgres")
     if _kind(conn) in FILE_KINDS:
         conn["dbname"] = os.path.expanduser(str(conn.get("dbname") or ""))
@@ -8251,6 +8351,14 @@ def _run_mutation(conn, sql: str) -> None:
         _sqlite_mutation(conn, sql)
     elif kind == "duckdb":
         duckdb_kind.run(conn, [sql])
+    elif kind == "oracle":
+        oracle_kind.run(conn, [sql])
+    elif kind == "vertica":
+        vertica_kind.run(conn, [sql])
+    elif kind == "cassandra":
+        cassandra_kind.run(conn, [sql])
+    elif cloud_kinds.handles(kind):
+        cloud_kinds.run(conn, [sql])
     elif kind == "d1":
         rest_kinds.d1_query(conn, sql, 1, False)
     elif kind == "libsql":

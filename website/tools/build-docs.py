@@ -69,7 +69,9 @@ ENGINES = [
     "PostgreSQL", "Amazon Redshift", "CockroachDB", "Greenplum",
     "MySQL", "MariaDB", "SingleStore", "Microsoft SQL Server",
     "ClickHouse", "SQLite", "DuckDB", "Elasticsearch", "InfluxDB 3", "libSQL",
-    "Cloudflare D1", "MongoDB", "Redis / Valkey", "MCP servers", "HTTP SQL gateways",
+    "Cloudflare D1", "Oracle", "Vertica", "Cassandra",
+    "Amazon Athena", "DynamoDB", "BigQuery", "Snowflake",
+    "MongoDB", "Redis / Valkey", "MCP servers", "HTTP SQL gateways",
 ]
 
 NAV = """<header class="nav">
