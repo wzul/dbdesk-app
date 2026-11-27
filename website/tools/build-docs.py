@@ -93,6 +93,18 @@ NAV = """<header class="nav">
       </a>
       <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest">Download</a>
     </div>
+    <details class="nav-mobile">
+      <summary aria-label="Menu" role="button"><svg class="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></summary>
+      <div class="nav-mobile-panel">
+        <a href="/#features">Features</a>
+        <a href="/#databases">Databases</a>
+        <a href="/#ai">AI</a>
+        <a href="/#mcp">MCP</a>
+        <a href="/security/">Security</a>
+        <a href="/docs/%(docs_current)s>Docs</a>
+        <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source on GitHub</a>
+      </div>
+    </details>
   </div>
 </header>
 """
@@ -171,7 +183,23 @@ def rewrite_links(body: str) -> str:
     body = body.replace("<table>", '<div class="table-wrap"><table>').replace(
         "</table>", "</table></div>"
     )
+    # Screenshots are the heaviest asset on a docs page; let the text paint first.
+    body = body.replace("<img ", '<img loading="lazy" decoding="async" ')
+    body = re.sub(r'<img([^>]*?)src="(/assets/img/([^"/]+))\.webp"([^>]*)>', _srcset, body)
     return body
+
+
+def _srcset(match: re.Match[str]) -> str:
+    """Add a 900px variant when one was generated next to the full-size screenshot."""
+    before, src, name, after = match.group(1), match.group(2), match.group(3), match.group(4)
+    small = SITE / "assets" / "img" / f"{name}-900.webp"
+    if not small.exists():
+        return f'<img{before}src="{src}.webp"{after}>'
+    return (
+        f'<img{before}src="{src}.webp" '
+        f'srcset="{src}-900.webp 900w, {src}.webp 2392w" '
+        f'sizes="(max-width: 760px) 92vw, 700px"{after}>'
+    )
 
 
 def render(markdown_text: str) -> tuple[str, list[tuple[int, str, str]]]:
@@ -245,6 +273,7 @@ def page_html(
 <link rel="apple-touch-icon" href="/assets/favicon.svg">
 <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
 <link rel="stylesheet" href="/assets/styles.css">
+<script src="/assets/site.js" defer></script>
 <script type="application/ld+json">{crumbs}</script>
 <script type="application/ld+json">{article}</script>
 </head>
@@ -278,8 +307,7 @@ def docs_index() -> str:
         for slug, _, description, title in PAGES
     )
     engines = ", ".join(ENGINES)
-    body = f"""      <p class="kicker">Documentation</p>
-      <h1>DB Desk docs</h1>
+    body = f"""      <h1>Documentation</h1>
       <p>{html.escape(TAGLINE)}</p>
       <p>These pages are generated from the markdown in the repository, so what you read
         here is what ships with the code. Every page has an “Edit this page” link.</p>

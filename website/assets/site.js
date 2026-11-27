@@ -14,6 +14,29 @@
   // not shipped yet is not advertised. If the fetch fails, every platform button
   // stays hidden and the release-page link still works.
   var MANIFEST = '/release/latest.json';
+
+  // <details> opens on click and nothing else: no Escape, no click-outside. Both are what a
+  // thumb expects from a menu, so wire them here — and keep working when JS is off, where the
+  // menu still opens and closes by its summary.
+  var menus = Array.prototype.slice.call(document.querySelectorAll('details.nav-mobile'));
+  menus.forEach(function (menu) {
+    document.addEventListener('click', function (event) {
+      if (!menu.open) return;
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+    menu.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && menu.open) {
+        menu.open = false;
+        var summary = menu.querySelector('summary');
+        if (summary) summary.focus();
+      }
+    });
+    // A link inside the panel navigates; leaving the menu open would show it again on return.
+    menu.querySelectorAll('a').forEach(function (link) {
+      link.addEventListener('click', function () { menu.open = false; });
+    });
+  });
+
   var buttons = Array.prototype.slice.call(document.querySelectorAll('[data-dl]'));
   if (!buttons.length || !window.fetch) return;
 

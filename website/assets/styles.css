@@ -272,7 +272,7 @@ h1 em {
 }
 .dbs-label {
   text-align: center;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -310,7 +310,7 @@ section.tight { padding: 64px 0; }
 .section-head.center { margin: 0 auto; text-align: center; }
 
 .kicker {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -597,7 +597,7 @@ table.data td {
   border-bottom: 1px solid var(--stroke);
 }
 table.data th {
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 660;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -635,14 +635,21 @@ table.data code, .prose code {
   gap: 5px;
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 640;
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
-.badge-ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
-.badge-gap { background: color-mix(in srgb, var(--destructive) 14%, transparent); color: var(--destructive); }
-.badge-neutral { background: var(--quaternary); color: var(--text-3); }
+/* 5.7:1, 5.5:1 and 6.9:1 — the tints below measured 2.81:1, under WCAG AA for this size. */
+.badge-ok { background: #def2e6; color: #0b6b2f; }
+.badge-gap { background: #fde8e8; color: #b91c1c; }
+.badge-neutral { background: #f1f5f9; color: #475569; }
+
+@media (prefers-color-scheme: dark) {
+  .badge-ok { background: color-mix(in srgb, #4ade80 16%, transparent); color: #6ee7a2; }
+  .badge-gap { background: color-mix(in srgb, #f87171 16%, transparent); color: #fca5a5; }
+  .badge-neutral { background: color-mix(in srgb, #94a3b8 16%, transparent); color: #cbd5e1; }
+}
 
 /* ---------- documentation (generated from docs/*.md) ---------- */
 
@@ -652,8 +659,8 @@ table.data code, .prose code {
 .docs { padding: 40px 0 72px; }
 .docs-grid {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 190px;
-  gap: 40px;
+  grid-template-columns: 186px minmax(0, 1fr) 176px;
+  gap: 32px;
   align-items: start;
 }
 .docs-nav {
@@ -691,7 +698,7 @@ table.data code, .prose code {
 .docs-toc-title {
   margin: 0 0 6px;
   color: var(--text-3);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 660;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -700,7 +707,7 @@ table.data code, .prose code {
 .docs-toc a:hover { color: var(--primary); }
 .docs-toc-l3 { padding-left: 10px; font-size: 12px; }
 
-.docs-body { max-width: 760px; min-width: 0; }
+.docs-body { max-width: 820px; min-width: 0; }
 .docs-body h1 { margin: 0 0 4px; font-size: clamp(26px, 3.4vw, 34px); letter-spacing: -0.024em; }
 .docs-body h2 { margin-top: 36px; padding-top: 4px; scroll-margin-top: 84px; }
 .docs-body h3 { scroll-margin-top: 84px; }
@@ -745,7 +752,7 @@ table.data code, .prose code {
 .docs-body th {
   background: var(--bg-canvas);
   color: var(--text-3);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 660;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -812,12 +819,11 @@ table.data code, .prose code {
    sideways. Inline snippets wrap; fenced blocks keep scrolling. */
 .docs-body :not(pre) > code { white-space: normal; }
 
-/* ---------- docs: give technical content the room it needs ---------- */
+/* ---------- docs: keep code readable ---------- */
 
-/* A 200/1fr/190 split inside 1120px leaves the prose about 650px, which is fine for
-   sentences and tight for shell commands. Trim the rails and let the article breathe. */
-.docs-grid { grid-template-columns: 186px minmax(0, 1fr) 176px; gap: 32px; }
-.docs-body { max-width: 820px; }
+/* A 186/1fr/176 split inside 1120px gives the article about 690px: enough for a shell
+   command to read as one line. Narrower screens drop the rails in the media queries above,
+   which must stay *after* this declaration — a later override silently undoes them. */
 
 /* Overlay scrollbars are invisible until you scroll, which makes a wide command look
    truncated rather than scrollable. Show a slim one on every code block. */
@@ -836,3 +842,144 @@ table.data code, .prose code {
    newlines collapse, four shell commands render as one long clipped line, and the block
    looks broken. A block keeps its own line breaks and scrolls sideways. */
 .docs-body pre code { white-space: pre; }
+
+/* A URL in a sentence has no spaces to break at; without this it widens the page on a
+   phone instead of wrapping. */
+.docs-body a { overflow-wrap: anywhere; }
+
+/* A phone screen is narrower than a card grid can split: one column, and the cards stop
+   demanding a 200px minimum. */
+@media (max-width: 620px) {
+  .docs-cards { grid-template-columns: minmax(0, 1fr); }
+  .docs-card { min-width: 0; }
+}
+
+/* Tap targets: a 19px-tall footer link is a miss on a thumb. Links that are not inline in a
+   sentence get a real hit area; inline links stay in the text flow. */
+.nav-links a,
+.foot-links a,
+.foot-brand { min-height: 32px; display: inline-flex; align-items: center; padding: 2px 2px; }
+.docs-toc a { display: block; min-height: 24px; padding: 2px 0; }
+.docs-edit a { display: inline-block; padding: 6px 0; }
+
+@media (max-width: 1080px) {
+  .nav-links a,
+  .foot-links a,
+  .foot-brand { min-height: 36px; padding: 4px 2px; }
+  .docs-nav-item { min-height: 40px; display: flex; align-items: center; padding: 8px 10px; }
+  .docs-body p a,
+  .docs-body li a { padding: 4px 0; }
+}
+
+@media (max-width: 760px) {
+  .kicker, .dbs-label, .foot-note { font-size: 12px; }
+}
+
+/* The last few thumb-sized gaps: the wordmark in the header, links that sit inside a
+   sentence (vertical padding grows the hit area without moving the text), and the
+   small-caps table header that went to 10.5px. */
+.brand { min-height: 36px; }
+@media (max-width: 1080px) {
+  .brand { min-height: 40px; display: inline-flex; align-items: center; }
+  .prose p a,
+  .docs-body p a,
+  .docs-body li a,
+  .docs-body td a,
+  .docs-edit a { padding: 8px 0; display: inline-block; }
+  .docs-body th { font-size: 11.5px; }
+  .foot-note { font-size: 12px; }
+}
+
+/* Last two: a link alone in a paragraph is still a thumb target, and the security page's
+   table headers and status badges sat at 10.5–11px. */
+@media (max-width: 760px) {
+  main p > a,
+  .note a,
+  .dl-alt a { padding: 8px 0; display: inline-block; }
+  table.data th { font-size: 12px; }
+  .badge { font-size: 11.5px; padding: 3px 9px; }
+}
+
+/* The file-type chips under the download buttons ("deb", "rpm") are labels, not body copy,
+   but 11px is still the floor everywhere else — match it. */
+@media (max-width: 760px) {
+  .dl-files span, .dl-files code { font-size: 11.5px; }
+  .step .n { width: 22px; height: 22px; font-size: 12px; }
+}
+
+/* ---------- mobile navigation ---------- */
+
+/* Below 960px the header links were simply hidden, which left a phone with no way to reach
+   Docs or Security except the footer. A <details> menu needs no JavaScript, works with the
+   keyboard, and closes on Escape in every current browser. */
+.nav-mobile { display: none; position: relative; }
+.nav-mobile > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.nav-mobile > summary::-webkit-details-marker { display: none; }
+.nav-mobile > summary svg { width: 18px; height: 18px; }
+.nav-mobile[open] > summary { border-color: var(--stroke-strong); background: var(--bg-canvas); }
+.nav-mobile-panel {
+  position: absolute;
+  right: 18px;
+  top: 60px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow-md);
+}
+.nav-mobile-panel a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.nav-mobile-panel a:hover { background: var(--bg-canvas); color: var(--text); }
+.nav-mobile-panel a[aria-current="page"] { color: var(--primary); font-weight: 620; }
+
+@media (max-width: 960px) {
+  .nav-mobile { display: inline-flex; }
+  .nav-inner { position: relative; }
+  .nav-actions { margin-left: auto; }
+  .nav-mobile-panel { right: 0; top: calc(100% + 8px); }
+}
+
+/* An open menu with an unchanged hamburger reads as "nothing happened". Swap the glyph. */
+.nav-mobile > summary .i-close { display: none; }
+.nav-mobile[open] > summary .i-open { display: none; }
+.nav-mobile[open] > summary .i-close { display: block; }
+
+/* A card title inside the security grid: it is an h2 for the outline, an h3 for the eye. */
+h2.sec-lead { margin: 0 0 6px; font-size: 15px; font-weight: 640; letter-spacing: -0.01em; }
+
+/* Three links that sit inline in a sentence and were still 14px tall: a link to the
+   security page and the .deb / .rpm download fallbacks. Vertical padding grows the hit
+   area without moving the text. */
+.prose p > a,
+.dl-alt a,
+.dl-alt a[data-dl-deb],
+.dl-alt a[data-dl-rpm] { display: inline-block; padding: 6px 0; }
+
+/* Inline links keep a 24px-tall hit area at every width (WCAG 2.5.8): padding on an inline
+   element grows the box without disturbing the line. */
+main p > a, main li > a { display: inline-block; padding: 6px 0; }

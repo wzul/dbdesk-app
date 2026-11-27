@@ -20,6 +20,7 @@
 <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
 <link rel="sitemap" type="application/xml" href="/sitemap.xml">
 <link rel="stylesheet" href="/assets/styles.css">
+<script src="/assets/site.js" defer></script>
 </head>
 <body>
 
@@ -69,6 +70,18 @@
         <svg><use href="#i-github"/></svg> GitHub
       </a>
       <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest">Download</a>
+    <details class="nav-mobile">
+      <summary aria-label="Menu" role="button"><svg class="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></summary>
+      <div class="nav-mobile-panel">
+        <a href="/#features">Features</a>
+        <a href="/#databases">Databases</a>
+        <a href="/#ai">AI</a>
+        <a href="/#mcp">MCP</a>
+        <a href="/security/" aria-current="page">Security</a>
+        <a href="/docs/">Docs</a>
+        <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source on GitHub</a>
+      </div>
+    </details>
     </div>
   </div>
 </header>
@@ -93,7 +106,7 @@
         <div class="sec-item">
           <span class="icon-tile"><svg><use href="#i-plug"/></svg></span>
           <div>
-            <h3>Local-first, with no DB Desk backend</h3>
+            <h2 class="sec-lead">Local-first, with no DB Desk backend</h2>
             <p>There is no account and no server of ours in the path. A sidecar process on your
               machine serves the UI and talks to your databases.</p>
           </div>
@@ -101,7 +114,7 @@
         <div class="sec-item">
           <span class="icon-tile"><svg><use href="#i-shield"/></svg></span>
           <div>
-            <h3>Read-only is the default</h3>
+            <h2 class="sec-lead">Read-only is the default</h2>
             <p>New connections start read-only, and the check lives in the API the UI calls —
               hiding a button is not the protection.</p>
           </div>
@@ -109,7 +122,7 @@
         <div class="sec-item">
           <span class="icon-tile"><svg><use href="#i-users"/></svg></span>
           <div>
-            <h3>A production write needs an approval</h3>
+            <h2 class="sec-lead">A production write needs an approval</h2>
             <p>Approvals are single-use and bound to the hash of the exact statement. A different
               statement, or the same one twice, is rejected.</p>
           </div>
@@ -117,7 +130,7 @@
         <div class="sec-item">
           <span class="icon-tile"><svg><use href="#i-key"/></svg></span>
           <div>
-            <h3>Credentials never leave the machine</h3>
+            <h2 class="sec-lead">Credentials never leave the machine</h2>
             <p>Encrypted at rest with AES-256-GCM, decrypted only to open a connection, and never
               part of an AI request.</p>
           </div>

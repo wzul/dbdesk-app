@@ -126,6 +126,18 @@
       <a class="btn btn-primary" href="https://github.com/wzul/dbdesk-app/releases/latest" data-dl="auto">
         <svg><use href="#i-download"/></svg> Download
       </a>
+    <details class="nav-mobile">
+      <summary aria-label="Menu" role="button"><svg class="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></summary>
+      <div class="nav-mobile-panel">
+        <a href="/#features">Features</a>
+        <a href="/#databases">Databases</a>
+        <a href="/#ai">AI</a>
+        <a href="/#mcp">MCP</a>
+        <a href="/security/">Security</a>
+        <a href="/docs/">Docs</a>
+        <a href="https://github.com/wzul/dbdesk-app" target="_blank" rel="noopener">Source on GitHub</a>
+      </div>
+    </details>
     </div>
   </div>
 </header>
@@ -157,7 +169,7 @@
       </p>
 
       <figure class="shot" style="margin-bottom:0">
-        <img src="/assets/img/standalone.webp" width="2392" height="1788"
+        <img src="/assets/img/standalone" srcset="/assets/img/standalone-900.webp 900w, /assets/img/standalone 2392w" sizes="(max-width: 760px) 92vw, 700px" width="2392" height="1788"
              alt="DB Desk showing the orders table in a data grid, with a table tree on the left and a Data/Structure switcher below">
       </figure>
       <p class="shot-caption">The data grid: sticky header, resizable columns, inline editing, and a Data / Structure switcher on every table.</p>
@@ -257,7 +269,7 @@
 
       <div class="feature-groups">
         <div class="feature-group">
-          <h4>Browse &amp; edit</h4>
+          <h3>Browse &amp; edit</h3>
           <ul class="feature-list">
             <li><svg><use href="#i-check"/></svg><span><strong>Connection picker</strong> — search, groups, type icons, read-only and PROD badges; right-click to open, edit, clone, test, export or delete.</span></li>
             <li><svg><use href="#i-check"/></svg><span><strong>Connection rail</strong> — a rail of open connections, right-click to edit or close.</span></li>
@@ -269,7 +281,7 @@
           </ul>
         </div>
         <div class="feature-group">
-          <h4>Query, AI &amp; data</h4>
+          <h3>Query, AI &amp; data</h3>
           <ul class="feature-list">
             <li><svg><use href="#i-check"/></svg><span><strong>SQL tabs</strong> — many per connection, syntax highlighting, <b>⌘⏎</b> to run, <b>⌘S</b> to save, and saved-query buttons on the toolbar.</span></li>
             <li><svg><use href="#i-check"/></svg><span><strong>Quick panel</strong> — <b>⌘P</b> jumps to any table, view, schema, function or connection.</span></li>
@@ -280,7 +292,7 @@
           </ul>
         </div>
         <div class="feature-group">
-          <h4>Team &amp; machine</h4>
+          <h3>Team &amp; machine</h3>
           <ul class="feature-list">
             <li><svg><use href="#i-check"/></svg><span><strong>MCP server</strong> — stdio or loopback HTTP; connections, databases, tables, columns, keys, DDL, rows, CSV, SQL and the AI agent as MCP tools.</span></li>
             <li><svg><use href="#i-check"/></svg><span><strong>SSH tunnels</strong> — key or agent auth, plus a custom tunnel-command field for anything else.</span></li>
@@ -300,7 +312,7 @@
       <div class="split">
         <div class="split-media">
           <figure class="shot">
-            <img src="/assets/img/sql-tab.webp" width="2392" height="1788" alt="A SQL tab in DB Desk with syntax highlighting and an autocomplete list of columns">
+            <img src="/assets/img/sql-tab" srcset="/assets/img/sql-tab-900.webp 900w, /assets/img/sql-tab 2392w" sizes="(max-width: 760px) 92vw, 700px" width="2392" height="1788" alt="A SQL tab in DB Desk with syntax highlighting and an autocomplete list of columns">
           </figure>
         </div>
         <div class="split-copy">
@@ -321,7 +333,7 @@
       <div class="split reverse" style="margin-top:76px">
         <div class="split-media">
           <figure class="shot">
-            <img src="/assets/img/filters.webp" width="2392" height="1788" alt="The filter panel in DB Desk filtering rows by column, operator and value">
+            <img src="/assets/img/filters" srcset="/assets/img/filters-900.webp 900w, /assets/img/filters 2392w" sizes="(max-width: 760px) 92vw, 700px" width="2392" height="1788" alt="The filter panel in DB Desk filtering rows by column, operator and value">
           </figure>
         </div>
         <div class="split-copy">
@@ -345,7 +357,7 @@
       <div class="split">
         <div class="split-media">
           <figure class="shot">
-            <img src="/assets/img/connection-picker.webp" width="2392" height="1788" alt="The DB Desk connection picker listing saved connections with a Continue-where-you-left-off card">
+            <img src="/assets/img/connection-picker" srcset="/assets/img/connection-picker-900.webp 900w, /assets/img/connection-picker 2392w" sizes="(max-width: 760px) 92vw, 700px" width="2392" height="1788" alt="The DB Desk connection picker listing saved connections with a Continue-where-you-left-off card">
           </figure>
         </div>
         <div class="split-copy">
@@ -515,17 +527,17 @@
         <div class="steps">
           <div class="step">
             <span class="n">1</span>
-            <h4>Install it</h4>
+            <h3>Install it</h3>
             <p>macOS: drag the app out of the DMG. Windows: run the installer. Linux: <code>deb</code>/<code>rpm</code>, or make the AppImage executable and run it.</p>
           </div>
           <div class="step">
             <span class="n">2</span>
-            <h4>First launch</h4>
+            <h3>First launch</h3>
             <p>Builds are ad-hoc signed, so macOS asks you to confirm once — right-click → <b>Open</b>. Windows SmartScreen may ask the same.</p>
           </div>
           <div class="step">
             <span class="n">3</span>
-            <h4>Add a connection</h4>
+            <h3>Add a connection</h3>
             <p>Pick a database type, paste the host and credentials, and the grid opens.</p>
           </div>
         </div>
