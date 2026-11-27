@@ -1,6 +1,7 @@
 # DB Desk — standalone
 
-A TablePlus-style database browser for **PostgreSQL, MySQL/MariaDB, ClickHouse,
+A TablePlus-style database browser for **PostgreSQL, MySQL/MariaDB, Microsoft SQL Server,
+ClickHouse,
 SQLite, MongoDB and Redis/Valkey** — a native desktop app for macOS, Windows and
 Linux, no Hermes required. Home page: **dbdesk.app**.
 
@@ -30,7 +31,7 @@ sidecar serves the UI and talks to your databases; nothing leaves the machine.
 
 ## Quick start
 
-1. **New connection** — choose PostgreSQL, MySQL/MariaDB, ClickHouse, SQLite,
+1. **New connection** — choose PostgreSQL, MySQL/MariaDB, SQL Server, ClickHouse, SQLite,
    MongoDB, Redis/Valkey, MCP or an HTTP gateway. Add an SSH tunnel or a custom
    tunnel command if the database is private.
 2. **Pick a table** — the grid loads with a sticky header, resizable columns and

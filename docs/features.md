@@ -52,8 +52,28 @@
 - **Docked AI and record panels** — the AI chat opens on the right without
   covering the grid; clicking a row number opens a TablePlus-style **Record**
   panel on the right with each column name, type and value.
+**Microsoft SQL Server.** T-SQL is not MySQL with different keywords, and the parts
+that differ are the parts people notice:
+
+- identifiers are bracketed (`[dbo].[orders]`) and literals are `N'…'`, so a Unicode
+  value survives the code-page round trip;
+- paging uses `ORDER BY … OFFSET n ROWS FETCH NEXT m ROWS ONLY`, which requires an
+  ORDER BY even when you did not pick a column, and TOP cannot be combined with it;
+- column types come from the catalog (`sys.columns`), because the driver only reports
+  five coarse DB-Library categories; `timestamp` is rendered as `rowversion` since it
+  is a binary counter, not a date;
+- `contains`/`startswith` pin a collation instead of inheriting the database default,
+  so case-insensitivity does not change per server;
+- the driver is `pymssql`, which ships wheels for every platform including Windows on
+  ARM and bundles FreeTDS — there is no ODBC driver for the user to install. TLS is a
+  connection setting (`off`, `request`, `require`, `default`); Azure SQL needs
+  `require`.
+- SQL Server has no read-only transaction mode to switch on, so read-only here means
+  the statement guard plus, ideally, a login whose grants cannot write.
+
 - **New connection type cards** — the connection form shows real logos for
-  PostgreSQL, MySQL, MariaDB, ClickHouse, MongoDB, Redis, SQLite, MCP and HTTP;
+  PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, ClickHouse, MongoDB, Redis,
+  SQLite, MCP and HTTP;
   choosing a card sets the default port. MariaDB is stored as MySQL with a
   `mariadb` flavor. MongoDB has SRV and auth-source options; Redis has a
   database index.
@@ -138,7 +158,7 @@
   MCP agent through `queries_list` / `query_save` / `query_delete`.
 - Everything the plugin page does:
 
-- connections (Postgres, MySQL/MariaDB, ClickHouse, SQLite, MongoDB,
+- connections (Postgres, MySQL/MariaDB, SQL Server, ClickHouse, SQLite, MongoDB,
   Redis/Valkey) with SSH tunnels, custom tunnel commands, MCP query tools and
   HTTP gateways
 - schema tree, typed data grid, inline editing, filters, tabs, saved views

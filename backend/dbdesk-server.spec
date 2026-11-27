@@ -37,7 +37,9 @@ hiddenimports = collect_submodules("uvicorn") + _present(
 datas += collect_data_files("certifi")
 
 # Native drivers: psycopg needs its bundled libpq, PyMySQL is pure Python.
-for package in ("psycopg", "psycopg_binary", "pymysql", "pymongo", "bson", "redis", "Crypto"):
+for package in (
+    "psycopg", "psycopg_binary", "pymysql", "pymssql", "pymongo", "bson", "redis", "Crypto",
+):
     try:
         package_datas, package_binaries, package_hidden = collect_all(package)
     except Exception:

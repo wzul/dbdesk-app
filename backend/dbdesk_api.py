@@ -116,7 +116,10 @@ MYSQL = shutil.which("mysql") or shutil.which("mariadb") or "/usr/bin/mysql"
 NULL_SENTINEL = "\u2400"
 QUERY_TIMEOUT = 30
 MAX_ROWS = 1000
-KINDS = {"postgres", "mysql", "clickhouse", "mongodb", "redis", "mcp", "http", "sqlite"}
+KINDS = {
+    "postgres", "mysql", "sqlserver", "clickhouse", "mongodb", "redis",
+    "mcp", "http", "sqlite",
+}
 _SSH_TUNNELS: dict[str, dict[str, Any]] = {}
 
 
@@ -607,10 +610,12 @@ def _where_clause(
         if isinstance(column, dict)
     }
     quote = {
-        "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident, "sqlite": _sqlite_ident
+        "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident,
+        "sqlite": _sqlite_ident, "sqlserver": _ms_ident,
     }[kind]
     literal = {
-        "postgres": _lit, "mysql": _my_lit, "clickhouse": _ch_lit, "sqlite": _sqlite_lit
+        "postgres": _lit, "mysql": _my_lit, "clickhouse": _ch_lit,
+        "sqlite": _sqlite_lit, "sqlserver": _ms_lit,
     }[kind]
     clauses: list[str] = []
     for item in filters[:8]:
@@ -659,6 +664,11 @@ def _where_clause(
             elif kind == "postgres":
                 operator = "ILIKE" if insensitive else "LIKE"
                 clauses.append(f"{target}::text {operator} {literal(pattern)}")
+            elif kind == "sqlserver":
+                # LIKE collates by column, so pin the comparison instead of inheriting
+                # whatever the server or database default happens to be.
+                collate = " COLLATE Latin1_General_100_CI_AS" if insensitive else " COLLATE Latin1_General_100_CS_AS"
+                clauses.append(f"CAST({target} AS nvarchar(max)){collate} LIKE {literal(pattern)}")
             elif kind == "mysql":
                 if insensitive:
                     clauses.append(
@@ -1267,6 +1277,11 @@ try:  # pure Python, works everywhere
 except Exception:  # pragma: no cover - the mysql CLI path still works
     pymysql = None
 
+try:  # wheels for every platform, FreeTDS bundled: no ODBC driver to install
+    import pymssql
+except Exception:  # pragma: no cover - SQL Server connections show a clear error
+    pymssql = None
+
 try:  # MongoDB driver
     import pymongo
     from bson import ObjectId
@@ -1746,6 +1761,8 @@ def _ddl(conn: dict[str, Any], schema: str, table: str) -> str:
         return _sqlite_ddl(conn, schema, table)
     if kind == "mysql":
         return _my_ddl(conn, schema, table)
+    if kind == "sqlserver":
+        return _ms_ddl(conn, schema, table)
     if kind == "clickhouse":
         return _ch_ddl(conn, schema, table)
     if kind == "mongodb":
@@ -2224,6 +2241,359 @@ def _my_mutation(conn, sql: str) -> None:
         _my_native_exec(conn, sql, readonly=False)
         return
     _my_run(conn, sql, readonly=False)
+
+
+
+# --------------------------------------------------------------------------- #
+# SQL Server
+# --------------------------------------------------------------------------- #
+
+# pymssql reports DB-Library categories rather than T-SQL types: 1 text, 2 binary,
+# 3 integer, 4 datetime, 5 decimal. That is too coarse to render a column header, so
+# the real type comes from the catalog in _ms_columns; this map is only the fallback
+# for an ad-hoc query whose shape we did not look up first.
+_MS_TYPE_NAMES = {1: "text", 2: "binary", 3: "int", 4: "datetime", 5: "decimal"}
+
+
+def _ms_lit(value: Any) -> str:
+    """Unicode literal: SQL Server silently downgrades a bare '...' to the code page."""
+    return "N'" + str(value).replace("'", "''") + "'"
+
+
+def _ms_ident(name: str) -> str:
+    return "[" + str(name).replace("]", "]]") + "]"
+
+
+def _ms_type_text(name: Any, max_length: Any, precision: Any, scale: Any) -> str:
+    low = str(name or "").lower()
+    size = ""
+    if low in ("nvarchar", "nchar"):
+        size = "(max)" if int(max_length or 0) == -1 else f"({int(max_length or 0) // 2})"
+    elif low in ("varchar", "char", "varbinary", "binary"):
+        size = "(max)" if int(max_length or 0) == -1 else f"({int(max_length or 0)})"
+    elif low in ("decimal", "numeric"):
+        size = f"({int(precision or 0)},{int(scale or 0)})"
+    elif low in ("datetime2", "time", "datetimeoffset"):
+        size = f"({int(scale or 0)})"
+    # `timestamp` is rowversion, a binary counter. Calling it a timestamp would make the
+    # grid try to render it as a date, which is exactly the kind of wrong that looks
+    # like a data bug.
+    display = "rowversion" if low == "timestamp" else low
+    return display + size
+
+
+_MS_ENCRYPTION = ("default", "off", "request", "require")
+
+
+def _ms_encryption(value: Any) -> str:
+    mode = str(value or "default").strip().lower()
+    return mode if mode in _MS_ENCRYPTION else "default"
+
+
+def _ms_open(conn: dict[str, Any]):
+    if pymssql is None:
+        raise HTTPException(
+            500,
+            "SQL Server needs the pymssql package: pip install 'pymssql>=2.4.6'",
+        )
+    kwargs: dict[str, Any] = {
+        "server": str(conn.get("host") or "127.0.0.1"),
+        "port": str(int(conn.get("port") or 1433)),
+        "user": str(conn.get("user") or "sa"),
+        "password": str(conn.get("password") or ""),
+        "database": str(conn.get("dbname") or ""),
+        "login_timeout": 10,
+        "timeout": QUERY_TIMEOUT,
+        "charset": "UTF-8",
+        "appname": "DB Desk",
+        "autocommit": True,
+    }
+    encryption = str(conn.get("encryption") or "").strip().lower()
+    if encryption in ("off", "request", "require", "default"):
+        kwargs["encryption"] = encryption
+    return pymssql.connect(**kwargs)
+
+
+def _ms_exec(
+    conn: dict[str, Any], sql: str, *, readonly: bool = True, limit: int = 0
+) -> tuple[list[dict[str, Any]], list[list[Any]]]:
+    key = _pool_key(conn, "ms")
+    entry = _pool_get(key, lambda: _ms_open(conn))
+    columns: list[dict[str, Any]] = []
+    rows: list[list[Any]] = []
+    with entry["lock"]:
+        cursor = entry["conn"].cursor()
+        try:
+            cursor.execute(sql)
+            if cursor.description:
+                columns = [
+                    {"name": desc[0], "type": _MS_TYPE_NAMES.get(desc[1], "text")}
+                    for desc in cursor.description
+                ]
+                fetched = cursor.fetchmany(limit + 1) if limit else cursor.fetchall()
+                rows = [[_native_cell(value) for value in row] for row in fetched]
+        except Exception as exc:
+            _pool_drop(key)
+            raise HTTPException(400, _clean_error(str(exc))) from exc
+        finally:
+            try:
+                cursor.close()
+            except Exception:  # pragma: no cover - closing a dead cursor
+                pass
+    return columns, rows
+
+
+def _ms_rows_sql(conn: dict[str, Any], sql: str) -> list[list[Any]]:
+    _, rows = _ms_exec(conn, sql, readonly=True)
+    return rows
+
+
+def _ms_test(conn: dict[str, Any]) -> dict[str, Any]:
+    _, rows = _ms_exec(
+        conn, "SELECT @@VERSION, DB_NAME(), SUSER_SNAME()", readonly=True
+    )
+    row = rows[0] if rows else ["", "", ""]
+    version = str(row[0] or "").splitlines()[0]
+    return {"version": version, "database": row[1], "user": row[2]}
+
+
+def _ms_tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
+    sql = """
+        SELECT s.name, o.name,
+               CASE o.type WHEN 'V' THEN 'view' ELSE 'table' END,
+               ISNULL(p.rows, 0)
+        FROM sys.objects o
+        JOIN sys.schemas s ON s.schema_id = o.schema_id
+        LEFT JOIN (
+            SELECT object_id, SUM(rows) AS rows
+            FROM sys.partitions WHERE index_id IN (0, 1) GROUP BY object_id
+        ) p ON p.object_id = o.object_id
+        WHERE o.type IN ('U', 'V')
+          AND o.is_ms_shipped = 0
+          AND s.name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest')
+        ORDER BY s.name, o.name
+    """
+    _, rows = _ms_exec(conn, sql, readonly=True)
+    return [
+        {"schema": r[0], "name": r[1], "kind": r[2], "est_rows": int(r[3] or 0)}
+        for r in rows
+    ]
+
+
+def _ms_columns(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
+    # OBJECT_ID wants the bracketed, escaped name: a table called `odd]name` survives.
+    lookup = _ms_lit(
+        f"{_ms_ident(schema)}.{_ms_ident(table)}" if schema else _ms_ident(table)
+    )
+    sql = f"""
+        SELECT c.name, ty.name, c.max_length, c.precision, c.scale, c.is_nullable,
+               dc.definition, c.is_identity, c.is_computed,
+               CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END,
+               fks.name, fkt.name, fkcol.name
+        FROM sys.columns c
+        JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+        LEFT JOIN sys.default_constraints dc ON dc.object_id = c.default_object_id
+        LEFT JOIN (
+            SELECT ic.object_id, ic.column_id
+            FROM sys.indexes i
+            JOIN sys.index_columns ic
+              ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+            WHERE i.is_primary_key = 1
+        ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
+        LEFT JOIN sys.foreign_key_columns fkc
+          ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+        LEFT JOIN sys.objects fkt ON fkt.object_id = fkc.referenced_object_id
+        LEFT JOIN sys.schemas fks ON fks.schema_id = fkt.schema_id
+        LEFT JOIN sys.columns fkcol
+          ON fkcol.object_id = fkc.referenced_object_id
+         AND fkcol.column_id = fkc.referenced_column_id
+        WHERE c.object_id = OBJECT_ID({lookup})
+        ORDER BY c.column_id
+    """
+    _, rows = _ms_exec(conn, sql, readonly=True)
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        fk = (
+            {"schema": row[10], "table": row[11], "column": row[12]}
+            if len(row) > 12 and row[11]
+            else None
+        )
+        result.append(
+            {
+                "name": row[0],
+                "type": _ms_type_text(row[1], row[2], row[3], row[4]),
+                "nullable": bool(row[5]),
+                "default": row[6],
+                "pk": bool(row[9]),
+                "fk": fk,
+                "charset": None,
+                "collation": None,
+                "extra": "identity" if row[7] else ("computed" if row[8] else ""),
+                "comment": None,
+            }
+        )
+    return result
+
+
+def _ms_rows(
+    conn,
+    schema: str,
+    table: str,
+    limit: int,
+    offset: int,
+    order_by: str | None,
+    direction: str,
+    columns_meta: list[dict[str, Any]],
+    filters: Any = None,
+) -> dict[str, Any]:
+    target = f"{_ms_ident(schema)}.{_ms_ident(table)}" if schema else _ms_ident(table)
+    sql = f"SELECT * FROM {target}"
+    where = _where_clause("sqlserver", filters, columns_meta, conn)
+    if where:
+        sql += f" WHERE {where}"
+    # OFFSET/FETCH needs an ORDER BY, and TOP cannot be combined with it.
+    if order_by:
+        direction_sql = "DESC" if str(direction).upper() == "DESC" else "ASC"
+        sql += f" ORDER BY {_ms_ident(order_by)} {direction_sql}"
+    else:
+        sql += " ORDER BY (SELECT NULL)"
+    sql += f" OFFSET {int(offset)} ROWS FETCH NEXT {int(limit) + 1} ROWS ONLY"
+
+    started = time.monotonic()
+    columns, rows = _ms_exec(conn, sql, readonly=True, limit=limit)
+    types = {c["name"]: c.get("type", "") for c in columns_meta}
+    for column in columns:
+        column["type"] = types.get(column["name"], column["type"])
+    return {
+        "columns": columns,
+        "rows": rows[:limit],
+        "truncated": len(rows) > limit,
+        "offset": offset,
+        "limit": limit,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _ms_query(conn, sql: str, limit: int, readonly: bool) -> dict[str, Any]:
+    _guard_readonly(conn, sql)
+    is_read = bool(READ_SQL.match(sql))
+    started = time.monotonic()
+    columns, rows = _ms_exec(conn, sql, readonly=readonly, limit=limit if is_read else 0)
+    return {
+        "columns": columns,
+        "rows": rows[:limit] if is_read else rows,
+        "truncated": is_read and len(rows) > limit,
+        "command": "SELECT" if is_read else sql.split(None, 1)[0].upper(),
+        "readonly": readonly,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+def _ms_mutation(conn, sql: str) -> None:
+    _ms_exec(conn, sql, readonly=False)
+
+
+def _ms_databases(conn: dict[str, Any]) -> list[str]:
+    _, rows = _ms_exec(
+        conn,
+        "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' "
+        "AND database_id > 4 ORDER BY name",
+        readonly=True,
+    )
+    return [str(row[0]) for row in rows]
+
+
+def _ms_indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, Any]]:
+    lookup = _ms_lit(
+        f"{_ms_ident(schema)}.{_ms_ident(table)}" if schema else _ms_ident(table)
+    )
+    sql = f"""
+        SELECT i.name, i.type_desc, i.is_unique, i.is_primary_key,
+               STUFF((
+                   SELECT ', ' + c.name
+                   FROM sys.index_columns ic
+                   JOIN sys.columns c
+                     ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                   WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+                     AND ic.is_included_column = 0
+                   ORDER BY ic.key_ordinal
+                   FOR XML PATH('')
+               ), 1, 2, '') AS columns
+        FROM sys.indexes i
+        WHERE i.object_id = OBJECT_ID({lookup})
+          AND i.name IS NOT NULL
+        ORDER BY i.is_primary_key DESC, i.name
+    """
+    _, rows = _ms_exec(conn, sql, readonly=True)
+    return [
+        {
+            "name": row[0],
+            "type": str(row[1] or "").replace("_", " ").lower(),
+            "unique": bool(row[2]),
+            "primary": bool(row[3]),
+            "columns": [part for part in str(row[4] or "").split(", ") if part],
+        }
+        for row in rows
+    ]
+
+
+def _ms_activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        _, rows = _ms_exec(
+            conn,
+            "SELECT r.session_id, r.status, r.command, r.wait_type, r.total_elapsed_time, "
+            "DB_NAME(r.database_id) FROM sys.dm_exec_requests r "
+            "WHERE r.session_id <> @@SPID ORDER BY r.total_elapsed_time DESC",
+            readonly=True,
+        )
+    except HTTPException:
+        return []  # needs VIEW SERVER STATE on some instances
+    return [
+        {
+            "id": row[0],
+            "state": row[1],
+            "command": row[2],
+            "wait": row[3],
+            "elapsed_ms": row[4],
+            "database": row[5],
+        }
+        for row in rows
+    ]
+
+
+def _ms_ddl(conn: dict[str, Any], schema: str, table: str) -> str:
+    columns = _ms_columns(conn, schema, table)
+    target = f"{_ms_ident(schema)}.{_ms_ident(table)}" if schema else _ms_ident(table)
+    lines: list[str] = []
+    for index, column in enumerate(columns):
+        line = f"    {_ms_ident(column['name'])} {column['type']}"
+        if column.get("extra") == "identity":
+            line += " IDENTITY(1,1)"
+        line += "" if column.get("nullable") else " NOT NULL"
+        if column.get("default"):
+            line += f" DEFAULT {column['default']}"
+        lines.append(line)
+    primary = [c["name"] for c in columns if c.get("pk")]
+    if primary:
+        lines.append(
+            "    CONSTRAINT " + _ms_ident(f"PK_{table}") + " PRIMARY KEY ("
+            + ", ".join(_ms_ident(name) for name in primary) + ")"
+        )
+    ddl = f"CREATE TABLE {target} (\n" + ",\n".join(lines) + "\n);"
+    try:
+        extras = []
+        for index in _ms_indexes(conn, schema, table):
+            if index.get("primary"):
+                continue
+            extras.append(
+                f"CREATE {'UNIQUE ' if index['unique'] else ''}INDEX {_ms_ident(index['name'])} "
+                f"ON {target} (" + ", ".join(_ms_ident(name) for name in index["columns"]) + ");"
+            )
+        if extras:
+            ddl += "\n\n" + "\n".join(extras)
+    except HTTPException:
+        pass
+    return ddl
 
 
 # --------------------------------------------------------------------------- #
@@ -2758,6 +3128,8 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
         return _sqlite_indexes(conn, schema, table)
     if kind == "mongodb":
         return _mongo_indexes(conn, schema, table)
+    if kind == "sqlserver":
+        return _ms_indexes(conn, schema, table)
     if kind == "mysql":
         rows = _my_rows_sql(
             conn,
@@ -2817,6 +3189,8 @@ def _activity(conn: dict[str, Any]) -> list[dict[str, Any]]:
     kind = _kind(conn)
     if kind in ("mcp", "http", "sqlite", "mongodb", "redis"):
         return []
+    if kind == "sqlserver":
+        return _ms_activity(conn)
     if kind == "mysql":
         out = _my_run(
             conn,
@@ -5052,6 +5426,8 @@ def _test(conn: dict[str, Any]) -> dict[str, Any]:
         return _redis_test(conn)
     if kind == "mysql":
         return _my_test(conn)
+    if kind == "sqlserver":
+        return _ms_test(conn)
     if kind == "clickhouse":
         return _ch_test(conn)
     return _pg_test(conn)
@@ -5071,6 +5447,8 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
         return _redis_tree(conn)
     if kind == "mysql":
         return _my_tree(conn)
+    if kind == "sqlserver":
+        return _ms_tree(conn)
     if kind == "clickhouse":
         return _ch_tree(conn)
     return _pg_tree(conn)
@@ -5090,6 +5468,8 @@ def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[st
         return _redis_columns(conn, schema, table)
     if kind == "mysql":
         return _my_columns(conn, schema, table)
+    if kind == "sqlserver":
+        return _ms_columns(conn, schema, table)
     if kind == "clickhouse":
         return _ch_columns(conn, schema, table)
     return _pg_columns(conn, schema, table)
@@ -5156,6 +5536,11 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
             conn, schema, table, limit, offset, order_by, direction,
             _columns(conn, schema, table), filters,
         )
+    elif kind == "sqlserver":
+        result = _ms_rows(
+            conn, schema, table, limit, offset, order_by, direction,
+            _columns(conn, schema, table), filters,
+        )
     elif kind == "clickhouse":
         result = _ch_rows(conn, schema, table, limit, offset, order_by, direction, filters)
     elif kind == "mongodb":
@@ -5181,6 +5566,8 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
         result = _sqlite_query(conn, sql, limit, readonly)
     elif kind == "mysql":
         result = _my_query(conn, sql, limit, readonly)
+    elif kind == "sqlserver":
+        result = _ms_query(conn, sql, limit, readonly)
     elif kind == "clickhouse":
         result = _ch_query(conn, sql, limit, readonly)
     elif kind == "mongodb":
@@ -5873,7 +6260,13 @@ def _ai_request(
     history: Any = None,
 ) -> dict[str, Any]:
     config = _load_ai_config()
-    dialect = {"postgres": "PostgreSQL", "mysql": "MySQL/MariaDB", "clickhouse": "ClickHouse", "sqlite": "SQLite"}.get(_kind(conn), "SQL")
+    dialect = {
+        "postgres": "PostgreSQL", "mysql": "MySQL/MariaDB", "clickhouse": "ClickHouse",
+        "sqlite": "SQLite",
+        # T-SQL specifics the model must honour: brackets, TOP/OFFSET-FETCH, N'' strings.
+        "sqlserver": "T-SQL (Microsoft SQL Server): brackets for identifiers, "
+                     "TOP or OFFSET/FETCH rather than LIMIT, N'' for literals",
+    }.get(_kind(conn), "SQL")
     today = datetime.date.today().isoformat()
     context = _ai_schema_context(conn, schema, table, question)
     system = (
@@ -5931,7 +6324,11 @@ def _ai_request(
 
 
 def _ai_run(conn: dict[str, Any], sql: str) -> dict[str, Any]:
-    wrapped = f"SELECT * FROM (\n{sql}\n) AS dbdesk_ai LIMIT {MAX_ROWS}"
+    if _kind(conn) == "sqlserver":
+        # T-SQL has no LIMIT, and a derived table cannot be ordered without TOP/OFFSET.
+        wrapped = f"SELECT TOP ({MAX_ROWS}) * FROM (\n{sql}\n) AS dbdesk_ai"
+    else:
+        wrapped = f"SELECT * FROM (\n{sql}\n) AS dbdesk_ai LIMIT {MAX_ROWS}"
     readonly_conn = dict(conn, readonly=True)
     started = time.monotonic()
     result = _query(readonly_conn, wrapped, MAX_ROWS, True)
@@ -5954,8 +6351,10 @@ def _b64(value: bytes) -> str:
 def _bundle_item(conn: dict[str, Any]) -> dict[str, Any]:
     kind = str(conn.get("kind") or "postgres")
     fields = ["name", "group", "dbname", "readonly", "production"]
-    if kind in ("postgres", "mysql", "clickhouse"):
+    if kind in ("postgres", "mysql", "clickhouse", "sqlserver"):
         fields += ["host", "port", "user"]
+        if kind == "sqlserver":
+            fields += ["encryption"]
         if kind == "postgres":
             fields += ["sslmode"]
         if kind == "clickhouse":
@@ -6225,7 +6624,7 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         if kind in ("mcp", "http", "sqlite")
         else int(pick("port", {
             "postgres": 5432, "mysql": 3306, "clickhouse": 8123,
-            "mongodb": 27017, "redis": 6379,
+            "mongodb": 27017, "redis": 6379, "sqlserver": 1433,
         }[kind]))
     )
     dbname = (body.get("dbname") or (existing or {}).get("dbname") or "").strip()
@@ -6338,6 +6737,8 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "ch_headers_enc": ch_headers_enc,
         "ch_path": ch_path,
         "sslmode": sslmode_value,
+        # SQL Server negotiates TLS inside TDS; the driver takes a mode, not a CA bundle.
+        "encryption": _ms_encryption(pick("encryption", "default")),
         "readonly": True if kind in ("mcp", "http") else bool(pick("readonly", True)),
         "production": bool(pick("production", False)),
         "ai_schema": bool(pick("ai_schema", True)),
@@ -6869,6 +7270,8 @@ async def connection_databases(conn_id: str) -> dict[str, Any]:
         names = _http_databases(conn)
     elif kind == "sqlite":
         names = ["main"]
+    elif kind == "sqlserver":
+        names = _ms_databases(conn)
     elif kind == "mysql":
         rows = _my_rows_sql(conn, "SHOW DATABASES")
         names = [
@@ -7729,6 +8132,8 @@ def _run_mutation(conn, sql: str) -> None:
         _sqlite_mutation(conn, sql)
     elif kind == "mysql":
         _my_mutation(conn, sql)
+    elif kind == "sqlserver":
+        _ms_mutation(conn, sql)
     elif kind == "clickhouse":
         _ch_mutation(conn, sql)
     else:
@@ -7769,10 +8174,12 @@ async def alter_table(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, "invalid column name")
     kind = _kind(conn)
     quote = {
-        "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident, "sqlite": _sqlite_ident
+        "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident,
+        "sqlite": _sqlite_ident, "sqlserver": _ms_ident,
     }[kind]
     literal = {
-        "postgres": _lit, "mysql": _my_lit, "clickhouse": _ch_lit, "sqlite": _sqlite_lit
+        "postgres": _lit, "mysql": _my_lit, "clickhouse": _ch_lit,
+        "sqlite": _sqlite_lit, "sqlserver": _ms_lit,
     }[kind]
     target = (
         f"{quote(table)}" if kind == "sqlite" else f"{quote(schema)}.{quote(table)}"
