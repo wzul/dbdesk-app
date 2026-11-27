@@ -30,6 +30,23 @@ class MobileTest(unittest.TestCase):
                 # A menu with no script cannot be closed with Escape or a tap outside.
                 self.assertIn("/assets/site.js", html)
 
+    def test_menu_is_not_nested_inside_the_actions_cluster(self):
+        # .nav-actions is display:none below 680px; a menu inside it disappears with it.
+        for page in PAGES:
+            html = (SITE / page).read_text()
+            with self.subTest(page=page):
+                actions = re.search(r'<div class="nav-actions">(.*?)</div>', html, re.S)
+                self.assertIsNotNone(actions)
+                self.assertNotIn("nav-mobile", actions.group(1),
+                                 "the mobile menu must be a sibling of .nav-actions")
+
+    def test_phone_header_keeps_a_download_path(self):
+        # The header CTA is hidden on a phone, so the menu has to carry it.
+        home = (SITE / "index.html").read_text()
+        panel = re.search(r'<div class="nav-mobile-panel">(.*?)</div>', home, re.S)
+        self.assertIsNotNone(panel)
+        self.assertIn('nav-mobile-cta', panel.group(1))
+
     def test_menu_lists_the_same_destinations_as_the_header(self):
         home = (SITE / "index.html").read_text()
         match = re.search(r'<div class="nav-mobile-panel">(.*?)</div>', home, re.S)

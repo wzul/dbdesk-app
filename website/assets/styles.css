@@ -1027,3 +1027,22 @@ main p > a:not(.docs-shot), main li > a { display: inline-block; padding: 6px 0;
 .docs-shot-hint { display: none; }
 .docs-shot a { text-decoration: none; }
 .docs-shot a:hover img { border-color: var(--stroke-strong); }
+
+/* ---------- phone header: brand + menu, nothing floating ---------- */
+
+/* With the nav links hidden, the Download CTA had nowhere to sit: it ended up right of the
+   brand with ~90px of empty space, which reads as "why is this button in the middle?".
+   On a phone the header is the wordmark and the menu; the call to action is the first item
+   in the menu, and the hero already shows the platform-specific download button. */
+@media (max-width: 680px) {
+  .nav-actions { display: none; }
+  .nav-inner { justify-content: space-between; }
+}
+.nav-mobile-cta {
+  background: var(--primary);
+  color: var(--primary-fg) !important;
+  font-weight: 600;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.nav-mobile-cta:hover { background: color-mix(in srgb, var(--primary) 88%, #000); color: var(--primary-fg) !important; }
