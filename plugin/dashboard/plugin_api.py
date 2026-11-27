@@ -6207,7 +6207,13 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
             return existing.get(key)
         return default
 
-    name = (body.get("name") or "").strip() or (body.get("dbname") or "").strip() or "Database"
+    # A partial save (say, flipping `readonly`) must not rename the connection: every
+    # other field falls back to the stored row, and the name has to behave the same.
+    name = (
+        (body.get("name") or (existing or {}).get("name") or "").strip()
+        or (body.get("dbname") or "").strip()
+        or "Database"
+    )
     host = "" if kind in ("mcp", "http", "sqlite") else str(pick("host", "127.0.0.1")).strip()
     port = (
         0
