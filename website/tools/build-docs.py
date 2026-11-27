@@ -195,10 +195,20 @@ def _srcset(match: re.Match[str]) -> str:
     small = SITE / "assets" / "img" / f"{name}-900.webp"
     if not small.exists():
         return f'<img{before}src="{src}.webp"{after}>'
-    return (
+    img = (
         f'<img{before}src="{src}.webp" '
         f'srcset="{src}-900.webp 900w, {src}.webp 2392w" '
-        f'sizes="(max-width: 760px) 92vw, 700px"{after}>'
+        f'sizes="(max-width: 760px) 660px, 700px"{after}>'
+    )
+    # A wide capture in a narrow column needs to say that it scrolls, or it reads as a
+    # broken image: the fade is a real overlay (it must not scroll with the content) and the
+    # caption is the instruction.
+    return (
+        '<figure class="docs-shot-fig">'
+        f'<div class="docs-shot"><a href="{src}.webp" target="_blank" rel="noopener">{img}</a></div>'
+        '<figcaption class="docs-shot-hint">Swipe sideways for the whole window — '
+        'tap to open it full size</figcaption>'
+        "</figure>"
     )
 
 

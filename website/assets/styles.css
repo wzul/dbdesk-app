@@ -982,4 +982,48 @@ h2.sec-lead { margin: 0 0 6px; font-size: 15px; font-weight: 640; letter-spacing
 
 /* Inline links keep a 24px-tall hit area at every width (WCAG 2.5.8): padding on an inline
    element grows the box without disturbing the line. */
-main p > a, main li > a { display: inline-block; padding: 6px 0; }
+main p > a:not(.docs-shot), main li > a { display: inline-block; padding: 6px 0; }
+
+/* A 2392px desktop capture shrunk to 358px is a grey rectangle: none of the UI in it is
+   readable. On a phone the screenshot keeps a legible width and scrolls inside its own box,
+   and a tap opens the full-size file. */
+.docs-shot { display: block; }
+.docs-shot img { border-radius: var(--radius); border: 1px solid var(--stroke); }
+@media (max-width: 760px) {
+  .docs-body .docs-shot,
+  main .docs-shot {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius);
+  }
+  .docs-shot img { min-width: 660px; }
+  /* A fade that stays put while the image scrolls underneath: the cue that there is more. */
+  .docs-shot-fig { position: relative; }
+  .docs-shot-fig::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 26px;
+    width: 34px;
+    pointer-events: none;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    background: linear-gradient(to right, transparent, var(--bg) 88%);
+  }
+  .docs-body .docs-shot-hint,
+  main .docs-shot-hint {
+    display: block;
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+}
+
+/* Screenshots: the figure carries a caption on a phone and nothing on a desktop, where the
+   image is already full width. */
+.docs-shot-fig { margin: 18px 0 0; }
+.docs-shot-hint { display: none; }
+.docs-shot a { text-decoration: none; }
+.docs-shot a:hover img { border-color: var(--stroke-strong); }
