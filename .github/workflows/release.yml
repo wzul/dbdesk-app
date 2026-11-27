@@ -3,10 +3,20 @@ name: release
 on:
   push:
     tags: ['v*']
+  # A dispatch run does everything except create the release, so the signing and
+  # provenance steps can be proven before a tag goes out.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Sign and attest, but do not publish a release'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
   actions: read
+  id-token: write       # keyless signing: the OIDC token is the identity
+  attestations: write   # build provenance stored by GitHub
 
 jobs:
   publish:
@@ -45,6 +55,9 @@ jobs:
       - name: Stage release files
         run: |
           VERSION=${GITHUB_REF_NAME#v}
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="0.0.0-dryrun"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           mkdir -p out
 
@@ -95,6 +108,40 @@ jobs:
           (cd out && sha256sum ./* > SHA256SUMS.txt)
           ls -lh out
 
+      # Keyless signing: the identity is this workflow's OIDC token, so there is no
+      # private key to leak and no key rotation to forget. A verifier pins the repository
+      # and the workflow file instead of trusting a key in our keeping.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the checksum list
+        run: |
+          cosign sign-blob --yes \
+            --bundle out/SHA256SUMS.txt.bundle \
+            out/SHA256SUMS.txt
+
+      - name: Verify the signature we just produced
+        run: |
+          cosign verify-blob \
+            --bundle out/SHA256SUMS.txt.bundle \
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/.*$" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            out/SHA256SUMS.txt
+
+      - name: Attest build provenance for every asset
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-checksums: out/SHA256SUMS.txt
+
+      - name: Verify the provenance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in out/DB.Desk_*; do
+            echo "== $f"
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY"
+          done
+
       - name: Build latest.json
         run: |
           REPO="$GITHUB_REPOSITORY"
@@ -126,7 +173,19 @@ jobs:
             > out/latest.json
           cat out/latest.json
 
+      - name: Keep the signed artefacts for inspection on a dry run
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dry-run
+          path: |
+            out/SHA256SUMS.txt
+            out/SHA256SUMS.txt.bundle
+            out/latest.json
+          retention-days: 7
+
       - name: Publish release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -137,4 +196,4 @@ jobs:
             out/DB.Desk_*.deb out/DB.Desk_*.rpm \
             out/DB.Desk_*.AppImage out/DB.Desk_*.AppImage.sig \
             out/dbdesk-plugin-*.zip \
-            out/latest.json out/SHA256SUMS.txt
+            out/latest.json out/SHA256SUMS.txt out/SHA256SUMS.txt.bundle

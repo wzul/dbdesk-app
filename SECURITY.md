@@ -65,6 +65,12 @@ Published deliberately, because a policy that only lists strengths is marketing:
 
 - Windows installers are not code-signed yet, so SmartScreen may warn; compare the
   SHA-256 in `SHA256SUMS.txt` against the download.
-- `SHA256SUMS.txt` is not yet signed independently of GitHub.
 - Updates are verified by the Tauri updater's pinned minisign key; the manifest itself
   is fetched from GitHub Releases.
+
+## Verifying what you downloaded
+
+`SHA256SUMS.txt` is signed with a keyless Sigstore certificate, and every asset has a
+GitHub build-provenance attestation. Neither depends on a private key we could lose or
+misuse — the signature names this repository's release workflow. Commands are in
+[docs/signing.md](docs/signing.md#verifying-a-release).

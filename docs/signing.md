@@ -135,3 +135,41 @@ make bundle
 
 Keep the `.p12` and passwords out of the repo; the certificate can be revoked
 from developer.apple.com if it leaks.
+
+## Verifying a release
+
+Every release publishes `SHA256SUMS.txt`, a Sigstore bundle for it
+(`SHA256SUMS.txt.bundle`), and a build-provenance attestation stored by GitHub.
+Nothing here asks you to trust a key we hold: the signature names the workflow that
+produced the file.
+
+```bash
+TAG=v0.13.12
+BASE=https://github.com/wzul/dbdesk-app/releases/download/$TAG
+
+# 1. checksums and signature
+curl -LO "$BASE/SHA256SUMS.txt" -LO "$BASE/SHA256SUMS.txt.bundle"
+
+# 2. which workflow signed it — keyless, so this is the whole identity
+cosign verify-blob \
+  --bundle SHA256SUMS.txt.bundle \
+  --certificate-identity-regexp '^https://github.com/wzul/dbdesk-app/.github/workflows/release.yml@refs/.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS.txt
+
+# 3. the asset you downloaded matches the signed list
+sha256sum --ignore-missing -c SHA256SUMS.txt
+
+# 4. and where it was built
+gh attestation verify DB.Desk_${TAG#v}_aarch64.dmg --repo wzul/dbdesk-app
+```
+
+If step 2 prints `Verified OK`, the checksum list came from this repository's release
+workflow and has not been altered since. If step 3 prints `OK` for your file, the file
+is the one that list describes.
+
+A dry run of the same steps without publishing a release:
+
+```bash
+gh workflow run release.yml --repo wzul/dbdesk-app     # workflow_dispatch, dry_run=true
+```

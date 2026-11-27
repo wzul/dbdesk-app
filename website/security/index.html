@@ -214,7 +214,8 @@
             <tr><td>CI gates on every push</td><td><span class="badge badge-ok">on</span> full test suite, plugin-drift check, CodeQL, dependency audit</td></tr>
             <tr><td>macOS notarisation</td><td><span class="badge badge-neutral">when secrets are present</span> signed and notarised builds use the Apple Developer identity</td></tr>
             <tr><td>Windows code signing</td><td><span class="badge badge-gap">pending</span> installers are not yet signed, so SmartScreen may warn — compare the SHA-256 against the release</td></tr>
-            <tr><td>Signed checksums</td><td><span class="badge badge-gap">pending</span> <code>SHA256SUMS.txt</code> is not yet signed with a key you can verify independently of GitHub</td></tr>
+            <tr><td>Signed checksums</td><td><span class="badge badge-ok">on</span> <code>SHA256SUMS.txt</code> carries a keyless Sigstore signature; verifying it names this repository's release workflow, not a key we hold</td></tr>
+            <tr><td>Build provenance</td><td><span class="badge badge-ok">on</span> every asset has a GitHub attestation — <code>gh attestation verify &lt;file&gt; --repo wzul/dbdesk-app</code></td></tr>
           </tbody>
         </table>
       </div>
