@@ -219,9 +219,46 @@ def render(markdown_text: str) -> tuple[str, list[tuple[int, str, str]]]:
         extension_configs={"toc": {"slugify": slugify, "permalink": False}},
     )
     body = rewrite_links(md.convert(markdown_text))
-    toc = [(int(entry["level"]), str(entry["id"]), str(entry["name"]))
-           for entry in getattr(md, "toc_tokens", [])]
+    body, levels = normalise_headings(body)
+    toc = [
+        (levels.get(str(entry["id"]), int(entry["level"])), str(entry["id"]), str(entry["name"]))
+        for entry in getattr(md, "toc_tokens", [])
+    ]
     return body, toc
+
+
+def normalise_headings(body: str) -> tuple[str, dict[str, int]]:
+    """Renumber headings so the outline starts at h2 and never skips a level.
+
+    The page title is an h1 the template renders, so a document whose markdown begins at
+    `###` (mcp.md does) produced h1 → h3, which Lighthouse flags as a skipped level. Shifting
+    by the document's own minimum is not enough either: a `##` followed by `####` still jumps,
+    so each heading is capped at one deeper than the one before it.
+    """
+    found = [(int(m.group(1)), m.group(2)) for m in
+             re.finditer(r"<h([2-6])[^>]*\sid=\"([^\"]+)\"", body)]
+    levels: dict[str, int] = {}
+    previous = 1  # the h1 in the template
+    for original, anchor in found:
+        level = min(original, previous + 1)
+        level = max(2, level)
+        levels[anchor] = level
+        previous = level
+    if not levels:
+        return body, levels
+
+    def replace(match: re.Match[str]) -> str:
+        original = int(match.group(1))
+        anchor = match.group(2)
+        level = levels.get(anchor, original)
+        if level == original:
+            return match.group(0)
+        return match.group(0).replace(f"<h{original}", f"<h{level}", 1).replace(
+            f"</h{original}>", f"</h{level}>", 1
+        )
+
+    body = re.sub(r'<h([2-6])[^>]*\sid="([^"]+)".*?</h\1>', replace, body, flags=re.S)
+    return body, levels
 
 
 def page_html(
@@ -317,8 +354,7 @@ def docs_index() -> str:
         for slug, _, description, title in PAGES
     )
     engines = ", ".join(ENGINES)
-    body = f"""      <h1>Documentation</h1>
-      <p>{html.escape(TAGLINE)}</p>
+    body = f"""      <p>{html.escape(TAGLINE)}</p>
       <p>These pages are generated from the markdown in the repository, so what you read
         here is what ships with the code. Every page has an “Edit this page” link.</p>
       <h2>Engines</h2>
