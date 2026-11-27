@@ -22,7 +22,20 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 cp -a "$HERE/." "$STAGE/"
-for asset in assets/styles.css assets/site.js; do
+
+# Every asset the HTML points at, not just the stylesheet: images are served with a
+# 30-day immutable cache, so a replaced screenshot would keep showing the old picture
+# until the edge entry expired.
+ASSETS=("assets/styles.css" "assets/site.js")
+for found in "$HERE"/assets/img/*.webp "$HERE"/assets/img/*.png; do
+  [ -f "$found" ] || continue
+  case "$found" in
+    *og.png) continue ;;   # referenced by absolute URL in meta tags; scrapers dislike ?v=
+  esac
+  ASSETS+=("${found#"$HERE"/}")
+done
+
+for asset in "${ASSETS[@]}"; do
   [ -f "$HERE/$asset" ] || continue
   STAMP="$(sha256sum "$HERE/$asset" | cut -c1-10)"
   find "$STAGE" -name '*.html' -print0 | xargs -0 sed -i "s#/$asset#/$asset?v=$STAMP#g"
