@@ -30,10 +30,15 @@ for asset in assets/styles.css assets/site.js; do
 done
 
 echo "== syncing site → ${HOST}:${REMOTE_DIR}/site"
+# `release/` belongs to the manifest sidecar, which keeps the download buttons in step
+# with the newest GitHub release. Shipping a copy from the repository overwrote it with
+# whatever version was committed, so the site advertised a stale build within minutes of
+# a deploy. The sidecar is the only writer.
 rsync -az --delete \
   --exclude 'preview-*.png' \
   --exclude 'tools' \
   --exclude 'deploy' \
+  --exclude 'release' \
   "$STAGE/" "${HOST}:${REMOTE_DIR}/site/"
 
 echo "== syncing nginx config"
