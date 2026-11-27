@@ -3731,6 +3731,7 @@ const DB_KIND_CARDS = [
   { kind: 'mongodb', label: 'MongoDB', port: 27017 },
   { kind: 'redis', label: 'Redis', port: 6379 },
   { kind: 'sqlite', label: 'SQLite', port: 0 },
+  { kind: 'duckdb', label: 'DuckDB', port: 0 },
   { kind: 'mcp', label: 'MCP', port: 0 },
   { kind: 'http', label: 'HTTP', port: 0 }
 ]
@@ -5720,6 +5721,7 @@ const CONNECTION_META = {
   mysql: { icon: 'database', tone: 'text-amber-600 dark:text-amber-400' },
   clickhouse: { icon: 'graph', tone: 'text-yellow-600 dark:text-yellow-400' },
   sqlite: { icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
+  duckdb: { icon: 'graph', tone: 'text-yellow-700 dark:text-yellow-300' },
   mongodb: { icon: 'database', tone: 'text-green-600 dark:text-green-400' },
   redis: { icon: 'key', tone: 'text-rose-600 dark:text-rose-400' },
   mcp: { icon: 'plug', tone: 'text-purple-600 dark:text-purple-400' },
@@ -8158,6 +8160,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         mongodb: 'Mongo',
                         redis: 'Redis',
                         sqlite: 'SQLite',
+                        duckdb: 'DuckDB',
                         mcp: 'MCP',
                         http: 'HTTP'
                       }[active.kind || 'postgres'] || 'PG'

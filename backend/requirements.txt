@@ -13,6 +13,9 @@ pg8000>=1.31.5
 # so there is no ODBC driver (msodbcsql18) to install on the user's machine.
 pymssql>=2.4.6
 PyMySQL>=1.2.4
+# DuckDB: embedded analytics, wheels for every platform (including win_arm64). It reads and
+# writes a single file, so read-only is enforced at connect time rather than by a grant.
+duckdb>=1.4
 certifi>=2026.11.20
 pymongo>=4.20.2
 redis>=8.2.0

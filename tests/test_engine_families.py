@@ -36,7 +36,7 @@ class FamilyTest(unittest.TestCase):
         self.assertEqual(api.default_port("duckdb"), 5432)
 
     def test_every_kind_has_a_default_port_or_is_portless(self):
-        portless = {"mcp", "http", "sqlite"}
+        portless = {"mcp", "http", "sqlite", "duckdb"}
         for kind in api.KINDS - portless:
             self.assertIn(kind, api.DEFAULT_PORTS, f"{kind} would KeyError on save")
 

@@ -36,6 +36,8 @@ import shlex
 import shutil
 import socket
 import sqlite3
+
+import duckdb_kind
 import ssl
 import subprocess
 import threading
@@ -123,13 +125,17 @@ MAX_ROWS = 1000
 PG_KINDS = {"postgres", "redshift", "cockroachdb", "greenplum"}
 MY_KINDS = {"mysql", "singlestore"}
 KINDS = PG_KINDS | MY_KINDS | {
-    "sqlserver", "clickhouse", "mongodb", "redis", "mcp", "http", "sqlite",
+    "sqlserver", "clickhouse", "mongodb", "redis", "mcp", "http", "sqlite", "duckdb",
 }
+
+# Kinds that are a local file rather than a server: no host, no port, no tunnel.
+FILE_KINDS = {"sqlite", "duckdb"}
 
 # Default port per kind, used when a connection leaves the port blank.
 DEFAULT_PORTS = {
     "postgres": 5432, "redshift": 5439, "cockroachdb": 26257, "greenplum": 5432,
     "mysql": 3306, "singlestore": 3306, "sqlserver": 1433, "clickhouse": 8123,
+    "mongodb": 27017, "redis": 6379,
 }
 
 
@@ -400,7 +406,7 @@ def _command_tunnel(conn: dict[str, Any]) -> None:
 
 def _connect(conn_id: str) -> dict[str, Any]:
     conn = _get(conn_id)
-    if str(conn.get("kind") or "") in ("mcp", "http", "sqlite"):
+    if str(conn.get("kind") or "") in ("mcp", "http", "sqlite", "duckdb"):
         return conn
     if str(conn.get("tunnel_command") or "").strip():
         _command_tunnel(conn)
@@ -413,7 +419,7 @@ def _connect(conn_id: str) -> dict[str, Any]:
 
 
 def _with_db(conn: dict[str, Any], database: str | None) -> dict[str, Any]:
-    if str(conn.get("kind") or "") == "sqlite":
+    if str(conn.get("kind") or "") in FILE_KINDS:
         return conn
     if database:
         return dict(conn, dbname=str(database))
@@ -621,11 +627,11 @@ def _where_clause(
     }
     quote = {
         "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident,
-        "sqlite": _sqlite_ident, "sqlserver": _ms_ident,
+        "sqlite": _sqlite_ident, "sqlserver": _ms_ident, "duckdb": _ident,
     }[kind]
     literal = {
         "postgres": _lit, "mysql": _my_lit, "clickhouse": _ch_lit,
-        "sqlite": _sqlite_lit, "sqlserver": _ms_lit,
+        "sqlite": _sqlite_lit, "sqlserver": _ms_lit, "duckdb": _lit,
     }[kind]
     clauses: list[str] = []
     for item in filters[:8]:
@@ -736,7 +742,7 @@ def _pg_run_csv(conn: dict[str, Any], sql: str) -> str:
     cmd = [
         PSQL, "-X", "-q", "--csv",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-p", str(default_port(kind)),
+        "-p", str(conn.get("port") or default_port(kind)),
         "-U", str(conn.get("user") or "postgres"),
         "-d", str(conn.get("dbname") or "postgres"),
     ]
@@ -1579,7 +1585,7 @@ def _my_open_native(conn: dict[str, Any]):
     readonly = bool(conn.get("readonly", True))
     db = pymysql.connect(
         host=conn.get("host") or "127.0.0.1",
-        port=int(conn.get("port") or default_port(kind, 3306)),
+        port=int(conn.get("port") or default_port(kind)),
         user=conn.get("user") or "root",
         password=conn.get("password") or "",
         database=conn.get("dbname") or None,
@@ -1668,7 +1674,7 @@ def _pg_run(conn: dict[str, Any], script: str, *, readonly: bool = True, timeout
     cmd = [
         PSQL, "-X", "-q", "--csv", "-P", f"null={NULL_SENTINEL}", "-v", "ON_ERROR_STOP=1",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-p", str(default_port(kind)),
+        "-p", str(conn.get("port") or default_port(kind)),
         "-U", str(conn.get("user") or "postgres"),
         "-d", str(conn.get("dbname") or "postgres"),
     ]
@@ -1692,7 +1698,7 @@ def _pg_raw(conn: dict[str, Any], script: str) -> str:
     cmd = [
         PSQL, "-X", "-q", "-P", "pager=off",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-p", str(default_port(kind)),
+        "-p", str(conn.get("port") or default_port(kind)),
         "-U", str(conn.get("user") or "postgres"),
         "-d", str(conn.get("dbname") or "postgres"),
     ]
@@ -1774,6 +1780,8 @@ def _ddl(conn: dict[str, Any], schema: str, table: str) -> str:
         return _http_ddl(conn, schema, table)
     if kind == "sqlite":
         return _sqlite_ddl(conn, schema, table)
+    if kind == "duckdb":
+        return duckdb_kind.ddl(conn, schema, table)
     if kind in MY_KINDS:
         return _my_ddl(conn, schema, table)
     if kind == "sqlserver":
@@ -2039,7 +2047,7 @@ def _my_exec(conn: dict[str, Any], sql: str, *, init: str | None = None, timeout
     cmd = [
         MYSQL, "--batch", "--connect-timeout=8",
         "-h", str(conn.get("host") or "127.0.0.1"),
-        "-P", str(default_port(kind, 3306)),
+        "-P", str(conn.get("port") or default_port(kind)),
         "-u", str(conn.get("user") or "root"),
         "-D", str(conn.get("dbname") or ""),
     ]
@@ -2315,7 +2323,7 @@ def _ms_open(conn: dict[str, Any]):
         )
     kwargs: dict[str, Any] = {
         "server": str(conn.get("host") or "127.0.0.1"),
-        "port": str(int(conn.get("port") or default_port(kind, 1433))),
+        "port": str(int(conn.get("port") or default_port(kind))),
         "user": str(conn.get("user") or "sa"),
         "password": str(conn.get("password") or ""),
         "database": str(conn.get("dbname") or ""),
@@ -2653,7 +2661,7 @@ def _ch_target(conn: dict[str, Any]) -> tuple[str, str, str, str]:
     sslmode = str(conn.get("sslmode") or "").lower()
     scheme = "https" if sslmode in ("require", "verify-ca", "verify-full") else "http"
     explicit_scheme = ""
-    port = str(conn.get("port") or default_port(kind, 8123))
+    port = str(conn.get("port") or default_port(kind))
     path = str(conn.get("ch_path") or "/").strip() or "/"
     if "://" in raw:
         parts = urllib.parse.urlsplit(raw if raw.startswith(("http://", "https://")) else "//" + raw)
@@ -3144,6 +3152,8 @@ def _indexes(conn: dict[str, Any], schema: str, table: str) -> list[dict[str, An
         return []
     if kind == "sqlite":
         return _sqlite_indexes(conn, schema, table)
+    if kind == "duckdb":
+        return duckdb_kind.indexes(conn, schema, table)
     if kind == "mongodb":
         return _mongo_indexes(conn, schema, table)
     if kind == "sqlserver":
@@ -5438,6 +5448,8 @@ def _test(conn: dict[str, Any]) -> dict[str, Any]:
         return _http_test(conn)
     if kind == "sqlite":
         return _sqlite_test(conn)
+    if kind == "duckdb":
+        return duckdb_kind.test(conn)
     if kind == "mongodb":
         return _mongo_test(conn)
     if kind == "redis":
@@ -5459,6 +5471,8 @@ def _tree(conn: dict[str, Any]) -> list[dict[str, Any]]:
         return _http_tree(conn)
     if kind == "sqlite":
         return _sqlite_tree(conn)
+    if kind == "duckdb":
+        return duckdb_kind.tree(conn)
     if kind == "mongodb":
         return _mongo_tree(conn)
     if kind == "redis":
@@ -5480,6 +5494,8 @@ def _columns_live(conn: dict[str, Any], schema: str, table: str) -> list[dict[st
         return _http_columns(conn, schema, table)
     if kind == "sqlite":
         return _sqlite_columns(conn, schema, table)
+    if kind == "duckdb":
+        return duckdb_kind.columns(conn, schema, table)
     if kind == "mongodb":
         return _mongo_columns(conn, schema, table)
     if kind == "redis":
@@ -5549,6 +5565,13 @@ def _rows(conn, schema, table, limit, offset, order_by, direction, filters=None)
         return _http_rows(conn, schema, table, limit, offset, order_by, direction, filters)
     if kind == "sqlite":
         result = _sqlite_rows(conn, schema, table, limit, offset, order_by, direction, filters)
+    elif kind == "duckdb":
+        columns_meta = _columns(conn, schema, table)
+        result = duckdb_kind.rows(
+            conn, schema, table, limit, offset, order_by, direction, filters,
+            where=_where_clause("duckdb", filters, columns_meta, conn),
+            columns_meta=columns_meta,
+        )
     elif kind in MY_KINDS:
         result = _my_rows(
             conn, schema, table, limit, offset, order_by, direction,
@@ -5582,6 +5605,9 @@ def _query(conn, sql, limit, readonly) -> dict[str, Any]:
         return _redis_query(conn, sql, limit, readonly)
     if kind == "sqlite":
         result = _sqlite_query(conn, sql, limit, readonly)
+    elif kind == "duckdb":
+        _guard_readonly(conn, sql)
+        result = duckdb_kind.query(conn, sql, limit, readonly)
     elif kind in MY_KINDS:
         result = _my_query(conn, sql, limit, readonly)
     elif kind == "sqlserver":
@@ -6636,27 +6662,25 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         or (body.get("dbname") or "").strip()
         or "Database"
     )
-    host = "" if kind in ("mcp", "http", "sqlite") else str(pick("host", "127.0.0.1")).strip()
+    host = "" if kind in ("mcp", "http", "sqlite", "duckdb") else str(pick("host", "127.0.0.1")).strip()
     port = (
         0
-        if kind in ("mcp", "http", "sqlite")
-        else int(pick("port", {
-            "postgres": 5432, "mysql": 3306, "clickhouse": 8123,
-            "mongodb": 27017, "redis": 6379, "sqlserver": 1433,
-        }[kind]))
+        if kind in ("mcp", "http", "sqlite", "duckdb")
+        else int(pick("port", default_port(kind, 5432)))
     )
     dbname = (body.get("dbname") or (existing or {}).get("dbname") or "").strip()
     user = (body.get("user") or (existing or {}).get("user") or "").strip()
     if not dbname:
         raise HTTPException(400, "database name is required")
-    if kind == "sqlite":
+    if kind in FILE_KINDS:
         dbname = os.path.expanduser(dbname)
     if not user:
         user = {
-            "postgres": "postgres", "mysql": "root", "clickhouse": "default",
-            "mongodb": "", "redis": "",
-            "mcp": "mcp", "http": "http", "sqlite": "sqlite",
-        }[kind]
+            "postgres": "postgres", "redshift": "awsuser", "cockroachdb": "root",
+            "greenplum": "gpadmin", "mysql": "root", "singlestore": "root",
+            "clickhouse": "default", "mongodb": "", "redis": "",
+            "mcp": "mcp", "http": "http", "sqlite": "sqlite", "duckdb": "duckdb",
+        }.get(kind, "postgres")
     mcp_url = str(pick("mcp_url", "")).strip()
     mcp_server = str(pick("mcp_server", "")).strip()
     mcp_tool = str(pick("mcp_tool", "query")).strip() or "query"
@@ -6761,10 +6785,10 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "production": bool(pick("production", False)),
         "ai_schema": bool(pick("ai_schema", True)),
         "ai_query": bool(pick("ai_query", True)),
-        "ssh_host": "" if kind in ("mcp", "http", "sqlite") else str(pick("ssh_host", "")).strip(),
-        "ssh_user": "" if kind == "sqlite" else str(pick("ssh_user", "root")).strip(),
+        "ssh_host": "" if kind in ("mcp", "http", "sqlite", "duckdb") else str(pick("ssh_host", "")).strip(),
+        "ssh_user": "" if kind in FILE_KINDS else str(pick("ssh_user", "root")).strip(),
         "ssh_port": int(pick("ssh_port", 22)),
-        "ssh_key": "" if kind in ("mcp", "http", "sqlite") else str(pick("ssh_key", "")).strip(),
+        "ssh_key": "" if kind in ("mcp", "http", "sqlite", "duckdb") else str(pick("ssh_key", "")).strip(),
         "mcp_url": mcp_url,
         "mcp_server": mcp_server,
         "mcp_tool": mcp_tool,
@@ -6778,8 +6802,8 @@ async def save_connection(body: dict[str, Any]) -> dict[str, Any]:
         "http_body_mode": http_body_mode,
         "http_dialect": http_dialect,
         "http_timeout": http_timeout,
-        "tunnel_command": "" if kind == "sqlite" else str(pick("tunnel_command", "")).strip(),
-        "tunnel_env": "" if kind == "sqlite" else str(pick("tunnel_env", "")),
+        "tunnel_command": "" if kind in FILE_KINDS else str(pick("tunnel_command", "")).strip(),
+        "tunnel_env": "" if kind in FILE_KINDS else str(pick("tunnel_env", "")),
         "tunnel_timeout": max(5, min(int(pick("tunnel_timeout", 25)), 120)),
         "mongo_srv": bool(pick("mongo_srv", False)),
         "auth_source": str(pick("auth_source", "admin")).strip() or "admin",
@@ -8148,6 +8172,8 @@ def _run_mutation(conn, sql: str) -> None:
     kind = _kind(conn)
     if kind == "sqlite":
         _sqlite_mutation(conn, sql)
+    elif kind == "duckdb":
+        duckdb_kind.run(conn, [sql])
     elif kind in MY_KINDS:
         _my_mutation(conn, sql)
     elif kind == "sqlserver":
@@ -8193,11 +8219,11 @@ async def alter_table(body: dict[str, Any]) -> dict[str, Any]:
     kind = _kind(conn)
     quote = {
         "postgres": _ident, "mysql": _my_ident, "clickhouse": _ch_ident,
-        "sqlite": _sqlite_ident, "sqlserver": _ms_ident,
+        "sqlite": _sqlite_ident, "sqlserver": _ms_ident, "duckdb": _ident,
     }[kind]
     literal = {
         "postgres": _lit, "mysql": _my_lit, "clickhouse": _ch_lit,
-        "sqlite": _sqlite_lit, "sqlserver": _ms_lit,
+        "sqlite": _sqlite_lit, "sqlserver": _ms_lit, "duckdb": _lit,
     }[kind]
     target = (
         f"{quote(table)}" if kind == "sqlite" else f"{quote(schema)}.{quote(table)}"

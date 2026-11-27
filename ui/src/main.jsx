@@ -71,6 +71,7 @@ const KIND_LABELS = {
   sqlserver: 'SQL Server',
   clickhouse: 'ClickHouse',
   sqlite: 'SQLite',
+  duckdb: 'DuckDB',
   mcp: 'MCP',
   http: 'HTTP gateway'
 }

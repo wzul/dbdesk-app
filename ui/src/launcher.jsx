@@ -18,6 +18,7 @@ const KINDS = {
   mongodb: { label: 'MongoDB', icon: 'database', tone: 'text-green-600 dark:text-green-400' },
   redis: { label: 'Redis / Valkey', icon: 'database', tone: 'text-red-600 dark:text-red-400' },
   sqlite: { label: 'SQLite', icon: 'file', tone: 'text-emerald-600 dark:text-emerald-400' },
+  duckdb: { label: 'DuckDB', icon: 'graph', tone: 'text-yellow-700 dark:text-yellow-300' },
   mcp: { label: 'MCP', icon: 'plug', tone: 'text-purple-600 dark:text-purple-400' },
   http: { label: 'HTTP gateway', icon: 'cloud', tone: 'text-blue-600 dark:text-blue-400' }
 }

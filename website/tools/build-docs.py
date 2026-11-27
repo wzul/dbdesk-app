@@ -68,7 +68,7 @@ TAGLINE = (
 ENGINES = [
     "PostgreSQL", "Amazon Redshift", "CockroachDB", "Greenplum",
     "MySQL", "MariaDB", "SingleStore", "Microsoft SQL Server",
-    "ClickHouse", "SQLite", "MongoDB", "Redis / Valkey",
+    "ClickHouse", "SQLite", "DuckDB", "MongoDB", "Redis / Valkey",
     "MCP servers", "HTTP SQL gateways",
 ]
 
