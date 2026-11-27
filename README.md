@@ -69,6 +69,7 @@ The full list is in [Features](docs/features.md).
 | [Features](docs/features.md) | Connections, grid, filters, SQL tabs, AI, MCP, desktop integration. |
 | [MCP server](docs/mcp.md) | Expose DB Desk to agents; tools, approvals, writes, access model. |
 | [Security & privacy](docs/security.md) | Trust model, secrets, AI privacy, permissions. |
+| [Security policy](SECURITY.md) · [Privacy statement](PRIVACY.md) | How to report a vulnerability, and what is stored where. |
 | [Development](docs/development.md) | Performance, tests, repository layout. |
 | [Signing & notarization](docs/signing.md) | Ad-hoc signing, notarization, CI secrets. |
 | [Troubleshooting](docs/troubleshooting.md) | MCP errors, MySQL over MCP, notifications, Cloudflare. |

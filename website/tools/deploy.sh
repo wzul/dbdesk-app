@@ -14,12 +14,27 @@ HOST="${DBDESK_WEB_HOST:?set DBDESK_WEB_HOST (ssh destination)}"
 REMOTE_DIR="${DBDESK_WEB_DIR:-/opt/dbdesk-web}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Cloudflare caches /assets/* for hours, so a deploy that changes a stylesheet would
+# be invisible until the edge copy expired — the HTML is no-cache, which makes the page
+# look half-styled rather than obviously stale. Stamping the asset URL with a hash of
+# the file gives every change a URL nobody has cached yet. The rewrite happens in a
+# staging copy, so the repository keeps plain paths.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp -a "$HERE/." "$STAGE/"
+for asset in assets/styles.css assets/site.js; do
+  [ -f "$HERE/$asset" ] || continue
+  STAMP="$(sha256sum "$HERE/$asset" | cut -c1-10)"
+  find "$STAGE" -name '*.html' -print0 | xargs -0 sed -i "s#/$asset#/$asset?v=$STAMP#g"
+  echo "   $asset -> ?v=$STAMP"
+done
+
 echo "== syncing site → ${HOST}:${REMOTE_DIR}/site"
 rsync -az --delete \
   --exclude 'preview-*.png' \
   --exclude 'tools' \
   --exclude 'deploy' \
-  "$HERE/" "${HOST}:${REMOTE_DIR}/site/"
+  "$STAGE/" "${HOST}:${REMOTE_DIR}/site/"
 
 echo "== syncing nginx config"
 rsync -az "$HERE/deploy/nginx/" "${HOST}:${REMOTE_DIR}/nginx/"

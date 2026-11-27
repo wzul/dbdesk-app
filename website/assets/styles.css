@@ -570,3 +570,76 @@ footer {
   color: var(--text-3);
 }
 .dl-alt a { font-weight: 550; }
+
+/* ---------- article pages (security) ---------- */
+.prose { max-width: 760px; }
+.prose h2 { margin: 44px 0 12px; font-size: 22px; letter-spacing: -0.018em; }
+.prose h2:first-child { margin-top: 0; }
+.prose h3 { margin: 26px 0 8px; font-size: 16px; font-weight: 640; }
+.prose p { margin: 12px 0 0; color: var(--text-2); font-size: 15px; line-height: 1.62; }
+.prose ul { margin: 12px 0 0; padding-left: 18px; color: var(--text-2); font-size: 15px; line-height: 1.62; }
+.prose li { margin: 6px 0; }
+.prose a { font-weight: 550; }
+
+.table-wrap {
+  margin: 18px 0 0;
+  overflow-x: auto;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--chrome);
+}
+table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.data th,
+table.data td {
+  padding: 11px 14px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--stroke);
+}
+table.data th {
+  font-size: 10.5px;
+  font-weight: 660;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--bg-canvas);
+  white-space: nowrap;
+}
+table.data tr:last-child td { border-bottom: 0; }
+table.data td:first-child { color: var(--text); }
+table.data code, .prose code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--quaternary);
+  color: var(--text);
+}
+
+/* A quoted measurement or a caveat: readable, but visibly not body copy. */
+.note {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--bg-canvas);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.note strong { color: var(--text); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 640;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.badge-ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.badge-gap { background: color-mix(in srgb, var(--destructive) 14%, transparent); color: var(--destructive); }
+.badge-neutral { background: var(--quaternary); color: var(--text-3); }
