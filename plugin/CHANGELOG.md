@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.13
+
+- Keyboard navigation in the tree and the data grid: one tab stop per pane, arrow keys to move,
+  Home/End for the ends of a row, PageUp/PageDown, and Ctrl+C to copy the focused cell. Opening a
+  database or a table no longer needs the mouse.
+- Settings and the shortcut sheet are real dialogs: focus moves in, Tab stays inside, Escape closes
+  and focus returns to the control that opened them.
+- A page of rows can now be 1000 or 2000 rows (the grid virtualises above 100), so the page-size
+  picker offers both.
+
 ## 0.8.11
 
 - AI autocomplete now defaults to **on** once an AI provider is configured; turn it off under AI provider settings if you do not want it.

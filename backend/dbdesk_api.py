@@ -122,7 +122,10 @@ SSH = shutil.which("ssh") or "/usr/bin/ssh"
 MYSQL = shutil.which("mysql") or shutil.which("mariadb") or "/usr/bin/mysql"
 NULL_SENTINEL = "\u2400"
 QUERY_TIMEOUT = 30
-MAX_ROWS = 1000
+# One page of rows is capped here rather than by trust in the caller. 2000 rows of a wide
+# table is ~900 KB of JSON and lands in ~40 ms locally, which is still one frame budget; the
+# grid draws 100-ish rows of it and virtualises the rest.
+MAX_ROWS = 2000
 # Kinds are grouped by wire protocol wherever that is honest: a server that speaks the
 # PostgreSQL or MySQL protocol needs no new driver, only a name and the right defaults.
 # `_kind()` falls through to the PostgreSQL path for anything it does not recognise, so

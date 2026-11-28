@@ -953,6 +953,52 @@ function Grid({
       }
     : null
   const inSel = (ri, ci) => Boolean(sel && ri >= sel.r0 && ri <= sel.r1 && ci >= sel.c0 && ci <= sel.c1)
+
+  // Keyboard navigation of the grid: one cell holds the tab stop, the arrow keys move it, and
+  // Ctrl+C copies the cell you are on. Virtualised rows are scrolled into view before focusing.
+  const [keyboardCell, setKeyboardCell] = useState(null)
+
+  const onGridKeyDown = (event) => {
+    // `current`, not `start`: the outer `start` is the first rendered row, and a local of the
+    // same name would be in its own temporal dead zone here.
+    const current = keyboardCell || { r: start, c: 0 }
+    const lastRow = Math.max(0, rows.length - 1)
+    const lastCol = Math.max(0, visibleCount - 1)
+    let next = null
+    if (event.key === 'ArrowDown') next = { r: Math.min(lastRow, current.r + 1), c: current.c }
+    else if (event.key === 'ArrowUp') next = { r: Math.max(0, current.r - 1), c: current.c }
+    else if (event.key === 'ArrowRight') next = { r: current.r, c: Math.min(lastCol, current.c + 1) }
+    else if (event.key === 'ArrowLeft') next = { r: current.r, c: Math.max(0, current.c - 1) }
+    else if (event.key === 'Home') next = { r: current.r, c: 0 }
+    else if (event.key === 'End') next = { r: current.r, c: lastCol }
+    else if (event.key === 'PageDown') next = { r: Math.min(lastRow, current.r + 10), c: current.c }
+    else if (event.key === 'PageUp') next = { r: Math.max(0, current.r - 10), c: current.c }
+    else if ((event.metaKey || event.ctrlKey) && (event.key === 'c' || event.key === 'C')) {
+      const cell = document.activeElement
+      if (cell && cell.dataset && cell.dataset.cell) {
+        const text = cell.innerText
+        event.preventDefault()
+        navigator.clipboard?.writeText(text).catch(() => {})
+      }
+      return
+    }
+    if (!next) return
+    event.preventDefault()
+    setKeyboardCell(next)
+    // the row may be virtualised away: scroll it in, then focus the cell
+    const scroller = scrollRef.current
+    if (scroller) {
+      const top = 30 + next.r * ROW_HEIGHT
+      if (top < scroller.scrollTop + 30) scroller.scrollTop = Math.max(0, top - 60)
+      else if (top + ROW_HEIGHT > scroller.scrollTop + scroller.clientHeight) {
+        scroller.scrollTop = top + ROW_HEIGHT - scroller.clientHeight + 30
+      }
+    }
+    requestAnimationFrame(() => {
+      const target = document.querySelector(`[data-cell="${next.r}:${next.c}"]`)
+      if (target) target.focus()
+    })
+  }
   if (!columns || columns.length === 0) {
     return jsx('div', {
       className: 'flex flex-1 items-center justify-center p-8 text-xs text-(--ui-text-tertiary)',
@@ -962,7 +1008,8 @@ function Grid({
 
   const ROW_HEIGHT = 24
   const OVERSCAN = 8
-  const virtual = rows.length > 200
+  // Above this many rows, render only what the viewport can show plus the overscan.
+  const virtual = rows.length > 100
   const bodyTop = Math.max(0, scrollTop - 30)
   const start = virtual
     ? Math.max(0, Math.floor(bodyTop / ROW_HEIGHT) - OVERSCAN)
@@ -980,8 +1027,12 @@ function Grid({
   return jsx('div', {
     ref: scrollRef,
     onScroll: (event) => setScrollTop(event.currentTarget.scrollTop),
+    onKeyDown: onGridKeyDown,
     className: 'min-h-0 flex-1 overflow-auto',
     children: jsxs('table', {
+      role: 'grid',
+      'aria-rowcount': rows.length,
+      'aria-colcount': columnCount,
       className: 'dbd-grid-table dbd-mono w-max min-w-full',
       children: [
         jsx('thead', {
@@ -1114,6 +1165,10 @@ function Grid({
                         return jsx(
                           'td',
                           {
+                            'data-cell': `${ri}:${ci}`,
+                            tabIndex:
+                              keyboardCell && keyboardCell.r === ri && keyboardCell.c === ci ? 0 : -1,
+                            onFocus: () => setKeyboardCell({ r: ri, c: ci }),
                             className: cn(
                               TD,
                               isNumeric(value) && 'text-right tabular-nums',
@@ -3718,6 +3773,83 @@ function DatabaseLogo({ kind, flavor, size = 22 }) {
   })
 }
 
+// The cloud warehouses are reached over HTTPS with a signed request, so each one needs a
+// couple of settings the generic host/port/user fields cannot carry.
+const CLOUD_OPTIONS = {
+  athena: {
+    hint: 'Region, and the S3 prefix Athena writes every result set to.',
+    placeholder: '{"region": "ap-southeast-1", "output": "s3://my-bucket/athena/"}'
+  },
+  dynamodb: {
+    hint: 'Region. Add "endpoint" for DynamoDB Local or a VPC endpoint.',
+    placeholder: '{"region": "ap-southeast-1"}'
+  },
+  bigquery: {
+    hint: 'Project and dataset. The user is the service-account e-mail, the password its PEM key.',
+    placeholder: '{"project": "my-project", "dataset": "demo"}'
+  },
+  snowflake: {
+    hint: 'Warehouse, role and schema. The host is your account URL.',
+    placeholder: '{"warehouse": "COMPUTE_WH", "role": "SYSADMIN", "schema": "PUBLIC"}'
+  }
+};
+
+// An overlay is only a dialog for a keyboard user if focus goes into it, stays in it while it
+// is open, and comes back to the control that opened it. Kept inline because this file is
+// copied verbatim into the Hermes plugin, where a sibling import would not exist.
+const DIALOG_FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',')
+
+function useDialogFocus(containerRef, active) {
+  useEffect(() => {
+    if (!active) return undefined
+    const node = containerRef.current
+    if (!node) return undefined
+    const previous = document.activeElement
+    const focusable = () =>
+      Array.from(node.querySelectorAll(DIALOG_FOCUSABLE)).filter(
+        (element) => element.offsetWidth > 0 || element.offsetHeight > 0 || element.getClientRects().length > 0
+      )
+    const target =
+      node.querySelector('[data-autofocus]') ||
+      focusable().find((element) => element.matches('input, textarea, select')) ||
+      focusable()[0] ||
+      node
+    if (target && typeof target.focus === 'function') {
+      if (target === node && !node.hasAttribute('tabindex')) node.setAttribute('tabindex', '-1')
+      target.focus()
+    }
+    const onKeyDown = (event) => {
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      if (items.length === 0) {
+        event.preventDefault()
+        return
+      }
+      const index = items.indexOf(document.activeElement)
+      const last = items.length - 1
+      if (event.shiftKey && index <= 0) {
+        event.preventDefault()
+        items[last].focus()
+      } else if (!event.shiftKey && (index === -1 || index === last)) {
+        event.preventDefault()
+        items[0].focus()
+      }
+    }
+    node.addEventListener('keydown', onKeyDown)
+    return () => {
+      node.removeEventListener('keydown', onKeyDown)
+      if (previous && typeof previous.focus === 'function' && document.contains(previous)) previous.focus()
+    }
+  }, [active, containerRef])
+}
+
 const DB_KIND_CARDS = [
   { kind: 'postgres', label: 'PostgreSQL', port: 5432 },
   { kind: 'redshift', label: 'Amazon Redshift', port: 5439 },
@@ -3736,6 +3868,13 @@ const DB_KIND_CARDS = [
   { kind: 'influxdb3', label: 'InfluxDB 3', port: 8181 },
   { kind: 'libsql', label: 'libSQL', port: 443 },
   { kind: 'd1', label: 'Cloudflare D1', port: 443 },
+  { kind: 'oracle', label: 'Oracle', port: 1521 },
+  { kind: 'vertica', label: 'Vertica', port: 5433 },
+  { kind: 'cassandra', label: 'Cassandra', port: 9042 },
+  { kind: 'athena', label: 'Amazon Athena', port: 443 },
+  { kind: 'dynamodb', label: 'DynamoDB', port: 443 },
+  { kind: 'bigquery', label: 'BigQuery', port: 443 },
+  { kind: 'snowflake', label: 'Snowflake', port: 443 },
   { kind: 'mcp', label: 'MCP', port: 0 },
   { kind: 'http', label: 'HTTP', port: 0 }
 ]
@@ -4487,7 +4626,8 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                     })
                   })
                 : null,
-              !['mysql', 'mcp', 'http', 'sqlite', 'sqlserver'].includes(draft.kind || 'postgres')
+              !['mysql', 'mcp', 'http', 'sqlite', 'sqlserver',
+                'athena', 'dynamodb', 'bigquery', 'snowflake'].includes(draft.kind || 'postgres')
                 ? jsx(Field, {
                 label: 'SSL mode',
                 children: jsxs('select', {
@@ -4499,6 +4639,18 @@ function ConnectionDrawer({ draft, onDraft, onClose, onSaved, onDeleted }) {
                   )
                 })
               })
+                : null,
+              CLOUD_OPTIONS[draft.kind || 'postgres']
+                ? jsx(Field, {
+                    key: 'engine-options',
+                    label: 'Options (JSON)',
+                    hint: CLOUD_OPTIONS[draft.kind || 'postgres'].hint,
+                    children: jsx(Input, {
+                      value: draft.options || '',
+                      placeholder: CLOUD_OPTIONS[draft.kind || 'postgres'].placeholder,
+                      onChange: set('options')
+                    })
+                  })
                 : null,
               (draft.kind || 'postgres') === 'clickhouse'
                 ? jsxs('div', {
@@ -6057,6 +6209,9 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
   const [openDbQuery, setOpenDbQuery] = useState('')
   const [openDbSelected, setOpenDbSelected] = useState('')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  // the shortcut sheet is a dialog: it takes focus, traps Tab, and gives focus back
+  const shortcutsPanelRef = useRef(null)
+  useDialogFocus(shortcutsPanelRef, shortcutsOpen)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [editor, setEditor] = useState(null)
   const [insertOpen, setInsertOpen] = useState(false)
@@ -8092,6 +8247,46 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
     setDraft({ ...emptyDraft(), ...active, password: '' })
   }
 
+  // A tree of a thousand tables cannot be a thousand tab stops: one row is reachable by Tab and
+  // the arrow keys move inside the tree, the way every file tree behaves.
+  const treeHasSelection = Boolean(selected && selected.table)
+
+  const onTreeKeyDown = (event) => {
+    const rows = Array.from(document.querySelectorAll('[data-tree-row]'))
+    if (rows.length === 0) return
+    const index = rows.indexOf(event.currentTarget)
+    if (index < 0) return
+    const focusAt = (next) => {
+      event.preventDefault()
+      const target = rows[Math.max(0, Math.min(rows.length - 1, next))]
+      if (target) target.focus()
+    }
+    const kind = event.currentTarget.dataset.treeKind
+    if (event.key === 'ArrowDown') focusAt(index + 1)
+    else if (event.key === 'ArrowUp') focusAt(index - 1)
+    else if (event.key === 'Home') focusAt(0)
+    else if (event.key === 'End') focusAt(rows.length - 1)
+    else if (event.key === 'ArrowRight' && kind === 'schema') {
+      // Right opens a collapsed schema; Left closes an open one, or walks back up to the schema
+      // from a table row.
+      event.preventDefault()
+      if (event.currentTarget.getAttribute('aria-expanded') === 'false') event.currentTarget.click()
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      if (kind === 'schema' && event.currentTarget.getAttribute('aria-expanded') === 'true') {
+        event.currentTarget.click()
+      } else if (kind === 'table') {
+        for (let back = index - 1; back >= 0; back -= 1) {
+          if (rows[back].dataset.treeKind === 'schema') {
+            rows[back].focus()
+            break
+          }
+        }
+      }
+    }
+  }
+
+
   return jsxs('div', {
     className: 'dbd-app relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground',
     children: [
@@ -8480,7 +8675,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         })
                       ]
                     : []),
-                  ...filteredTree.map((schema) => {
+                  ...filteredTree.map((schema, schemaIndex) => {
                     const isCollapsed = Boolean(collapsed[schema.name])
                     return jsxs(
                       'div',
@@ -8489,6 +8684,11 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                         children: [
                           jsxs('button', {
                             type: 'button',
+                            'data-tree-row': '',
+                            'data-tree-kind': 'schema',
+                            'aria-expanded': !isCollapsed,
+                            tabIndex: schemaIndex === 0 && !treeHasSelection ? 0 : -1,
+                            onKeyDown: onTreeKeyDown,
                             className: 'flex w-full items-center gap-1 px-1.5 py-1 text-left text-[11px] font-semibold text-(--ui-text-secondary) hover:bg-(--chrome-action-hover)',
                             onClick: () =>
                               setCollapsed((current) => ({
@@ -8511,11 +8711,24 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                           }),
                           ...(isCollapsed
                             ? []
-                            : schema.tables.map((table) =>
+                            : schema.tables.map((table, tableIndex) =>
                                 jsxs(
                                   'button',
                                   {
                                     type: 'button',
+                                    'data-tree-row': '',
+                                    'data-tree-kind': 'table',
+                                    'data-tree-schema': schema.name,
+                                    'data-tree-table': table.name,
+                                    tabIndex:
+                                      selected &&
+                                      selected.schema === schema.name &&
+                                      selected.table === table.name
+                                        ? 0
+                                        : !treeHasSelection && schemaIndex === 0 && tableIndex === 0
+                                          ? 0
+                                          : -1,
+                                    onKeyDown: onTreeKeyDown,
                                     className: cn(
                                       'flex w-full items-center gap-1.5 py-1 pr-2 pl-6 text-left text-[11.5px]',
                                       selected &&
@@ -8981,7 +9194,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                   setOffset(0)
                                   setLimit(Number(event.target.value))
                                 },
-                                children: [50, 100, 250, 500].map((n) =>
+                                children: [50, 100, 250, 500, 1000, 2000].map((n) =>
                                   jsx('option', { value: n, children: n }, n)
                                 )
                               })
@@ -10613,6 +10826,10 @@ jsxs('div', {
             children: [
               jsxs('div', {
                 key: 'panel',
+                ref: shortcutsPanelRef,
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': 'Keyboard shortcuts',
                 className:
                   'flex w-full max-w-[420px] flex-col gap-2 rounded-[8px] border border-(--ui-stroke-secondary) bg-background p-4 shadow-2xl',
                 children: [

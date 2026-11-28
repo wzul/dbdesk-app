@@ -1008,7 +1008,8 @@ function Grid({
 
   const ROW_HEIGHT = 24
   const OVERSCAN = 8
-  const virtual = rows.length > 200
+  // Above this many rows, render only what the viewport can show plus the overscan.
+  const virtual = rows.length > 100
   const bodyTop = Math.max(0, scrollTop - 30)
   const start = virtual
     ? Math.max(0, Math.floor(bodyTop / ROW_HEIGHT) - OVERSCAN)
@@ -9193,7 +9194,7 @@ export function DbDesk({ onHome, startNew = false, editConnectionId = '', initia
                                   setOffset(0)
                                   setLimit(Number(event.target.value))
                                 },
-                                children: [50, 100, 250, 500].map((n) =>
+                                children: [50, 100, 250, 500, 1000, 2000].map((n) =>
                                   jsx('option', { value: n, children: n }, n)
                                 )
                               })

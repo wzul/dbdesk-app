@@ -3,7 +3,7 @@
   "label": "DB Desk",
   "description": "TablePlus-style PostgreSQL browser — connections, schema tree, data grid and SQL runner.",
   "icon": "Database",
-  "version": "0.8.12",
+  "version": "0.8.13",
   "tab": {
     "path": "/dbdesk",
     "position": "end",
