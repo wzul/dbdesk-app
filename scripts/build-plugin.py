@@ -55,6 +55,15 @@ REPLACEMENTS: list[tuple[str, str, str]] = [
 
 COPIES: list[tuple[str, str]] = [
     ("ui/src/plugin.js", "plugin/desktop/plugin.js"),
+    # The plugin's backend *is* the app's backend: dbdesk_api.py imports these six engine
+    # modules at module scope, so leaving them out made plugin_api.py fail to import at all
+    # ("No module named 'duckdb_kind'") — the plugin could not load inside Hermes.
+    ("backend/duckdb_kind.py", "plugin/dashboard/duckdb_kind.py"),
+    ("backend/rest_kinds.py", "plugin/dashboard/rest_kinds.py"),
+    ("backend/oracle_kind.py", "plugin/dashboard/oracle_kind.py"),
+    ("backend/vertica_kind.py", "plugin/dashboard/vertica_kind.py"),
+    ("backend/cassandra_kind.py", "plugin/dashboard/cassandra_kind.py"),
+    ("backend/cloud_kinds.py", "plugin/dashboard/cloud_kinds.py"),
 ]
 
 
