@@ -3,5 +3,10 @@ httpx>=0.28.1
 # so CI exercises the Windows-on-ARM fallback path on every platform
 pycryptodome>=4.6.0
 pyinstaller>=6.22.3
+# tests/test_site_docs.py runs website/tools/build-docs.py to prove the committed docs are
+# current; the builder renders markdown, so the test needs it. Without this line the CI job
+# failed with "build-docs.py needs the `markdown` package" while passing on any machine where
+# someone had installed it by hand.
+markdown>=3.11
 mongomock>=4.3.0
 fakeredis>=2.41.0
